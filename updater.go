@@ -1,0 +1,209 @@
+package updater
+
+import (
+	"github.com/hwcer/cosgo/library/logger"
+	"github.com/hwcer/updater/models"
+	"time"
+)
+
+func Register(pt models.ParseType, model interface{}) error {
+	sm, err := db.Schema.Parse(model)
+	if err != nil {
+		return err
+	}
+	models.Register(pt, model, sm)
+	return nil
+}
+
+type Updater struct {
+	uid      string
+	dict     map[string]Handle
+	time     time.Time
+	strict   bool //严格模式下使用sub会检查数量
+	changed  bool
+	overflow map[int32]int64 //道具溢出,需要使用邮件等其他方式处理
+}
+
+func New() (u *Updater) {
+	u = &Updater{}
+	ms := models.All()
+	u.dict = make(map[string]Handle, len(ms))
+	for _, name := range ms {
+		model := models.Get(name)
+		if model.Parse == models.ParseTypeHash {
+			u.dict[name] = NewHash(model, u)
+		} else if model.Parse == models.ParseTypeTable {
+			u.dict[name] = NewTable(model, u)
+		}
+	}
+	u.release()
+	return
+}
+
+//Reset 重置
+func (u *Updater) Reset(uid string) {
+	if u.uid != "" {
+		logger.Panic("请不要重复调用Reset")
+	}
+	u.uid = uid
+	u.time = time.Now()
+}
+
+//Release 释放
+func (u *Updater) Release() {
+	u.uid = ""
+	u.release()
+}
+
+func (u *Updater) release() {
+	u.changed = false
+	u.overflow = make(map[int32]int64)
+	u.strict = true
+	for _, w := range u.dict {
+		w.release()
+	}
+}
+
+func (u *Updater) Uid() string {
+	return u.uid
+}
+
+//Time 获取Updater启动时间
+func (u *Updater) Time() time.Time {
+	return u.time
+}
+
+//Strict true:检查sub, false: 不检查
+func (u *Updater) Strict(b bool) {
+	u.strict = b
+}
+
+func (u *Updater) Add(iid int32, num int32) {
+	if w := u.getModuleType(iid); w != nil {
+		w.Add(iid, num)
+	}
+}
+
+func (u *Updater) Sub(iid int32, num int32) {
+	if w := u.getModuleType(iid); w != nil {
+		w.Sub(iid, num)
+	}
+}
+
+func (u *Updater) Get(id interface{}) (r interface{}, ok bool) {
+	if w := u.getModuleType(id); w != nil {
+		r, ok = w.Get(id)
+	}
+	return
+}
+
+func (u *Updater) Set(id interface{}, v interface{}) {
+	if w := u.getModuleType(id); w != nil {
+		w.Set(id, v)
+	}
+}
+
+func (u *Updater) Del(id interface{}) {
+	if w := u.getModuleType(id); w != nil {
+		w.Del(id)
+	}
+}
+
+func (u *Updater) Val(id interface{}) (r int64) {
+	if w := u.getModuleType(id); w != nil {
+		r = w.Val(id)
+	}
+	return
+}
+
+//Keys 通过iid或者oid添加需要获取的道具信息
+func (u *Updater) Keys(ids ...interface{}) {
+	for _, id := range ids {
+		if w := u.getModuleType(id); w != nil {
+			w.Keys(id)
+		}
+	}
+}
+
+func (u *Updater) Data() (err error) {
+	if u.uid == "" {
+		return
+	}
+	Events.Emit(u, EventsTypeBeforeData)
+	for _, w := range u.handles() {
+		if err = w.Data(); err != nil {
+			return
+		}
+	}
+	u.changed = false
+	Events.Emit(u, EventsTypeFinishData)
+	return
+}
+
+func (u *Updater) Save() (ret []*Cache, err error) {
+	if u.uid == "" {
+		return
+	}
+	if u.changed {
+		if err = u.Data(); err != nil {
+			return
+		}
+	}
+	Events.Emit(u, EventsTypeBeforeVerify)
+
+	ws := u.handles()
+	for _, w := range ws {
+		if err = w.Verify(); err != nil {
+			return
+		}
+	}
+
+	Events.Emit(u, EventsTypeFinishVerify)
+	Events.Emit(u, EventsTypeBeforeSave)
+	var cache []*Cache
+	for _, w := range ws {
+		if cache, err = w.Save(); err != nil {
+			return
+		} else {
+			ret = append(ret, cache...)
+		}
+	}
+	Events.Emit(u, EventsTypeFinishSave)
+	return
+}
+
+func (u *Updater) getModuleType(id interface{}) Handle {
+	var iid int32
+	switch id.(type) {
+	case string:
+		iid, _ = ObjectID.Parse(id.(string))
+	default:
+		iid, _ = ParseInt32(id)
+	}
+	if iid == 0 {
+		logger.Warn("Updater.getModuleType id illegal: %v", id)
+	}
+	it := Config.IType(iid)
+	if it == nil {
+		logger.Warn("Updater.getModuleType IType not exists: %v", iid)
+		return nil
+	}
+	w, ok := u.dict[it.Model]
+	if !ok {
+		logger.Warn("Updater.getModuleType handles not exists: %v", it.Model)
+	}
+	return w
+}
+
+func (u *Updater) Handle(name string) Handle {
+	return u.dict[name]
+}
+
+func (u *Updater) handles() (r []Handle) {
+	for _, name := range models.All() {
+		if w, ok := u.dict[name]; ok {
+			r = append(r, w)
+		}
+	}
+	return
+}
