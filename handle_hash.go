@@ -3,8 +3,11 @@ package updater
 import (
 	"github.com/hwcer/cosgo/library/logger"
 	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/updater/models"
 )
+
+type HashModelObjectID interface {
+	ObjectID(u *Updater) (string, error)
+}
 
 type Hash struct {
 	*base
@@ -12,153 +15,156 @@ type Hash struct {
 	update update.Update
 }
 
-func NewHash(model *models.Model, updater *Updater) *Hash {
+func NewHash(model *Model, updater *Updater) *Hash {
 	b := NewBase(model, updater)
 	return &Hash{base: b}
 }
 
-func (h *Hash) release() {
-	h.data = nil
-	h.update = nil
-	h.base.release()
+func (this *Hash) release() {
+	this.data = nil
+	this.update = nil
+	this.base.release()
 }
 
-func (h *Hash) Add(k int32, v int32) {
-	if f := h.ParseID(k); f != "" {
-		h.act(ActTypeAdd, f, v)
+func (this *Hash) Add(k int32, v int32) {
+	if f := this.ParseId(k); f != "" {
+		this.act(ActTypeAdd, f, v)
 		it := Config.IType(k)
-		if it.OnChange != nil {
-			it.OnChange(h.updater, k, v)
+		if onChange, ok := it.(ITypeOnChange); ok {
+			onChange.OnChange(this.updater, k, v)
 		}
 	}
 }
 
-func (h *Hash) Sub(k int32, v int32) {
-	if f := h.ParseID(k); f != "" {
-		h.act(ActTypeSub, f, v)
+func (this *Hash) Sub(k int32, v int32) {
+	if f := this.ParseId(k); f != "" {
+		this.act(ActTypeSub, f, v)
 		it := Config.IType(k)
-		if it.OnChange != nil {
-			it.OnChange(h.updater, k, -v)
+		if onChange, ok := it.(ITypeOnChange); ok {
+			onChange.OnChange(this.updater, k, -v)
 		}
 	}
 }
 
-func (h *Hash) Set(k interface{}, v interface{}) {
-	if f := h.ParseID(k); f != "" {
-		h.act(ActTypeSet, f, v)
+func (this *Hash) Set(k interface{}, v interface{}) {
+	if f := this.ParseId(k); f != "" {
+		this.act(ActTypeSet, f, v)
 	}
 }
 
-func (h *Hash) Val(k interface{}) (r int64) {
-	if v, ok := h.Get(k); ok {
+func (this *Hash) Val(k interface{}) (r int64) {
+	if v, ok := this.Get(k); ok {
 		r, _ = ParseInt(v)
 	}
 	return
 }
 
-func (h *Hash) Get(k interface{}) (interface{}, bool) {
-	if f := h.ParseID(k); f != "" {
-		return h.data.Get(f)
+func (this *Hash) Get(k interface{}) (interface{}, bool) {
+	if f := this.ParseId(k); f != "" {
+		return this.data.Get(f)
 	}
 	return nil, false
 }
 
-func (h *Hash) Del(k interface{}) {
-	logger.Warn("del is invalid:%v", h.model.Name)
+func (this *Hash) Del(k interface{}) {
+	logger.Warn("del is invalid:%v", this.model.Name)
 	return
 }
 
-func (h *Hash) act(t ActType, k string, v interface{}) {
-	h.Keys(k)
-	oid, err := h.ObjectId()
+func (this *Hash) act(t ActType, k string, v interface{}) {
+	this.Keys(k)
+	oid, err := this.ObjectID()
 	if err != nil {
 		logger.Error(err)
 		return
 	}
 	act := &Cache{OID: oid, AType: t, Key: k, Val: v}
-	h.base.Act(act)
-	if h.update != nil {
-		h.Verify()
+	this.base.Act(act)
+	if this.update != nil {
+		this.Verify()
 	}
 }
 
-func (h *Hash) Data() (err error) {
-	data := h.New()
-	keys := h.base.fields.String()
+func (this *Hash) Data() (err error) {
+	data := this.New()
+	keys := this.base.fields.String()
 	var oid string
-	if oid, err = h.ObjectId(); err != nil {
+	if oid, err = this.ObjectID(); err != nil {
 		return
 	}
 	tx := db.Select(keys...).Find(data, oid)
 	if tx.RowsAffected == 0 {
-		if _, ok := h.model.Model.(ModelSetOnInert); !ok {
+		if _, ok := this.model.Model.(ModelSetOnInert); !ok {
 			return ErrDataNotExist(oid)
 		}
 	} else if tx.Error != nil {
 		return tx.Error
 	}
-	h.data = NewData(h.model.Schema, data)
-	h.base.fields.reset()
+	this.data = NewData(this.model.Schema, data)
+	this.base.fields.reset()
 	return nil
 }
 
-func (h *Hash) Verify() (err error) {
+func (this *Hash) Verify() (err error) {
 	defer func() {
 		if err == nil {
-			h.cache = append(h.cache, h.acts...)
-			h.acts = nil
+			this.cache = append(this.cache, this.acts...)
+			this.acts = nil
 		} else {
-			h.update = nil
-			h.base.errMsg = err
+			this.update = nil
+			this.base.errMsg = err
 		}
 	}()
-	if h.update == nil {
-		h.update = update.New()
+	if this.update == nil {
+		this.update = update.New()
 	}
-	if len(h.base.acts) == 0 {
+	if len(this.base.acts) == 0 {
 		return
 	}
-	for _, act := range h.base.acts {
-		if err = parseHash(h, act); err != nil {
+	for _, act := range this.base.acts {
+		if err = parseHash(this, act); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (h *Hash) Save() (cache []*Cache, err error) {
-	if h.base.errMsg != nil {
-		return nil, h.base.errMsg
+func (this *Hash) Save() (cache []*Cache, err error) {
+	if this.base.errMsg != nil {
+		return nil, this.base.errMsg
 	}
-	if h.update == nil || len(h.update) == 0 {
+	if this.update == nil || len(this.update) == 0 {
 		return
 	}
 	var oid string
-	if oid, err = h.ObjectId(); err != nil {
+	if oid, err = this.ObjectID(); err != nil {
 		return
 	}
-	if im, ok := h.model.Model.(ModelSetOnInert); ok {
-		iv := im.SetOnInert(h.updater.uid, h.updater.Time())
+	if im, ok := this.model.Model.(ModelSetOnInert); ok {
+		iv := im.SetOnInert(this.updater.uid, this.updater.Time())
 		for k, v := range iv {
-			h.update.SetOnInert(k, v)
+			this.update.SetOnInert(k, v)
 		}
 	}
 
-	tx := db.Model(h.model.Model).Update(h.update, oid)
+	tx := db.Model(this.model.Model).Update(this.update, oid)
 	if tx.Error == nil {
-		cache = h.base.cache
-		h.base.cache = nil
+		cache = this.base.cache
+		this.base.cache = nil
 	} else {
 		err = tx.Error
 	}
 	return
 }
 
-func (h *Hash) ObjectId() (oid string, err error) {
-	return ObjectID.Create(h.updater, 0, false)
+func (this *Hash) ObjectID() (oid string, err error) {
+	if m, ok := this.model.Model.(HashModelObjectID); ok {
+		return m.ObjectID(this.updater)
+	}
+	return this.updater.Uid(), nil
 }
 
-func (h *Hash) ParseID(id interface{}) (r string) {
+func (this *Hash) ParseId(id interface{}) (r string) {
 	switch id.(type) {
 	case string:
 		return id.(string)
@@ -167,6 +173,10 @@ func (h *Hash) ParseID(id interface{}) (r string) {
 		if !ok {
 			return
 		}
-		return Config.Field(iid)
+		it := Config.IType(iid)
+		if it != nil {
+			r, _ = it.CreateId(this.updater, iid)
+		}
 	}
+	return
 }

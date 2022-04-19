@@ -22,6 +22,11 @@ func ErrItemNotExist(iid int32) *ErrMsg {
 	return NewError("Item Not Exist", iid)
 }
 
+func ErrObjNotExist(oid string) *ErrMsg {
+	panic("oid Not Exist")
+	return NewError("oid Not Exist", oid)
+}
+
 func ErrItemNotEnough(args ...interface{}) *ErrMsg {
 	return NewError("Item Not Enough", args...)
 }
@@ -29,6 +34,10 @@ func ErrItemNotEnough(args ...interface{}) *ErrMsg {
 func ErrITypeNotExist(iid int32) *ErrMsg {
 	return NewError("IType Not Exist", iid)
 }
+func ErrCreateIdUnknown(name string) *ErrMsg {
+	return NewError("IType ObjectID Unknown", name)
+}
+
 func ErrDataNotExist(oid string) *ErrMsg {
 	return NewError("Data Not Exist", oid)
 }

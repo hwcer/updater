@@ -1,6 +1,5 @@
 package updater
 
-//TODO 使用泛型
 func ParseInt(i interface{}) (v int64, ok bool) {
 	ok = true
 	switch i.(type) {

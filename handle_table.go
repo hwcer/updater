@@ -5,7 +5,6 @@ import (
 	"github.com/hwcer/cosgo/library/logger"
 	"github.com/hwcer/cosmo"
 	"github.com/hwcer/cosmo/utils"
-	"github.com/hwcer/updater/models"
 )
 
 /*
@@ -18,7 +17,7 @@ type Table struct {
 	bulkWrite *cosmo.BulkWrite
 }
 
-func NewTable(model *models.Model, updater *Updater) *Table {
+func NewTable(model *Model, updater *Updater) *Table {
 	b := NewBase(model, updater)
 	i := &Table{base: b, dataset: NewDataset(model.Schema)}
 	i.release()
@@ -38,10 +37,10 @@ func (this *Table) Add(k int32, v int32) {
 		return
 	}
 	var act *Cache
-	if it.Unique {
-		oid, err := ObjectID.Create(this.updater, k, true)
+	if it.Unique() {
+		oid, err := this.CreateId(k)
 		if err != nil {
-			logger.Error("hmap ObjectID error:%v", err)
+			logger.Error("hmap NewId error:%v", err)
 			return
 		}
 		act = &Cache{OID: oid, IID: k, AType: ActTypeAdd, Key: ItemNameVAL, Val: v}
@@ -49,31 +48,31 @@ func (this *Table) Add(k int32, v int32) {
 		act = &Cache{OID: "", IID: k, AType: ActTypeNew, Key: "*", Val: v}
 	}
 	this.act(act)
-	if it.OnChange != nil {
-		it.OnChange(this.updater, k, v)
+	if onChange, ok := it.(ITypeOnChange); ok {
+		onChange.OnChange(this.updater, k, v)
 	}
 }
 
 func (this *Table) Sub(k int32, v int32) {
 	it := Config.IType(k)
 	if it == nil {
-		logger.Error("ParseID IType unknown:%v", k)
+		logger.Error("ParseId IType unknown:%v", k)
 		return
 	}
 
-	if !it.Unique {
+	if !it.Unique() {
 		logger.Error("不可叠加道具只能使用OID进行Del操作:%v", k)
 	}
 
-	oid, err := ObjectID.Create(this.updater, k, true)
+	oid, err := this.CreateId(k)
 	if err != nil {
-		logger.Error("hmap ObjectID error:%v", err)
+		logger.Error("hmap NewId error:%v", err)
 		return
 	}
 	act := &Cache{OID: oid, IID: k, AType: ActTypeSub, Key: "val", Val: v}
 	this.act(act)
-	if it.OnChange != nil {
-		it.OnChange(this.updater, k, -v)
+	if onChange, ok := it.(ITypeOnChange); ok {
+		onChange.OnChange(this.updater, k, -v)
 	}
 }
 
@@ -85,7 +84,7 @@ func (this *Table) Set(id interface{}, v interface{}) {
 		return
 	}
 
-	iid, oid, err := this.ParseID(id)
+	iid, oid, err := this.ParseId(id)
 	if err != nil {
 		logger.Error(err)
 		return
@@ -110,7 +109,7 @@ func (this *Table) Val(id interface{}) (r int64) {
 
 //Get 返回道具对象
 func (this *Table) Get(id interface{}) (interface{}, bool) {
-	_, oid, err := this.ParseID(id)
+	_, oid, err := this.ParseId(id)
 	if err != nil {
 		logger.Error(err)
 		return nil, false
@@ -119,7 +118,7 @@ func (this *Table) Get(id interface{}) (interface{}, bool) {
 }
 
 func (this *Table) Del(id interface{}) {
-	iid, oid, err := this.ParseID(id)
+	iid, oid, err := this.ParseId(id)
 	if err != nil {
 		logger.Error(err)
 		return
@@ -215,7 +214,6 @@ func (this *Table) doAct(act *Cache) (err error) {
 	if it == nil {
 		return ErrITypeNotExist(act.IID)
 	}
-	act.Bag = it.Bag
 	//溢出判定
 	if act.AType == ActTypeAdd || act.AType == ActTypeNew {
 		v, ok := ParseInt(act.Val)
@@ -228,8 +226,8 @@ func (this *Table) doAct(act *Cache) (err error) {
 		if imax > 0 && t > imax {
 			overflow := t - imax
 			act.Val = v - overflow
-			if it.Resolve != nil {
-				if newId, NewNum, ok2 := it.Resolve(act.IID, int32(overflow)); ok2 {
+			if resolve, ok := it.(ITypeResolve); ok {
+				if newId, NewNum, ok2 := resolve.Resolve(act.IID, int32(overflow)); ok2 {
 					overflow = 0
 					this.updater.Add(newId, int32(NewNum))
 				}
@@ -240,31 +238,39 @@ func (this *Table) doAct(act *Cache) (err error) {
 		}
 	}
 
-	if it.Unique {
+	if it.Unique() {
 		return parseHMap(this, act)
 	} else {
 		return parseTable(this, act)
 	}
 }
 
-//ParseID 解析道具，不可叠加道具不能使用iid解析
-func (this *Table) ParseID(id interface{}) (iid int32, oid string, err error) {
+func (this *Table) CreateId(iid int32) (oid string, err error) {
+	it := Config.IType(iid)
+	if it == nil {
+		return "", ErrITypeNotExist(iid)
+	}
+	return it.CreateId(this.updater, iid)
+}
+
+//ParseId 解析道具，不可叠加道具不能使用iid解析
+func (this *Table) ParseId(id interface{}) (iid int32, oid string, err error) {
 	switch id.(type) {
 	case string:
 		oid = id.(string)
-		iid, err = ObjectID.Parse(oid)
+		iid, err = Config.ParseId(oid)
 	default:
 		if iid, _ = ParseInt32(id); iid > 0 {
 			it := Config.IType(iid)
 			if it == nil {
-				err = fmt.Errorf("ParseID IType unknown:%v", id)
-			} else if !it.Unique {
+				err = fmt.Errorf("ParseId IType unknown:%v", id)
+			} else if !it.Unique() {
 				err = fmt.Errorf("不可叠加道具不能使用IID进行操作:%v", id)
 			} else {
-				oid, err = ObjectID.Create(this.updater, iid, true)
+				oid, err = this.CreateId(iid)
 			}
 		} else {
-			err = fmt.Errorf("ParseID args illegal:%v", id)
+			err = fmt.Errorf("ParseId args illegal:%v", id)
 		}
 	}
 	return

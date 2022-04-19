@@ -2,11 +2,12 @@ module github.com/hwcer/updater
 
 go 1.18
 
-replace github.com/hwcer/updater v0.0.0 => ./
+replace github.com/hwcer/cosmo v0.0.0 => ../cosmo
 
 require (
 	github.com/hwcer/cosgo v0.0.0-20220415104249-b38c666c8a07
-	github.com/hwcer/cosmo v0.0.0-20220415104947-d8b347df59c6
+	github.com/hwcer/cosmo v0.0.0
+
 )
 
 require (

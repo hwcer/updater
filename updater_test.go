@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hwcer/cosmo"
-	"github.com/hwcer/updater/models"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,6 +24,32 @@ type Item struct {
 	Uid string `bson:"uid" json:"uid" gorm:"index:"`
 }
 
+type iTypeTest struct {
+	model  string
+	unique bool
+}
+
+func newiTypeiTypeTest(model string, unique bool) *iTypeTest {
+	return &iTypeTest{model: model, unique: unique}
+}
+
+func (this *iTypeTest) Model() string {
+	return this.model
+}
+func (this *iTypeTest) Unique() bool {
+	return this.unique
+}
+
+func (this *iTypeTest) CreateId(u *Updater, iid int32) (string, error) {
+	if iid == 1100 {
+		return "lv", nil
+	} else if iid == 1101 {
+		return fmt.Sprintf("%v-%v", u.Uid(), iid), nil
+	} else {
+		return fmt.Sprintf("%v-%v-%v", u.Uid(), iid, u.Time().Unix()), nil
+	}
+}
+
 func (this *Role) SetOnInert(uid string, now time.Time) map[string]interface{} {
 	r := make(map[string]interface{})
 	r["_id"] = uid
@@ -32,25 +57,25 @@ func (this *Role) SetOnInert(uid string, now time.Time) map[string]interface{} {
 	return r
 }
 
-var iTypes = make(map[string]*IType)
+var iTypes = make(map[string]*iTypeTest)
 
 func init() {
 	db = cosmo.New()
 	if err := db.Start("test", "mongodb://127.0.0.1:27017"); err != nil {
 		fmt.Printf("%v", err)
 	}
-	_ = Register(models.ParseTypeHash, &Role{})
-	_ = Register(models.ParseTypeTable, &Item{})
+	_ = Register(ParseTypeHash, &Role{})
+	_ = Register(ParseTypeTable, &Item{})
 
-	iTypes["role"] = &IType{Model: "role"}
-	iTypes["item"] = &IType{Model: "item", Unique: true}
-	iTypes["equip"] = &IType{Model: "item", Unique: false}
+	iTypes["role"] = newiTypeiTypeTest("role", true)
+	iTypes["item"] = newiTypeiTypeTest("item", true)
+	iTypes["equip"] = newiTypeiTypeTest("item", false)
 
 	Config.IMax = func(iid int32) int64 {
 		return 0
 	}
 
-	Config.IType = func(iid int32) *IType {
+	Config.IType = func(iid int32) IType {
 		if iid == 1100 {
 			return iTypes["role"]
 		} else if iid == 1101 {
@@ -59,14 +84,7 @@ func init() {
 			return iTypes["equip"]
 		}
 	}
-	Config.Field = func(iid int32) (key string) {
-		if iid == 1100 {
-			return "lv"
-		}
-		return ""
-	}
-
-	ObjectID.Parse = func(oid string) (iid int32, err error) {
+	Config.ParseId = func(oid string) (iid int32, err error) {
 		arr := strings.Split(oid, "-")
 		if len(arr) < 2 {
 			return
@@ -78,16 +96,6 @@ func init() {
 		}
 		return
 	}
-	ObjectID.Create = func(u *Updater, iid int32, unique bool) (string, error) {
-		if iid == 0 {
-			return u.Uid(), nil
-		} else if unique {
-			return fmt.Sprintf("%v-%v", u.Uid(), iid), nil
-		} else {
-
-			return fmt.Sprintf("%v-%v-%v", u.Uid(), iid, u.Time().Unix()), nil
-		}
-	}
 }
 
 func TestRegister(t *testing.T) {
@@ -95,7 +103,7 @@ func TestRegister(t *testing.T) {
 	u.Reset("hwc")
 	u.Add(1100, 1)
 	u.Add(1101, 1)
-	u.Add(1102, 1)
+	//u.Add(1102, 1)
 	r, err := u.Save()
 	if err != nil {
 		t.Errorf("ERR:%v", err)
@@ -103,4 +111,19 @@ func TestRegister(t *testing.T) {
 		b, _ := json.Marshal(r)
 		t.Logf("cache:%v", string(b))
 	}
+}
+
+func BenchmarkNew(b *testing.B) {
+	u := New()
+	for i := 0; i < b.N; i++ {
+		u.Reset("hwc")
+		//u.Add(1100, 1)
+		u.Add(1101, 1)
+		u.Add(1101, 10)
+		u.Add(1101, 100)
+		//u.Add(1102, 1)
+		_, _ = u.Save()
+		u.Release()
+	}
+
 }

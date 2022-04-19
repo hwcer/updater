@@ -1,17 +1,15 @@
 package updater
 
-import "github.com/hwcer/updater/models"
-
 type base struct {
 	acts    []*Cache
 	cache   []*Cache
-	model   *models.Model
+	model   *Model
 	fields  *fields
 	updater *Updater
 	errMsg  error
 }
 
-func NewBase(model *models.Model, updater *Updater) (b *base) {
+func NewBase(model *Model, updater *Updater) (b *base) {
 	b = &base{
 		acts:    make([]*Cache, 0),
 		model:   model,

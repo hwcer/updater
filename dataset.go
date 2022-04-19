@@ -88,7 +88,7 @@ func (this *Data) Set(key string, val interface{}) error {
 func (this *Data) Add(key string, val int64) (r int64, err error) {
 	i, _ := this.Get(key)
 	if i == nil {
-		return 0, errors.New("item not exist")
+		return 0, ErrObjNotExist(key)
 	}
 	v, ok := ParseInt(i)
 	if !ok {

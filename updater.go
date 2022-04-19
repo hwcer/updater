@@ -2,18 +2,8 @@ package updater
 
 import (
 	"github.com/hwcer/cosgo/library/logger"
-	"github.com/hwcer/updater/models"
 	"time"
 )
-
-func Register(pt models.ParseType, model interface{}) error {
-	sm, err := db.Schema.Parse(model)
-	if err != nil {
-		return err
-	}
-	models.Register(pt, model, sm)
-	return nil
-}
 
 type Updater struct {
 	uid      string
@@ -26,14 +16,12 @@ type Updater struct {
 
 func New() (u *Updater) {
 	u = &Updater{}
-	ms := models.All()
-	u.dict = make(map[string]Handle, len(ms))
-	for _, name := range ms {
-		model := models.Get(name)
-		if model.Parse == models.ParseTypeHash {
-			u.dict[name] = NewHash(model, u)
-		} else if model.Parse == models.ParseTypeTable {
-			u.dict[name] = NewTable(model, u)
+	u.dict = make(map[string]Handle, len(modelsDict))
+	for _, model := range modelsRank {
+		if model.Parse == ParseTypeHash {
+			u.dict[model.Name] = NewHash(model, u)
+		} else if model.Parse == ParseTypeTable {
+			u.dict[model.Name] = NewTable(model, u)
 		}
 	}
 	u.release()
@@ -176,7 +164,7 @@ func (u *Updater) getModuleType(id interface{}) Handle {
 	var iid int32
 	switch id.(type) {
 	case string:
-		iid, _ = ObjectID.Parse(id.(string))
+		iid, _ = Config.ParseId(id.(string))
 	default:
 		iid, _ = ParseInt32(id)
 	}
@@ -188,7 +176,7 @@ func (u *Updater) getModuleType(id interface{}) Handle {
 		logger.Warn("Updater.getModuleType IType not exists: %v", iid)
 		return nil
 	}
-	w, ok := u.dict[it.Model]
+	w, ok := u.dict[it.Model()]
 	if !ok {
 		logger.Warn("Updater.getModuleType handles not exists: %v", it.Model)
 	}
@@ -200,8 +188,8 @@ func (u *Updater) Handle(name string) Handle {
 }
 
 func (u *Updater) handles() (r []Handle) {
-	for _, name := range models.All() {
-		if w, ok := u.dict[name]; ok {
+	for _, model := range modelsRank {
+		if w, ok := u.dict[model.Name]; ok {
 			r = append(r, w)
 		}
 	}

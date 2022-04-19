@@ -43,10 +43,10 @@ func hmapHandleNew(h *Table, act *Cache) (err error) {
 	}
 	it := Config.IType(act.IID)
 	if it == nil {
-		return fmt.Errorf("IType unknown:%v", act.IID)
+		return ErrITypeNotExist(act.IID)
 	}
 	var oid string
-	if oid, err = ObjectID.Create(h.updater, act.IID, true); err != nil {
+	if oid, err = h.CreateId(act.IID); err != nil {
 		return
 	}
 	data := h.base.New()
@@ -66,8 +66,8 @@ func hmapHandleNew(h *Table, act *Cache) (err error) {
 	act.AType = ActTypeNew
 	act.Ret = []interface{}{data}
 	bulkWrite.Insert(data)
-	if it.OnCreate != nil {
-		it.OnCreate(h.updater, data)
+	if onCreate, ok := it.(ITypeOnCreate); ok {
+		onCreate.OnCreate(h.updater, data)
 	}
 	return
 }

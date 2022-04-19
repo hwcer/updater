@@ -30,8 +30,8 @@ type Cache struct {
 	AType ActType     `json:"t"`
 	Key   string      `json:"k"`
 	Val   interface{} `json:"v"`
-	Bag   int32       `json:"b"`
-	Ret   interface{} `json:"r"`
+	//Bag   int32       `json:"b"`
+	Ret interface{} `json:"r"`
 }
 
 type ModelNew interface {
@@ -80,14 +80,14 @@ type Handle interface {
 //type modelHash interface {
 //	USet(oid string, update mongo.Update) error     //使用主键更新
 //	UGet(oid string, keys []string) (bson.M, error) //使用主键初始化数据
-//	ObjectId(uid string, now time.Time) (oid string, err error)
+//	NewId(uid string, now time.Time) (oid string, err error)
 //}
 //
 //type modelTable interface {
 //	New(uid string, iid int32, val int64, bag int32) (interface{}, error) //新对象
 //	UGet(uid string, query mongo.Query) ([]interface{}, error)            //使用主键初始化数据
 //	parseHMap(oid string) (iid int32, err error)
-//	ObjectId(uid string, iid int32) (oid string, err error)
+//	NewId(uid string, iid int32) (oid string, err error)
 //	BulkWrite() *mongo.BulkWrite
 //}
 //
