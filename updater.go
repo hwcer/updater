@@ -11,6 +11,7 @@ type Updater struct {
 	time     time.Time
 	strict   bool //严格模式下使用sub会检查数量
 	changed  bool
+	events   map[EventsType][]func()
 	overflow map[int32]int64 //道具溢出,需要使用邮件等其他方式处理
 }
 
@@ -35,6 +36,7 @@ func (u *Updater) Reset(uid string) {
 	}
 	u.uid = uid
 	u.time = time.Now()
+	u.events = make(map[EventsType][]func())
 }
 
 //Release 释放
@@ -47,9 +49,20 @@ func (u *Updater) release() {
 	u.changed = false
 	u.overflow = make(map[int32]int64)
 	u.strict = true
+	u.events = nil
 	for _, w := range u.dict {
 		w.release()
 	}
+}
+
+func (u *Updater) emit(t EventsType) {
+	for _, f := range u.events[t] {
+		f()
+	}
+}
+
+func (u *Updater) On(t EventsType, f func()) {
+	u.events[t] = append(u.events[t], f)
 }
 
 func (u *Updater) Uid() string {
@@ -113,11 +126,21 @@ func (u *Updater) Keys(ids ...interface{}) {
 	}
 }
 
+//Field 同Keys，当只能使用OID或者字段名
+func (u *Updater) Fields(ids ...string) {
+	for _, id := range ids {
+		if w := u.getModuleType(id); w != nil {
+			w.Keys(id)
+		}
+	}
+}
+
 func (u *Updater) Data() (err error) {
 	if u.uid == "" {
 		return
 	}
 	Events.Emit(u, EventsTypeBeforeData)
+	u.emit(EventsTypeBeforeData)
 	for _, w := range u.handles() {
 		if err = w.Data(); err != nil {
 			return
@@ -125,6 +148,7 @@ func (u *Updater) Data() (err error) {
 	}
 	u.changed = false
 	Events.Emit(u, EventsTypeFinishData)
+	u.emit(EventsTypeFinishData)
 	return
 }
 
@@ -138,7 +162,7 @@ func (u *Updater) Save() (ret []*Cache, err error) {
 		}
 	}
 	Events.Emit(u, EventsTypeBeforeVerify)
-
+	u.emit(EventsTypeBeforeVerify)
 	ws := u.handles()
 	for _, w := range ws {
 		if err = w.Verify(); err != nil {
@@ -147,7 +171,10 @@ func (u *Updater) Save() (ret []*Cache, err error) {
 	}
 
 	Events.Emit(u, EventsTypeFinishVerify)
+	u.emit(EventsTypeFinishVerify)
+
 	Events.Emit(u, EventsTypeBeforeSave)
+	u.emit(EventsTypeBeforeSave)
 	var cache []*Cache
 	for _, w := range ws {
 		if cache, err = w.Save(); err != nil {
@@ -157,6 +184,7 @@ func (u *Updater) Save() (ret []*Cache, err error) {
 		}
 	}
 	Events.Emit(u, EventsTypeFinishSave)
+	u.emit(EventsTypeFinishSave)
 	return
 }
 

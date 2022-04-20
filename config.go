@@ -11,7 +11,7 @@ func SetDB(v *cosmo.DB) {
 //一个IType对于一种数据模型
 type IType interface {
 	Model() string                                          //对应数据库model名字(Table Name)
-	Unique() bool                                           //unique=true 一个玩家角色只生成一条数据(可堆叠)
+	Stackable() bool                                        //unique=true 一个玩家角色只生成一条数据(可堆叠)
 	CreateId(u *Updater, iid int32) (oid string, err error) //生成OID或者字段名
 }
 

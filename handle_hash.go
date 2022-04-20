@@ -93,11 +93,7 @@ func (this *Hash) Data() (err error) {
 		return
 	}
 	tx := db.Select(keys...).Find(data, oid)
-	if tx.RowsAffected == 0 {
-		if _, ok := this.model.Model.(ModelSetOnInert); !ok {
-			return ErrDataNotExist(oid)
-		}
-	} else if tx.Error != nil {
+	if tx.Error != nil {
 		return tx.Error
 	}
 	this.data = NewData(this.model.Schema, data)
@@ -140,13 +136,6 @@ func (this *Hash) Save() (cache []*Cache, err error) {
 	if oid, err = this.ObjectID(); err != nil {
 		return
 	}
-	if im, ok := this.model.Model.(ModelSetOnInert); ok {
-		iv := im.SetOnInert(this.updater.uid, this.updater.Time())
-		for k, v := range iv {
-			this.update.SetOnInert(k, v)
-		}
-	}
-
 	tx := db.Model(this.model.Model).Update(this.update, oid)
 	if tx.Error == nil {
 		cache = this.base.cache

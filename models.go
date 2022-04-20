@@ -8,8 +8,8 @@ import (
 type ParseType int8
 
 const (
-	ParseTypeHash  ParseType = 1
-	ParseTypeTable ParseType = 2
+	ParseTypeHash  ParseType = iota //HASH模式
+	ParseTypeTable                  //table模式
 )
 
 var modelsRank []*Model

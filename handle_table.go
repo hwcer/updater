@@ -37,7 +37,7 @@ func (this *Table) Add(k int32, v int32) {
 		return
 	}
 	var act *Cache
-	if it.Unique() {
+	if it.Stackable() {
 		oid, err := this.CreateId(k)
 		if err != nil {
 			logger.Error("hmap NewId error:%v", err)
@@ -60,7 +60,7 @@ func (this *Table) Sub(k int32, v int32) {
 		return
 	}
 
-	if !it.Unique() {
+	if !it.Stackable() {
 		logger.Error("不可叠加道具只能使用OID进行Del操作:%v", k)
 	}
 
@@ -238,7 +238,7 @@ func (this *Table) doAct(act *Cache) (err error) {
 		}
 	}
 
-	if it.Unique() {
+	if it.Stackable() {
 		return parseHMap(this, act)
 	} else {
 		return parseTable(this, act)
@@ -264,7 +264,7 @@ func (this *Table) ParseId(id interface{}) (iid int32, oid string, err error) {
 			it := Config.IType(iid)
 			if it == nil {
 				err = fmt.Errorf("ParseId IType unknown:%v", id)
-			} else if !it.Unique() {
+			} else if !it.Stackable() {
 				err = fmt.Errorf("不可叠加道具不能使用IID进行操作:%v", id)
 			} else {
 				oid, err = this.CreateId(iid)

@@ -12,7 +12,12 @@ const (
 	EventsTypeFinishSave
 )
 
-var Events = &events{dict: make(map[EventsType][]EventsHandle)}
+//全局事件
+var Events = NewEvents()
+
+func NewEvents() *events {
+	return &events{dict: make(map[EventsType][]EventsHandle)}
+}
 
 type events struct {
 	dict map[EventsType][]EventsHandle

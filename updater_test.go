@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 type Role struct {
@@ -25,19 +24,19 @@ type Item struct {
 }
 
 type iTypeTest struct {
-	model  string
-	unique bool
+	model     string
+	stackable bool
 }
 
-func newiTypeiTypeTest(model string, unique bool) *iTypeTest {
-	return &iTypeTest{model: model, unique: unique}
+func newiTypeiTypeTest(model string, stackable bool) *iTypeTest {
+	return &iTypeTest{model: model, stackable: stackable}
 }
 
 func (this *iTypeTest) Model() string {
 	return this.model
 }
-func (this *iTypeTest) Unique() bool {
-	return this.unique
+func (this *iTypeTest) Stackable() bool {
+	return this.stackable
 }
 
 func (this *iTypeTest) CreateId(u *Updater, iid int32) (string, error) {
@@ -48,13 +47,6 @@ func (this *iTypeTest) CreateId(u *Updater, iid int32) (string, error) {
 	} else {
 		return fmt.Sprintf("%v-%v-%v", u.Uid(), iid, u.Time().Unix()), nil
 	}
-}
-
-func (this *Role) SetOnInert(uid string, now time.Time) map[string]interface{} {
-	r := make(map[string]interface{})
-	r["_id"] = uid
-	r["create"] = now.Unix()
-	return r
 }
 
 var iTypes = make(map[string]*iTypeTest)

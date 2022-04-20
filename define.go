@@ -1,7 +1,5 @@
 package updater
 
-import "time"
-
 /*
 UGet 统一返回[]bson.M
 */
@@ -55,11 +53,6 @@ type ModelSetVal interface {
 //增加属性
 type ModelAddVal interface {
 	AddVal(key string, val int64) (r int64, err error)
-}
-
-//ModelSetOnInert 仅仅HASH需要
-type ModelSetOnInert interface {
-	SetOnInert(uid string, time time.Time) map[string]interface{}
 }
 
 type Handle interface {
