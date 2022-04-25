@@ -16,6 +16,7 @@ func init() {
 	hmapParseHandle[ActTypeSub] = hmapHandleSub
 	hmapParseHandle[ActTypeSet] = hmapHandleSet
 	hmapParseHandle[ActTypeDel] = hmapHandleDel
+	hmapParseHandle[ActTypeResolve] = hmapHandleResolve
 }
 
 func parseHMap(this *Table, act *Cache) (err error) {
@@ -26,6 +27,11 @@ func parseHMap(this *Table, act *Cache) (err error) {
 	}
 	return f(this, act)
 }
+
+func hmapHandleResolve(t *Table, act *Cache) error {
+	return nil
+}
+
 func hmapHandleDel(t *Table, act *Cache) error {
 	act.AType = ActTypeDel
 	if !t.dataset.Del(act.OID) {

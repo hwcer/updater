@@ -27,29 +27,21 @@ func (this *Hash) release() {
 }
 
 func (this *Hash) Add(k int32, v int32) {
-	if f := this.ParseId(k); f != "" {
-		this.act(ActTypeAdd, f, v)
-		it := Config.IType(k)
-		if onChange, ok := it.(ITypeOnChange); ok {
-			onChange.OnChange(this.updater, k, v)
-		}
+	if k == 0 || v <= 0 {
+		return
 	}
+	this.act(ActTypeAdd, k, v)
 }
 
 func (this *Hash) Sub(k int32, v int32) {
-	if f := this.ParseId(k); f != "" {
-		this.act(ActTypeSub, f, v)
-		it := Config.IType(k)
-		if onChange, ok := it.(ITypeOnChange); ok {
-			onChange.OnChange(this.updater, k, -v)
-		}
+	if k == 0 || v <= 0 {
+		return
 	}
+	this.act(ActTypeSub, k, v)
 }
 
 func (this *Hash) Set(k interface{}, v interface{}) {
-	if f := this.ParseId(k); f != "" {
-		this.act(ActTypeSet, f, v)
-	}
+	this.act(ActTypeSet, k, v)
 }
 
 func (this *Hash) Val(k interface{}) (r int64) {
@@ -60,8 +52,8 @@ func (this *Hash) Val(k interface{}) (r int64) {
 }
 
 func (this *Hash) Get(k interface{}) (interface{}, bool) {
-	if f := this.ParseId(k); f != "" {
-		return this.data.Get(f)
+	if _, field, err := this.ParseId(k); err == nil {
+		return this.data.Get(field)
 	}
 	return nil, false
 }
@@ -71,18 +63,34 @@ func (this *Hash) Del(k interface{}) {
 	return
 }
 
-func (this *Hash) act(t ActType, k string, v interface{}) {
-	this.Keys(k)
+func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
+	iid, key, err := this.ParseId(k)
+	if err != nil {
+		logger.Error(err)
+		return false
+	}
+	this.Fields(key)
 	oid, err := this.ObjectID()
 	if err != nil {
 		logger.Error(err)
-		return
+		return false
 	}
-	act := &Cache{OID: oid, AType: t, Key: k, Val: v}
+	act := &Cache{OID: oid, IID: iid, AType: t, Key: key, Val: v}
+
+	if iid > 0 {
+		it := Config.IType(iid)
+		if onChange, ok := it.(ITypeOnChange); ok {
+			if !onChange.OnChange(this.updater, act) {
+				return false
+			}
+		}
+	}
+
 	this.base.Act(act)
 	if this.update != nil {
 		this.Verify()
 	}
+	return true
 }
 
 func (this *Hash) Data() (err error) {
@@ -153,18 +161,17 @@ func (this *Hash) ObjectID() (oid string, err error) {
 	return this.updater.Uid(), nil
 }
 
-func (this *Hash) ParseId(id interface{}) (r string) {
+func (this *Hash) ParseId(id interface{}) (iid int32, oid string, err error) {
 	switch id.(type) {
 	case string:
-		return id.(string)
+		oid = id.(string)
 	default:
-		iid, ok := ParseInt32(id)
-		if !ok {
-			return
-		}
-		it := Config.IType(iid)
-		if it != nil {
-			r, _ = it.CreateId(this.updater, iid)
+		iid, _ = ParseInt32(id)
+		if iid > 0 {
+			it := Config.IType(iid)
+			if it != nil {
+				oid, err = it.CreateId(this.updater, iid)
+			}
 		}
 	}
 	return

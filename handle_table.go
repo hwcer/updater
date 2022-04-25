@@ -31,16 +31,19 @@ func (this *Table) release() {
 }
 
 func (this *Table) Add(k int32, v int32) {
+	if k == 0 || v <= 0 {
+		return
+	}
 	it := Config.IType(k)
 	if it == nil {
-		logger.Error("IType unknown:%v", k)
+		logger.Debug("IType unknown:%v", k)
 		return
 	}
 	var act *Cache
 	if it.Stackable() {
 		oid, err := this.CreateId(k)
 		if err != nil {
-			logger.Error("hmap NewId error:%v", err)
+			logger.Debug("hmap NewId error:%v", err)
 			return
 		}
 		act = &Cache{OID: oid, IID: k, AType: ActTypeAdd, Key: ItemNameVAL, Val: v}
@@ -48,12 +51,12 @@ func (this *Table) Add(k int32, v int32) {
 		act = &Cache{OID: "", IID: k, AType: ActTypeNew, Key: "*", Val: v}
 	}
 	this.act(act)
-	if onChange, ok := it.(ITypeOnChange); ok {
-		onChange.OnChange(this.updater, k, v)
-	}
 }
 
 func (this *Table) Sub(k int32, v int32) {
+	if k == 0 || v <= 0 {
+		return
+	}
 	it := Config.IType(k)
 	if it == nil {
 		logger.Error("ParseId IType unknown:%v", k)
@@ -71,9 +74,6 @@ func (this *Table) Sub(k int32, v int32) {
 	}
 	act := &Cache{OID: oid, IID: k, AType: ActTypeSub, Key: "val", Val: v}
 	this.act(act)
-	if onChange, ok := it.(ITypeOnChange); ok {
-		onChange.OnChange(this.updater, k, -v)
-	}
 }
 
 //Set id= iid||oid ,v=map[string]interface{}
@@ -128,10 +128,14 @@ func (this *Table) Del(id interface{}) {
 }
 
 func (this *Table) act(act *Cache) {
-	if act.AType != ActTypeDel {
-		if act.OID != "" {
-			this.Keys(act.OID)
+	it := Config.IType(act.IID)
+	if onChange, ok := it.(ITypeOnChange); ok {
+		if !onChange.OnChange(this.updater, act) {
+			return
 		}
+	}
+	if act.AType != ActTypeDel && act.OID != "" {
+		this.base.Keys(act.OID)
 	}
 	this.base.Act(act)
 	if this.bulkWrite != nil {
@@ -223,10 +227,15 @@ func (this *Table) doAct(act *Cache) (err error) {
 		d := this.dataset.Count(act.IID)
 		t := v + d
 		imax := Config.IMax(act.IID)
+
 		if imax > 0 && t > imax {
 			overflow := t - imax
-			act.Val = v - overflow
-			if resolve, ok := it.(ITypeResolve); ok {
+			if overflow > v {
+				overflow = v
+			}
+			v = v - overflow
+			act.Val = v
+			if resolve, ok1 := it.(ITypeResolve); ok1 {
 				if newId, NewNum, ok2 := resolve.Resolve(act.IID, int32(overflow)); ok2 {
 					overflow = 0
 					this.updater.Add(newId, int32(NewNum))
@@ -235,6 +244,9 @@ func (this *Table) doAct(act *Cache) (err error) {
 			if overflow > 0 {
 				this.updater.overflow[act.IID] += overflow
 			}
+		}
+		if v == 0 {
+			act.AType = ActTypeResolve
 		}
 	}
 

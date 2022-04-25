@@ -25,9 +25,9 @@ type ITypeOnCreate interface {
 	OnCreate(u *Updater, item interface{})
 }
 
-//ITypeOnChange 道具即将改变时(add sub),num 是负数为扣除
+//ITypeOnChange 道具即将改变时(add sub)
 type ITypeOnChange interface {
-	OnChange(u *Updater, iid int32, num int32)
+	OnChange(u *Updater, c *Cache) bool
 }
 
 var Config = struct {

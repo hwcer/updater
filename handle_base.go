@@ -65,6 +65,14 @@ func (b *base) Keys(keys ...interface{}) {
 	b.updater.changed = true
 }
 
+//Fields 字段名(HASH)或者OID(table)
+func (b *base) Fields(keys ...string) {
+	for _, k := range keys {
+		b.fields.Keys(k)
+	}
+	b.updater.changed = true
+}
+
 func (b *base) Updater() *Updater {
 	return b.updater
 }

@@ -12,6 +12,7 @@ func init() {
 	tableParseHandle[ActTypeDel] = hmapHandleDel
 	tableParseHandle[ActTypeSet] = hmapHandleSet
 	tableParseHandle[ActTypeNew] = tableHandleNew
+	tableParseHandle[ActTypeResolve] = hmapHandleResolve
 }
 
 func parseTable(this *Table, act *Cache) error {
