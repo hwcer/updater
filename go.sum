@@ -142,8 +142,8 @@ github.com/hashicorp/serf v0.8.2/go.mod h1:6hOLApaqBFA1NXqRQAsxw9QxuDEvNxSQRwA/J
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/hwcer/cosgo v0.0.0-20220426075013-39bc7da8e26b h1:HsvKSkSb8N3M4MX6N7XmZmhl3K95Owl6o4hL6QVmjTY=
 github.com/hwcer/cosgo v0.0.0-20220426075013-39bc7da8e26b/go.mod h1:EdsQQU2CFnV8Shf8YtV4NyuLxskIhvCXJPNoW+9cyKM=
-github.com/hwcer/cosmo v0.0.0-20220425023838-1c48b8960c3a h1:HCJ62aLgFNOAlvIT9Qkj7lakI/T7vlm/lT64JNeSdGc=
-github.com/hwcer/cosmo v0.0.0-20220425023838-1c48b8960c3a/go.mod h1:KOcdbSsckWwtPZqPljP0vJGNQ7HtTNacoB7Si8SfjyQ=
+github.com/hwcer/cosmo v1.0.0 h1:z3YkrpIenLbyWX0w37E8BVElDT6XN+gENYt/7X0jI4w=
+github.com/hwcer/cosmo v1.0.0/go.mod h1:s8nox1XzsI9a1fYnexa8QbO7nezrWqH8X3mPVa0BZfs=
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
