@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"fmt"
 	"github.com/hwcer/cosgo/library/logger"
 	"github.com/hwcer/cosmo/update"
 )
@@ -62,11 +63,19 @@ func (this *Hash) Del(k interface{}) {
 	logger.Warn("del is invalid:%v", this.model.Name)
 	return
 }
-
+func (this *Hash) Keys(keys ...interface{}) {
+	for _, k := range keys {
+		if _, oid, err := this.ParseId(k); err == nil {
+			this.base.Keys(oid)
+		} else {
+			logger.Warn(err)
+		}
+	}
+}
 func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 	iid, key, err := this.ParseId(k)
 	if err != nil {
-		logger.Error(err)
+		logger.Warn(err)
 		return false
 	}
 	this.Fields(key)
@@ -96,6 +105,9 @@ func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 func (this *Hash) Data() (err error) {
 	data := this.New()
 	keys := this.base.fields.String()
+	if len(keys) == 0 {
+		return
+	}
 	var oid string
 	if oid, err = this.ObjectID(); err != nil {
 		return
@@ -172,6 +184,9 @@ func (this *Hash) ParseId(id interface{}) (iid int32, oid string, err error) {
 			if it != nil {
 				oid, err = it.CreateId(this.updater, iid)
 			}
+		}
+		if oid == "" {
+			err = fmt.Errorf("iid无法转换成字段:%v", iid)
 		}
 	}
 	return
