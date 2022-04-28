@@ -3,7 +3,7 @@ module github.com/hwcer/updater
 go 1.18
 
 require (
-	github.com/hwcer/cosgo v0.0.0-20220426075013-39bc7da8e26b
+	github.com/hwcer/cosgo v0.0.0-20220426143631-3220f40baa99
 	github.com/hwcer/cosmo v1.0.0
 )
 

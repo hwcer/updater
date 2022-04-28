@@ -78,7 +78,7 @@ func (this *Table) Sub(k int32, v int32) {
 
 //Set id= iid||oid ,v=map[string]interface{}
 func (this *Table) Set(id interface{}, v interface{}) {
-	val, ok := v.(map[string]interface{})
+	val, ok := ParseMap(v)
 	if !ok {
 		logger.Error("Table set v error")
 		return
