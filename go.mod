@@ -4,7 +4,8 @@ go 1.18
 
 require (
 	github.com/hwcer/cosgo v0.0.0-20220426143631-3220f40baa99
-	github.com/hwcer/cosmo v1.0.0
+	github.com/hwcer/cosmo v0.0.0-20220506035609-36ca24f8e162
+	go.mongodb.org/mongo-driver v1.8.3
 )
 
 require (
@@ -17,7 +18,6 @@ require (
 	github.com/xdg-go/scram v1.0.2 // indirect
 	github.com/xdg-go/stringprep v1.0.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
-	go.mongodb.org/mongo-driver v1.8.3 // indirect
 	golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871 // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 	golang.org/x/text v0.3.7 // indirect

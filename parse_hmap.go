@@ -28,6 +28,7 @@ func parseHMap(this *Table, act *Cache) (err error) {
 	return f(this, act)
 }
 
+//hmapHandleResolve 仅仅标记不做任何处理
 func hmapHandleResolve(t *Table, act *Cache) error {
 	return nil
 }

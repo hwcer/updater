@@ -132,7 +132,7 @@ func (this *Dataset) Set(i interface{}) (r bool) {
 func (this *Dataset) Del(oid string) bool {
 	item, ok := this.dataset[oid]
 	if !ok {
-		return false
+		return true
 	}
 	iid := item.IID()
 	delete(this.dataset, oid)
