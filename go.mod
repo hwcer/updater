@@ -3,7 +3,7 @@ module github.com/hwcer/updater
 go 1.18
 
 require (
-	github.com/hwcer/cosgo v0.0.0-20220426143631-3220f40baa99
+	github.com/hwcer/cosgo v0.0.0-20220507065546-60dfb4190d31
 	github.com/hwcer/cosmo v0.0.0-20220506035609-36ca24f8e162
 	go.mongodb.org/mongo-driver v1.8.3
 )
