@@ -28,7 +28,7 @@ type Model struct {
 
 func Register(pt ParseType, mod interface{}) (err error) {
 	i := &Model{Parse: pt, Model: mod}
-	i.Schema, err = cosmo.Schema.Parse(mod)
+	i.Schema, err = schema.Parse(mod, cosmo.Options)
 	if err != nil {
 		return
 	}

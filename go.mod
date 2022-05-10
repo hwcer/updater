@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/hwcer/cosgo v0.0.0-20220507065546-60dfb4190d31
-	github.com/hwcer/cosmo v0.0.0-20220506035609-36ca24f8e162
+	github.com/hwcer/cosmo v0.0.0-20220510083201-63ef88f114d8
 	go.mongodb.org/mongo-driver v1.8.3
 )
 
