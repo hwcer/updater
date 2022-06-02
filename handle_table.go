@@ -51,6 +51,12 @@ func (this *Table) Add(k int32, v int32) {
 		act = &Cache{OID: "", IID: k, AType: ActTypeNew, Key: "*", Val: v}
 	}
 	this.act(act)
+	//可能需要分解
+	if resolve, ok := it.(ITypeResolve); ok {
+		if newId, newNum, ok2 := resolve.Resolve(k, v); ok2 && newNum > 0 {
+			this.updater.Keys(newId)
+		}
+	}
 }
 
 func (this *Table) Sub(k int32, v int32) {
@@ -137,9 +143,11 @@ func (this *Table) act(act *Cache) {
 	if act.AType != ActTypeDel && act.OID != "" {
 		this.base.Keys(act.OID)
 	}
-	this.base.Act(act)
-	if this.bulkWrite != nil {
-		_ = this.Verify()
+
+	if this.bulkWrite == nil {
+		this.base.Act(act)
+	} else {
+		this.doAct(act)
 	}
 }
 
@@ -164,13 +172,7 @@ func (this *Table) Data() error {
 
 func (this *Table) Verify() (err error) {
 	defer func() {
-		if err == nil {
-			this.base.cache = append(this.base.cache, this.base.acts...)
-			this.base.acts = nil
-		} else {
-			this.bulkWrite = nil
-			this.base.errMsg = err
-		}
+		this.base.acts = nil
 	}()
 	_ = this.BulkWrite()
 	if len(this.base.acts) == 0 {
@@ -207,6 +209,14 @@ func (this *Table) BulkWrite() *cosmo.BulkWrite {
 }
 
 func (this *Table) doAct(act *Cache) (err error) {
+	defer func() {
+		if err == nil {
+			this.base.cache = append(this.base.cache, act)
+		} else {
+			this.bulkWrite = nil
+			this.base.errMsg = err
+		}
+	}()
 	if this.updater.strict && act.AType == ActTypeSub {
 		av, _ := ParseInt(act.Val)
 		dv := this.Val(act.OID)
