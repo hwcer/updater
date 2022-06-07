@@ -9,6 +9,7 @@ type Updater struct {
 	uid      string
 	dict     map[string]Handle
 	time     time.Time
+	cache    []*Cache
 	strict   bool //严格模式下使用sub会检查数量
 	changed  bool
 	events   map[EventsType][]EventsHandle
@@ -48,6 +49,7 @@ func (u *Updater) Release() {
 }
 
 func (u *Updater) release() {
+	u.cache = nil
 	u.changed = false
 	u.overflow = make(map[int32]int64)
 	u.strict = true
@@ -150,7 +152,7 @@ func (u *Updater) Data() (err error) {
 	return
 }
 
-func (u *Updater) Save() (ret []*Cache, err error) {
+func (u *Updater) Save() (err error) {
 	if u.uid == "" {
 		return
 	}
@@ -174,11 +176,15 @@ func (u *Updater) Save() (ret []*Cache, err error) {
 		if cache, err = w.Save(); err != nil {
 			return
 		} else {
-			ret = append(ret, cache...)
+			u.cache = append(u.cache, cache...)
 		}
 	}
 	u.emit(EventsTypeFinishSave)
 	return
+}
+
+func (u *Updater) Cache() (ret []*Cache) {
+	return u.cache
 }
 
 func (u *Updater) getModuleType(id interface{}) Handle {

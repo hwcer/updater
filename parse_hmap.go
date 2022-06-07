@@ -44,32 +44,52 @@ func hmapHandleDel(t *Table, act *Cache) error {
 }
 
 func hmapHandleNew(h *Table, act *Cache) (err error) {
-	v, ok := ParseInt(act.Val)
-	if !ok || v <= 0 {
-		return ErrActValIllegal
-	}
 	it := Config.IType(act.IID)
 	if it == nil {
 		return ErrITypeNotExist(act.IID)
 	}
-	var oid string
-	if oid, err = h.CreateId(act.IID); err != nil {
-		return
+	var data interface{}
+	if itNew, ok := it.(ITypeNew); ok {
+		data, err = itNew.New(h.updater, act)
+	} else {
+		var oid string
+		if act.OID != "" {
+			oid = act.OID
+		} else if oid, err = it.CreateId(h.updater, act.IID); err != nil {
+			return
+		}
+		data = h.base.New()
+		item := NewData(h.model.Schema, data)
+		val := make(map[string]interface{})
+		val[ItemNameOID] = oid
+		val[ItemNameIID] = act.IID
+		val[ItemNameUID] = h.updater.uid
+		if act.AType == ActTypeAdd {
+			v, _ := ParseInt(act.Val)
+			val[ItemNameVAL] = v
+		} else if act.AType == ActTypeSub {
+			v, _ := ParseInt(act.Val)
+			val[ItemNameVAL] = -v
+		} else if act.AType == ActTypeSet {
+			values, _ := act.Val.(map[string]interface{})
+			for k, v := range values {
+				val[k] = v
+			}
+		}
+		err = item.MSet(val)
 	}
-	data := h.base.New()
-	item := NewData(h.model.Schema, data)
-	err = item.MSet(map[string]interface{}{
-		ItemNameOID: oid,
-		ItemNameIID: act.IID,
-		ItemNameVAL: v,
-		ItemNameUID: h.updater.uid,
-	})
+
 	if err != nil {
 		return
 	}
 
 	bulkWrite := h.BulkWrite()
-	h.dataset.Set(data)
+	if mod, ok := data.(ModelCopy); ok {
+		h.dataset.Set(mod.Copy())
+	} else {
+		h.dataset.Set(data)
+	}
+
 	act.AType = ActTypeNew
 	act.Ret = []interface{}{data}
 	bulkWrite.Insert(data)
@@ -87,7 +107,7 @@ func hmapHandleAdd(h *Table, act *Cache) (err error) {
 	bulkWrite := h.BulkWrite()
 	v, ok := ParseInt(act.Val)
 	if !ok || v <= 0 {
-		return ErrActValIllegal
+		return ErrActValIllegal(act)
 	}
 	if act.Ret, err = data.Add(ItemNameVAL, v); err != nil {
 		return
@@ -105,7 +125,7 @@ func hmapHandleSub(h *Table, act *Cache) (err error) {
 	}
 	v, ok := ParseInt(act.Val)
 	if !ok || v <= 0 {
-		return ErrActValIllegal
+		return ErrActValIllegal(act)
 	}
 	bulkWrite := h.BulkWrite()
 	if act.Ret, err = data.Add(ItemNameVAL, -v); err != nil {
@@ -126,7 +146,7 @@ func hmapHandleSet(h *Table, act *Cache) (err error) {
 	act.Ret = act.Val
 	val, ok := act.Val.(map[string]interface{})
 	if !ok {
-		return ErrActValIllegal
+		return ErrActValIllegal(act)
 	}
 	upsert := update.Update{}
 	for k, v := range val {

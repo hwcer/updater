@@ -15,6 +15,11 @@ type IType interface {
 	CreateId(u *Updater, iid int32) (oid string, err error) //生成OID或者字段名
 }
 
+//ITypeNew 创建新对象
+type ITypeNew interface {
+	New(u *Updater, act *Cache) (item interface{}, err error)
+}
+
 //ITypeResolve 分解方式,如果没有分解方式超出上限则使用系统默认方式（邮件）处理
 type ITypeResolve interface {
 	Resolve(id int32, num int32) (newId int32, newNum int32, ok bool)

@@ -25,34 +25,12 @@ var (
 type Cache struct {
 	OID   string      `json:"_id"`
 	IID   int32       `json:"id"`
-	AType ActType     `json:"t"`
 	Key   string      `json:"k"`
 	Val   interface{} `json:"v"`
-	//Bag   int32       `json:"b"`
-	Ret interface{} `json:"r"`
-}
-
-type ModelNew interface {
-	New() interface{}
-}
-
-type ModelMakeSlice interface {
-	MakeSlice() interface{}
-}
-
-//获取属性
-type ModelGetVal interface {
-	GetVal(key string) (interface{}, bool)
-}
-
-//设置属性
-type ModelSetVal interface {
-	SetVal(key string, val interface{}) error
-}
-
-//增加属性
-type ModelAddVal interface {
-	AddVal(key string, val int64) (r int64, err error)
+	Bag   int32       `json:"b"`
+	Ret   interface{} `json:"r"`
+	AType ActType     `json:"t"`
+	IType IType       `json:"-"`
 }
 
 type Handle interface {
@@ -68,28 +46,3 @@ type Handle interface {
 	Verify() error
 	release()
 }
-
-//
-//type modelHash interface {
-//	USet(oid string, update mongo.Update) error     //使用主键更新
-//	UGet(oid string, keys []string) (bson.M, error) //使用主键初始化数据
-//	NewId(uid string, now time.Time) (oid string, err error)
-//}
-//
-//type modelTable interface {
-//	New(uid string, iid int32, val int64, bag int32) (interface{}, error) //新对象
-//	UGet(uid string, query mongo.Query) ([]interface{}, error)            //使用主键初始化数据
-//	parseHMap(oid string) (iid int32, err error)
-//	NewId(uid string, iid int32) (oid string, err error)
-//	BulkWrite() *mongo.BulkWrite
-//}
-//
-
-//
-
-//type binder interface {
-//	Keys(keys ...interface{})
-//	Fields(keys ...string)
-//	Dataset() *Dataset
-//	BulkWrite() *mongo.BulkWrite
-//}

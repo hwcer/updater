@@ -232,7 +232,7 @@ func (this *Table) doAct(act *Cache) (err error) {
 	if act.AType == ActTypeAdd || act.AType == ActTypeNew {
 		v, ok := ParseInt(act.Val)
 		if !ok || v <= 0 {
-			return ErrActValIllegal
+			return ErrActValIllegal(act)
 		}
 		d := this.dataset.Count(act.IID)
 		t := v + d

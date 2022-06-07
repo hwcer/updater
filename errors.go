@@ -1,15 +1,17 @@
 package updater
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type ErrMsg struct {
 	msg  interface{}
-	args []interface{}
+	args interface{}
 }
 
 func (e *ErrMsg) Error() string {
-	if len(e.args) > 0 {
-		return fmt.Sprintf("%v：%v", e.msg, e.args)
+	if e.args != nil {
+		return fmt.Sprintf("%v：%#v", e.msg, e.args)
 	} else {
 		return fmt.Sprintf("%v", e.msg)
 	}
@@ -42,7 +44,11 @@ func ErrDataNotExist(oid string) *ErrMsg {
 	return NewError("Data Not Exist", oid)
 }
 
+func ErrActValIllegal(act *Cache) *ErrMsg {
+	return NewError("act val illegal", act.Val)
+}
+
 var (
 	ErrFieldNotExist = NewError("field not exist")
-	ErrActValIllegal = NewError("act val illegal")
+	//ErrActValIllegal = NewError("act val illegal")
 )

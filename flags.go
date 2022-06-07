@@ -15,3 +15,7 @@ func (this flags) Has(k string) (ok bool) {
 	_, ok = this[k]
 	return
 }
+
+func (this flags) Del(k string) {
+	delete(this, k)
+}

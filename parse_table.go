@@ -25,7 +25,7 @@ func parseTable(this *Table, act *Cache) error {
 func tableHandleNew(t *Table, act *Cache) (err error) {
 	v, ok := ParseInt(act.Val)
 	if !ok || v <= 0 {
-		return ErrActValIllegal
+		return ErrActValIllegal(act)
 	}
 	it := Config.IType(act.IID)
 	if it == nil {
