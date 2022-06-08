@@ -11,7 +11,7 @@ type ErrMsg struct {
 
 func (e *ErrMsg) Error() string {
 	if e.args != nil {
-		return fmt.Sprintf("%v：%#v", e.msg, e.args)
+		return fmt.Sprintf("%v：%v", e.msg, e.args)
 	} else {
 		return fmt.Sprintf("%v", e.msg)
 	}
