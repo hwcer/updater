@@ -60,10 +60,13 @@ func (u *Updater) release() {
 	}
 }
 
-func (u *Updater) emit(t EventsType) {
+func (u *Updater) emit(t EventsType) (err error) {
 	for _, f := range u.events[t] {
-		f(u)
+		if err = f(u); err != nil {
+			return
+		}
 	}
+	return
 }
 
 func (u *Updater) On(t EventsType, f EventsHandle) {
@@ -141,14 +144,18 @@ func (u *Updater) Data() (err error) {
 	if u.uid == "" {
 		return
 	}
-	u.emit(EventsTypeBeforeData)
+	if err = u.emit(EventsTypeBeforeData); err != nil {
+		return err
+	}
 	for _, w := range u.handles() {
 		if err = w.Data(); err != nil {
 			return
 		}
 	}
 	u.changed = false
-	u.emit(EventsTypeFinishData)
+	if err = u.emit(EventsTypeFinishData); err != nil {
+		return err
+	}
 	return
 }
 
@@ -161,7 +168,9 @@ func (u *Updater) Save() (err error) {
 			return
 		}
 	}
-	u.emit(EventsTypeBeforeVerify)
+	if err = u.emit(EventsTypeBeforeVerify); err != nil {
+		return err
+	}
 	ws := u.handles()
 	for _, w := range ws {
 		if err = w.Verify(); err != nil {
@@ -169,8 +178,12 @@ func (u *Updater) Save() (err error) {
 		}
 	}
 
-	u.emit(EventsTypeFinishVerify)
-	u.emit(EventsTypeBeforeSave)
+	if err = u.emit(EventsTypeFinishVerify); err != nil {
+		return err
+	}
+	if err = u.emit(EventsTypeBeforeSave); err != nil {
+		return err
+	}
 	var cache []*Cache
 	for _, w := range ws {
 		if cache, err = w.Save(); err != nil {
@@ -179,7 +192,9 @@ func (u *Updater) Save() (err error) {
 			u.cache = append(u.cache, cache...)
 		}
 	}
-	u.emit(EventsTypeFinishSave)
+	if err = u.emit(EventsTypeFinishSave); err != nil {
+		return err
+	}
 	return
 }
 

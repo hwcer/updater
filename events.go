@@ -1,7 +1,7 @@
 package updater
 
 type EventsType int32
-type EventsHandle func(*Updater)
+type EventsHandle func(*Updater) error
 
 const (
 	EventsTypeBeforeData EventsType = iota
