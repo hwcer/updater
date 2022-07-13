@@ -2,9 +2,10 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/library/logger"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo"
 	"github.com/hwcer/cosmo/utils"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 /*
@@ -60,43 +61,33 @@ func (this *Table) Add(k int32, v int32) {
 }
 
 func (this *Table) Sub(k int32, v int32) {
-	if k == 0 || v <= 0 {
-		return
-	}
-	it := Config.IType(k)
-	if it == nil {
-		logger.Error("ParseId IType unknown:%v", k)
-		return
-	}
-
-	if !it.Stackable() {
-		logger.Error("不可叠加道具只能使用OID进行Del操作:%v", k)
-	}
-
-	oid, err := this.CreateId(k)
-	if err != nil {
-		logger.Error("hmap NewId error:%v", err)
-		return
-	}
-	act := &Cache{OID: oid, IID: k, AType: ActTypeSub, Key: "val", Val: v}
-	this.act(act)
+	this.addAct(ActTypeSub, k, v)
 }
 
-//Set id= iid||oid ,v=map[string]interface{}
-func (this *Table) Set(id interface{}, v interface{}) {
-	val, ok := ParseMap(v)
-	if !ok {
-		logger.Error("Table set v error")
-		return
-	}
+func (this *Table) Max(k int32, v int32) {
+	this.addAct(ActTypeMax, k, v)
+}
 
+func (this *Table) Min(k int32, v int32) {
+	this.addAct(ActTypeMin, k, v)
+}
+
+//Set id= iid||oid ,v=map[string]interface{} || bson.M
+//v 非Map对象时，一律转换为Map{"val":v}
+func (this *Table) Set(id interface{}, v interface{}) {
 	iid, oid, err := this.ParseId(id)
 	if err != nil {
 		logger.Error(err)
 		return
 	}
-
-	act := &Cache{OID: oid, IID: iid, AType: ActTypeSet, Key: "*", Val: val}
+	var k string
+	switch v.(type) {
+	case map[string]interface{}, bson.M:
+		k = "*"
+	default:
+		k = ItemNameVAL
+	}
+	act := &Cache{OID: oid, IID: iid, AType: ActTypeSet, Key: k, Val: v}
 	this.act(act)
 }
 
@@ -149,6 +140,28 @@ func (this *Table) act(act *Cache) {
 	} else {
 		this.doAct(act)
 	}
+}
+
+func (this *Table) addAct(t ActType, k int32, v int32) {
+	if k == 0 {
+		return
+	}
+	it := Config.IType(k)
+	if it == nil {
+		logger.Error("ParseId IType unknown:%v", k)
+		return
+	}
+	if !it.Stackable() {
+		logger.Error("不可叠加道具只能使用OID进行Del操作:%v", k)
+	}
+
+	oid, err := this.CreateId(k)
+	if err != nil {
+		logger.Error("updater.Table CreateId error:%v", err)
+		return
+	}
+	act := &Cache{OID: oid, IID: k, AType: t, Key: "val", Val: v}
+	this.act(act)
 }
 
 func (this *Table) Data() error {

@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/library/logger"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/update"
 )
 
@@ -39,6 +39,14 @@ func (this *Hash) Sub(k int32, v int32) {
 		return
 	}
 	this.act(ActTypeSub, k, v)
+}
+
+func (this *Hash) Max(k int32, v int32) {
+	this.act(ActTypeMax, k, v)
+}
+
+func (this *Hash) Min(k int32, v int32) {
+	this.act(ActTypeMin, k, v)
 }
 
 func (this *Hash) Set(k interface{}, v interface{}) {

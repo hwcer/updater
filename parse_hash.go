@@ -10,6 +10,8 @@ func init() {
 	hashParseHandle[ActTypeAdd] = hashHandleAdd
 	hashParseHandle[ActTypeSet] = hashHandleSet
 	hashParseHandle[ActTypeSub] = hashHandleSub
+	hashParseHandle[ActTypeMax] = hashHandleMax
+	hashParseHandle[ActTypeMin] = hashHandleMin
 }
 
 func parseHash(h *Hash, act *Cache) error {
@@ -39,6 +41,30 @@ func hashHandleSub(h *Hash, act *Cache) (err error) {
 	h.update.Inc(act.Key, -v)
 	return
 
+}
+
+func hashHandleMax(h *Hash, act *Cache) (err error) {
+	v, _ := ParseInt(act.Val)
+	d, ok := h.data.GetInt(act.Key)
+	if ok && v > d {
+		act.AType = ActTypeSet
+		err = hashHandleSet(h, act)
+	} else {
+		act.AType = ActTypeDrop
+	}
+	return
+}
+
+func hashHandleMin(h *Hash, act *Cache) (err error) {
+	v, _ := ParseInt(act.Val)
+	d, ok := h.data.GetInt(act.Key)
+	if ok && v < d {
+		act.AType = ActTypeSet
+		err = hashHandleSet(h, act)
+	} else {
+		act.AType = ActTypeDrop
+	}
+	return
 }
 
 func hashHandleSet(h *Hash, act *Cache) (err error) {

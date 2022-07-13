@@ -1,7 +1,7 @@
 package updater
 
 import (
-	"github.com/hwcer/cosgo/library/logger"
+	"github.com/hwcer/cosgo/logger"
 	"time"
 )
 
@@ -34,7 +34,7 @@ func New() (u *Updater) {
 //Reset 重置
 func (u *Updater) Reset(uid string) {
 	if u.uid != "" {
-		logger.Panic("请不要重复调用Reset")
+		logger.Fatal("请不要重复调用Reset")
 	}
 	u.uid = uid
 	u.time = time.Now()
@@ -115,6 +115,24 @@ func (u *Updater) Sub(iid int32, num int32) {
 	}
 	if w := u.getModuleType(iid); w != nil {
 		w.Sub(iid, num)
+	}
+}
+
+func (u *Updater) Max(iid int32, num int32) {
+	if iid == 0 {
+		return
+	}
+	if w := u.getModuleType(iid); w != nil {
+		w.Max(iid, num)
+	}
+}
+
+func (u *Updater) Min(iid int32, num int32) {
+	if iid == 0 {
+		return
+	}
+	if w := u.getModuleType(iid); w != nil {
+		w.Min(iid, num)
 	}
 }
 

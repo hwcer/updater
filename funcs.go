@@ -29,12 +29,15 @@ func ParseInt32(i interface{}) (r int32, ok bool) {
 	return
 }
 
-func ParseMap(i interface{}) (r map[string]interface{}, ok bool) {
+func ParseMap(i interface{}) (r map[string]interface{}) {
 	switch i.(type) {
 	case map[string]interface{}:
-		r, ok = i.(map[string]interface{})
+		r, _ = i.(map[string]interface{})
 	case bson.M:
-		r, ok = i.(bson.M)
+		r, _ = i.(bson.M)
+	default:
+		r = make(map[string]interface{})
+		r[ItemNameVAL] = i
 	}
 	return
 }

@@ -16,6 +16,8 @@ func init() {
 	hmapParseHandle[ActTypeSub] = hmapHandleSub
 	hmapParseHandle[ActTypeSet] = hmapHandleSet
 	hmapParseHandle[ActTypeDel] = hmapHandleDel
+	hmapParseHandle[ActTypeMax] = hmapHandleMax
+	hmapParseHandle[ActTypeMin] = hmapHandleMin
 	hmapParseHandle[ActTypeResolve] = hmapHandleResolve
 }
 
@@ -64,13 +66,14 @@ func hmapHandleNew(h *Table, act *Cache) (err error) {
 		val[ItemNameOID] = oid
 		val[ItemNameIID] = act.IID
 		val[ItemNameUID] = h.updater.uid
-		if act.AType == ActTypeAdd {
+		switch act.AType {
+		case ActTypeAdd, ActTypeMax, ActTypeMin:
 			v, _ := ParseInt(act.Val)
 			val[ItemNameVAL] = v
-		} else if act.AType == ActTypeSub {
+		case ActTypeSub:
 			v, _ := ParseInt(act.Val)
 			val[ItemNameVAL] = -v
-		} else if act.AType == ActTypeSet {
+		case ActTypeSet:
 			values, _ := act.Val.(map[string]interface{})
 			for k, v := range values {
 				val[k] = v
@@ -137,6 +140,44 @@ func hmapHandleSub(h *Table, act *Cache) (err error) {
 	return
 }
 
+func hmapHandleMax(h *Table, act *Cache) (err error) {
+	data, ok := h.dataset.Get(act.OID)
+	if !ok {
+		return hmapHandleNew(h, act)
+	}
+	v, ok := ParseInt(act.Val)
+	if !ok {
+		return ErrActValIllegal(act)
+	}
+	var d int64
+	d, ok = data.GetInt(act.Key)
+	if ok && v > d {
+		err = hmapHandleSet(h, act)
+	} else {
+		act.AType = ActTypeDrop
+	}
+	return
+}
+
+func hmapHandleMin(h *Table, act *Cache) (err error) {
+	data, ok := h.dataset.Get(act.OID)
+	if !ok {
+		return hmapHandleNew(h, act)
+	}
+	v, ok := ParseInt(act.Val)
+	if !ok {
+		return ErrActValIllegal(act)
+	}
+	var d int64
+	d, ok = data.GetInt(act.Key)
+	if ok && v < d {
+		err = hmapHandleSet(h, act)
+	} else {
+		act.AType = ActTypeDrop
+	}
+	return
+}
+
 func hmapHandleSet(h *Table, act *Cache) (err error) {
 	data, ok := h.dataset.Get(act.OID)
 	if !ok {
@@ -144,10 +185,8 @@ func hmapHandleSet(h *Table, act *Cache) (err error) {
 	}
 	bulkWrite := h.BulkWrite()
 	act.Ret = act.Val
-	val, ok := act.Val.(map[string]interface{})
-	if !ok {
-		return ErrActValIllegal(act)
-	}
+	act.AType = ActTypeSet
+	val := ParseMap(act.Val)
 	upsert := update.Update{}
 	for k, v := range val {
 		upsert.Set(k, v)

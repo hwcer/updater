@@ -70,6 +70,15 @@ func (this *Data) Get(key string) (interface{}, bool) {
 	v := reflectValue.FieldByIndex(field.StructField.Index).Interface()
 	return v, true
 }
+
+func (this *Data) GetInt(key string) (int64, bool) {
+	v, ok := this.Get(key)
+	if !ok {
+		return 0, ok
+	}
+	return ParseInt(v)
+}
+
 func (this *Data) Set(key string, val interface{}) error {
 	if m, ok := this.item.(ModelSetVal); ok {
 		return m.SetVal(key, val)
