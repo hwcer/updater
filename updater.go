@@ -2,13 +2,14 @@ package updater
 
 import (
 	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/cosgo/utils"
 	"time"
 )
 
 type Updater struct {
 	uid      string
 	dict     map[string]Handle
-	time     time.Time
+	time     *utils.DateTime
 	cache    []*Cache
 	strict   bool //严格模式下使用sub会检查数量
 	changed  bool
@@ -37,7 +38,7 @@ func (u *Updater) Reset(uid string) {
 		logger.Fatal("请不要重复调用Reset")
 	}
 	u.uid = uid
-	u.time = time.Now()
+	u.time = utils.Time.New(time.Now())
 	u.events = make(map[EventsType][]EventsHandle)
 	u.Flags = flags{}
 }
@@ -79,7 +80,10 @@ func (u *Updater) Uid() string {
 
 //Time 获取Updater启动时间
 func (u *Updater) Time() time.Time {
-	return u.time
+	return u.time.Time()
+}
+func (u *Updater) Unix() int64 {
+	return u.time.Time().Unix()
 }
 
 //Strict true:检查sub, false: 不检查
