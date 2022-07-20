@@ -70,6 +70,7 @@ func hashHandleMin(h *Hash, act *Cache) (err error) {
 func hashHandleSet(h *Hash, act *Cache) (err error) {
 	act.Ret = act.Val
 	h.data.Set(act.Key, act.Val)
-	h.update.Set(act.Key, act.Val)
+	b, _ := h.data.Get(act.Key)
+	h.update.Set(act.Key, b)
 	return
 }

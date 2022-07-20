@@ -189,10 +189,11 @@ func hmapHandleSet(h *Table, act *Cache) (err error) {
 	val := ParseMap(act.Val)
 	upsert := update.Update{}
 	for k, v := range val {
-		upsert.Set(k, v)
 		if err = data.Set(k, v); err != nil {
 			return
 		}
+		b, _ := data.Get(k)
+		upsert.Set(k, b)
 	}
 	bulkWrite.Update(upsert, act.OID)
 	return
