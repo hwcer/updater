@@ -6,9 +6,9 @@ import (
 	"github.com/hwcer/cosmo/update"
 )
 
-type HashModelObjectID interface {
-	ObjectID(u *Updater) (string, error)
-}
+//type HashModelObjectID interface {
+//	ObjectID(u *Updater) (string, error)
+//}
 
 type Hash struct {
 	*base
@@ -17,6 +17,7 @@ type Hash struct {
 }
 
 func NewHash(model *Model, updater *Updater) *Hash {
+	_ = model.Model.(ModelHashObjectId)
 	b := NewBase(model, updater)
 	return &Hash{base: b}
 }
@@ -61,7 +62,7 @@ func (this *Hash) Val(k interface{}) (r int64) {
 }
 
 func (this *Hash) Get(k interface{}) (interface{}, bool) {
-	if _, field, err := this.ParseId(k); err == nil {
+	if _, field, _, err := this.ParseId(k); err == nil {
 		return this.data.Get(field)
 	}
 	return nil, false
@@ -73,7 +74,7 @@ func (this *Hash) Del(k interface{}) {
 }
 func (this *Hash) Keys(keys ...interface{}) {
 	for _, k := range keys {
-		if _, oid, err := this.ParseId(k); err == nil {
+		if _, oid, _, err := this.ParseId(k); err == nil {
 			this.base.Keys(oid)
 		} else {
 			logger.Warn(err)
@@ -81,22 +82,21 @@ func (this *Hash) Keys(keys ...interface{}) {
 	}
 }
 func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
-	iid, key, err := this.ParseId(k)
+	iid, key, it, err := this.ParseId(k)
 	if err != nil {
 		logger.Warn(err)
 		return false
 	}
 	this.Fields(key)
-	oid, err := this.ObjectID()
+	oid, err := this.ObjectId()
 	if err != nil {
 		logger.Error(err)
 		return false
 	}
 	act := &Cache{OID: oid, IID: iid, AType: t, Key: key, Val: v}
-
-	if iid > 0 {
-		it := Config.IType(iid)
-		if onChange, ok := it.(ITypeOnChange); ok {
+	act.IType = it
+	if act.IType != nil {
+		if onChange, ok := act.IType.(ITypeOnChange); ok {
 			if !onChange.OnChange(this.updater, act) {
 				return false
 			}
@@ -117,7 +117,7 @@ func (this *Hash) Data() (err error) {
 		return
 	}
 	var oid string
-	if oid, err = this.ObjectID(); err != nil {
+	if oid, err = this.ObjectId(); err != nil {
 		return
 	}
 	tx := db.Select(keys...).Find(data, oid)
@@ -161,7 +161,7 @@ func (this *Hash) Save() (cache []*Cache, err error) {
 		return
 	}
 	var oid string
-	if oid, err = this.ObjectID(); err != nil {
+	if oid, err = this.ObjectId(); err != nil {
 		return
 	}
 	tx := db.Model(this.model.Model).Update(this.update, oid)
@@ -174,21 +174,19 @@ func (this *Hash) Save() (cache []*Cache, err error) {
 	return
 }
 
-func (this *Hash) ObjectID() (oid string, err error) {
-	if m, ok := this.model.Model.(HashModelObjectID); ok {
-		return m.ObjectID(this.updater)
-	}
-	return this.updater.Uid(), nil
+func (this *Hash) ObjectId() (oid string, err error) {
+	m, _ := this.model.Model.(ModelHashObjectId)
+	return m.ObjectId(this.updater)
 }
 
-func (this *Hash) ParseId(id interface{}) (iid int32, oid string, err error) {
+func (this *Hash) ParseId(id interface{}) (iid int32, oid string, it IType, err error) {
 	switch id.(type) {
 	case string:
 		oid = id.(string)
 	default:
 		iid, _ = ParseInt32(id)
 		if iid > 0 {
-			it := Config.IType(iid)
+			it = Config.IType(iid)
 			if it != nil {
 				oid, err = it.CreateId(this.updater, iid)
 			}

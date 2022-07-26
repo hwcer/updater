@@ -25,3 +25,7 @@ type ModelSetVal interface {
 type ModelAddVal interface {
 	AddVal(key string, val int64) (r int64, err error)
 }
+
+type ModelHashObjectId interface {
+	ObjectId(u *Updater) (string, error)
+}

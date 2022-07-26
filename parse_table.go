@@ -27,36 +27,47 @@ func tableHandleNew(t *Table, act *Cache) (err error) {
 	if !ok || v <= 0 {
 		return ErrActValIllegal(act)
 	}
-	it := Config.IType(act.IID)
-	if it == nil {
-		return ErrITypeNotExist(act.IID)
-	}
-
+	var d interface{}
 	var newItem []interface{}
 	for i := int64(1); i <= v; i++ {
-		var oid string
-		if oid, err = t.CreateId(act.IID); err != nil {
+		if d, err = tableHandleNewItem(t, act); err != nil {
 			return
-		}
-		data := t.base.New()
-		item := NewData(t.model.Schema, data)
-		err = item.MSet(map[string]interface{}{
-			ItemNameOID: oid,
-			ItemNameIID: act.IID,
-			ItemNameVAL: int64(1),
-			ItemNameUID: t.updater.uid,
-		})
-		if err != nil {
-			return
-		}
-		newItem = append(newItem, data)
-		t.dataset.Set(data)
-		if onCreate, ok := it.(ITypeOnCreate); ok {
-			onCreate.OnCreate(t.updater, data)
+		} else {
+			newItem = append(newItem, d)
 		}
 	}
 	act.Ret = newItem
 	bulkWrite := t.BulkWrite()
 	bulkWrite.Insert(newItem...)
 	return
+}
+
+func tableHandleNewItem(t *Table, act *Cache) (interface{}, error) {
+	if itNew, ok := act.IType.(ITypeNew); ok {
+		return itNew.New(t.updater, act)
+	}
+	oid, err := act.IType.CreateId(t.base.updater, act.IID)
+	if err != nil {
+		return nil, err
+	}
+	data := t.base.New()
+	item := NewData(t.model.Schema, data)
+	err = item.MSet(map[string]interface{}{
+		ItemNameOID: oid,
+		ItemNameIID: act.IID,
+		ItemNameVAL: int64(1),
+		ItemNameUID: t.updater.uid,
+	})
+	if err != nil {
+		return nil, err
+	}
+	t.dataset.Set(data)
+	if onCreate, ok := act.IType.(ITypeOnCreate); ok {
+		onCreate.OnCreate(t.updater, data)
+	}
+	if cp, ok := data.(ModelCopy); ok {
+		return cp.Copy(), nil
+	} else {
+		return data, nil
+	}
 }

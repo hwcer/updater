@@ -26,11 +26,10 @@ var (
 )
 
 type Cache struct {
-	OID string      `json:"_id"`
-	IID int32       `json:"id"`
-	Key string      `json:"k"`
-	Val interface{} `json:"v"`
-	//Bag   int32       `json:"b"`
+	OID   string      `json:"_id"`
+	IID   int32       `json:"id"`
+	Key   string      `json:"k"`
+	Val   interface{} `json:"v"`
 	Ret   interface{} `json:"r"`
 	AType ActType     `json:"t"`
 	IType IType       `json:"-"`

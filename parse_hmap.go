@@ -46,18 +46,14 @@ func hmapHandleDel(t *Table, act *Cache) error {
 }
 
 func hmapHandleNew(h *Table, act *Cache) (err error) {
-	it := Config.IType(act.IID)
-	if it == nil {
-		return ErrITypeNotExist(act.IID)
-	}
 	var data interface{}
-	if itNew, ok := it.(ITypeNew); ok {
+	if itNew, ok := act.IType.(ITypeNew); ok {
 		data, err = itNew.New(h.updater, act)
 	} else {
 		var oid string
 		if act.OID != "" {
 			oid = act.OID
-		} else if oid, err = it.CreateId(h.updater, act.IID); err != nil {
+		} else if oid, err = act.IType.CreateId(h.updater, act.IID); err != nil {
 			return
 		}
 		data = h.base.New()
@@ -96,7 +92,7 @@ func hmapHandleNew(h *Table, act *Cache) (err error) {
 	act.AType = ActTypeNew
 	act.Ret = []interface{}{data}
 	bulkWrite.Insert(data)
-	if onCreate, ok := it.(ITypeOnCreate); ok {
+	if onCreate, ok := act.IType.(ITypeOnCreate); ok {
 		onCreate.OnCreate(h.updater, data)
 	}
 	return
