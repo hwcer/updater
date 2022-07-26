@@ -17,7 +17,7 @@ type Hash struct {
 }
 
 func NewHash(model *Model, updater *Updater) *Hash {
-	_ = model.Model.(ModelHashObjectId)
+	_ = model.Model.(ModelHash)
 	b := NewBase(model, updater)
 	return &Hash{base: b}
 }
@@ -88,11 +88,7 @@ func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 		return false
 	}
 	this.Fields(key)
-	oid, err := this.ObjectId()
-	if err != nil {
-		logger.Error(err)
-		return false
-	}
+	oid := this.ObjectId()
 	act := &Cache{OID: oid, IID: iid, AType: t, Key: key, Val: v}
 	act.IType = it
 	if act.IType != nil {
@@ -111,15 +107,12 @@ func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 }
 
 func (this *Hash) Data() (err error) {
-	data := this.New()
+	data := this.model.Model.(ModelHash).New()
 	keys := this.base.fields.String()
 	if len(keys) == 0 {
 		return
 	}
-	var oid string
-	if oid, err = this.ObjectId(); err != nil {
-		return
-	}
+	oid := this.ObjectId()
 	tx := db.Select(keys...).Find(data, oid)
 	if tx.Error != nil {
 		return tx.Error
@@ -160,10 +153,7 @@ func (this *Hash) Save() (cache []*Cache, err error) {
 	if this.update == nil || len(this.update) == 0 {
 		return
 	}
-	var oid string
-	if oid, err = this.ObjectId(); err != nil {
-		return
-	}
+	oid := this.ObjectId()
 	tx := db.Model(this.model.Model).Update(this.update, oid)
 	if tx.Error == nil {
 		cache = this.base.cache
@@ -174,8 +164,8 @@ func (this *Hash) Save() (cache []*Cache, err error) {
 	return
 }
 
-func (this *Hash) ObjectId() (oid string, err error) {
-	m, _ := this.model.Model.(ModelHashObjectId)
+func (this *Hash) ObjectId() string {
+	m := this.model.Model.(ModelHash)
 	return m.ObjectId(this.updater)
 }
 

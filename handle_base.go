@@ -34,24 +34,6 @@ func (b *base) Act(act *Cache, before ...bool) {
 	}
 }
 
-//New 创建*model对象
-func (b *base) New() interface{} {
-	if m, ok := b.model.Model.(ModelNew); ok {
-		return m.New()
-	} else {
-		return b.model.Schema.New().Interface()
-	}
-}
-
-//MakeSlice 创建[]*model 数组对象
-func (b *base) MakeSlice() interface{} {
-	if m, ok := b.model.Model.(ModelMakeSlice); ok {
-		return m.MakeSlice()
-	} else {
-		return b.model.Schema.MakeSlice().Interface()
-	}
-}
-
 func (b *base) Has(key string) bool {
 	return b.fields.Has(key)
 }

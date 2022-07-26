@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"errors"
 	"fmt"
 	"github.com/hwcer/cosmo/update"
 )
@@ -46,55 +47,11 @@ func hmapHandleDel(t *Table, act *Cache) error {
 }
 
 func hmapHandleNew(h *Table, act *Cache) (err error) {
-	var data interface{}
-	if itNew, ok := act.IType.(ITypeNew); ok {
-		data, err = itNew.New(h.updater, act)
-	} else {
-		var oid string
-		if act.OID != "" {
-			oid = act.OID
-		} else if oid, err = act.IType.CreateId(h.updater, act.IID); err != nil {
-			return
-		}
-		data = h.base.New()
-		item := NewData(h.model.Schema, data)
-		val := make(map[string]interface{})
-		val[ItemNameOID] = oid
-		val[ItemNameIID] = act.IID
-		val[ItemNameUID] = h.updater.uid
-		switch act.AType {
-		case ActTypeAdd, ActTypeMax, ActTypeMin:
-			v, _ := ParseInt(act.Val)
-			val[ItemNameVAL] = v
-		case ActTypeSub:
-			v, _ := ParseInt(act.Val)
-			val[ItemNameVAL] = -v
-		case ActTypeSet:
-			values, _ := act.Val.(map[string]interface{})
-			for k, v := range values {
-				val[k] = v
-			}
-		}
-		err = item.MSet(val)
-	}
-
-	if err != nil {
-		return
-	}
-
+	data, err := tableHandleNewItem(h, act)
 	bulkWrite := h.BulkWrite()
-	if mod, ok := data.(ModelCopy); ok {
-		h.dataset.Set(mod.Copy())
-	} else {
-		h.dataset.Set(data)
-	}
-
 	act.AType = ActTypeNew
 	act.Ret = []interface{}{data}
 	bulkWrite.Insert(data)
-	if onCreate, ok := act.IType.(ITypeOnCreate); ok {
-		onCreate.OnCreate(h.updater, data)
-	}
 	return
 }
 
@@ -193,4 +150,17 @@ func hmapHandleSet(h *Table, act *Cache) (err error) {
 	}
 	bulkWrite.Update(upsert, act.OID)
 	return
+}
+
+func tableHandleNewItem(t *Table, act *Cache) (interface{}, error) {
+	v, err := act.IType.New(t.updater, act)
+	if err != nil {
+		return nil, err
+	}
+	data, ok := v.(ModelTable)
+	if !ok {
+		return nil, errors.New("IType.New return error")
+	}
+	t.dataset.Set(data)
+	return data.Copy(), nil
 }

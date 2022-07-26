@@ -19,6 +19,7 @@ type Table struct {
 }
 
 func NewTable(model *Model, updater *Updater) *Table {
+	_ = model.Model.(ModelTable)
 	b := NewBase(model, updater)
 	i := &Table{base: b, dataset: NewDataset(model.Schema)}
 	i.release()
@@ -178,7 +179,7 @@ func (this *Table) Data() error {
 	if query == nil || len(query) == 0 {
 		return nil
 	}
-	rows := this.base.MakeSlice()
+	rows := this.model.Model.(ModelTable).MakeSlice()
 	tx := db.Find(rows, query)
 	if tx.Error != nil {
 		return tx.Error
