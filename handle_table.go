@@ -175,7 +175,7 @@ func (this *Table) addAct(t ActType, k int32, v int32) {
 }
 
 func (this *Table) Data() error {
-	query := this.base.fields.Query()
+	query := this.base.fields.Query(this.updater.uid)
 	if query == nil || len(query) == 0 {
 		return nil
 	}

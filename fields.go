@@ -58,7 +58,7 @@ func (this *fields) String() (r []string) {
 	return
 }
 
-func (this *fields) Query() clause.Filter {
+func (this *fields) Query(uid string) clause.Filter {
 	if len(this.fields) == 0 {
 		return nil
 	}
@@ -92,5 +92,9 @@ func (this *fields) Query() clause.Filter {
 			query.Eq(ItemNameIID, v)
 		}
 	}
+	if len(iid) > 0 {
+		query.Eq(ItemNameUID, uid)
+	}
+
 	return query
 }
