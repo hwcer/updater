@@ -22,13 +22,15 @@ func (this *fields) Has(k string) bool {
 	return false
 }
 
-func (this *fields) Select(keys ...string) {
+func (this *fields) Select(keys ...string) (r int) {
 	for _, k := range keys {
 		if !this.Has(k) {
+			r++
 			this.keys = append(this.keys, k)
 			this.history[k] = true
 		}
 	}
+	return
 }
 
 func (this *fields) reset() {
