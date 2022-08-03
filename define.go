@@ -44,9 +44,10 @@ type Handle interface {
 	Val(id interface{}) int64
 	Get(id interface{}) (r interface{}, ok bool)
 	Del(id interface{})
-	Keys(id ...interface{})
+	Keys(id ...int32)
 	Data() error
 	Save() ([]*Cache, error)
+	Select(fields ...string)
 	Verify() error
 	release()
 }

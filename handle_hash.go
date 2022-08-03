@@ -72,22 +72,23 @@ func (this *Hash) Del(k interface{}) {
 	logger.Warn("del is invalid:%v", this.model.Name)
 	return
 }
-func (this *Hash) Keys(keys ...interface{}) {
+func (this *Hash) Keys(keys ...int32) {
 	for _, k := range keys {
 		if _, oid, _, err := this.ParseId(k); err == nil {
-			this.base.Keys(oid)
+			this.Select(oid)
 		} else {
 			logger.Warn(err)
 		}
 	}
 }
+
 func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 	iid, key, it, err := this.ParseId(k)
 	if err != nil {
 		logger.Warn(err)
 		return false
 	}
-	this.Fields(key)
+	this.Select(key)
 	oid := this.ObjectId()
 	act := &Cache{OID: oid, IID: iid, AType: t, Key: key, Val: v}
 	act.IType = it
@@ -108,7 +109,7 @@ func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 
 func (this *Hash) Data() (err error) {
 	data := this.model.Model.(ModelHash).New()
-	keys := this.base.fields.String()
+	keys := this.base.fields.keys
 	if len(keys) == 0 {
 		return
 	}

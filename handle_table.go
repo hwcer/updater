@@ -128,6 +128,15 @@ func (this *Table) Del(id interface{}) {
 	this.act(act)
 }
 
+func (this *Table) Keys(ids ...int32) {
+	for _, id := range ids {
+		_, oid, _, err := this.ParseId(id)
+		if err == nil {
+			this.Select(oid)
+		}
+	}
+}
+
 func (this *Table) act(act *Cache) {
 	if act.IType == nil {
 		act.IType = Config.IType(act.IID)
@@ -142,7 +151,7 @@ func (this *Table) act(act *Cache) {
 		}
 	}
 	if act.AType != ActTypeDel && act.OID != "" {
-		this.base.Keys(act.OID)
+		this.base.Select(act.OID)
 	}
 	if this.bulkWrite == nil {
 		this.base.Act(act)

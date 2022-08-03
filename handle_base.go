@@ -42,16 +42,16 @@ func (b *base) Cache() []*Cache {
 	return b.cache
 }
 
-func (b *base) Keys(keys ...interface{}) {
-	b.fields.Keys(keys...)
-	b.updater.changed = true
-}
+//func (b *base) Keys(keys ...int32) {
+//	for _, k := range keys {
+//		b.fields.Keys(k)
+//	}
+//	b.updater.changed = true
+//}
 
-//Fields 字段名(HASH)或者OID(table)
-func (b *base) Fields(keys ...string) {
-	for _, k := range keys {
-		b.fields.Keys(k)
-	}
+//Select 字段名(HASH)或者OID(table)
+func (b *base) Select(keys ...string) {
+	b.fields.Select(keys...)
 	b.updater.changed = true
 }
 

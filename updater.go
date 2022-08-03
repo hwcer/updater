@@ -154,10 +154,18 @@ func (u *Updater) Val(id interface{}) (r int64) {
 }
 
 //Keys 通过iid或者oid添加需要获取的道具信息
-func (u *Updater) Keys(ids ...interface{}) {
+func (u *Updater) Keys(ids ...int32) {
 	for _, id := range ids {
 		if w := u.getModuleType(id); w != nil {
 			w.Keys(id)
+		}
+	}
+}
+
+func (u *Updater) Fields(fields ...string) {
+	for _, field := range fields {
+		if w := u.getModuleType(field); w != nil {
+			w.Select(field)
 		}
 	}
 }
@@ -240,11 +248,12 @@ func (u *Updater) getModuleType(id interface{}) Handle {
 		logger.Warn("Updater.getModuleType IType not exists: %v", iid)
 		return nil
 	}
-	w, ok := u.dict[it.Model()]
+
+	handle, ok := u.dict[it.Model()]
 	if !ok {
 		logger.Warn("Updater.getModuleType handles not exists: %v", it.Model)
 	}
-	return w
+	return handle
 }
 
 func (u *Updater) Handle(name string) Handle {
