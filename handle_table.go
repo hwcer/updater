@@ -256,6 +256,9 @@ func (this *Table) doAct(act *Cache) (err error) {
 			return ErrItemNotEnough(act.IID, av, dv)
 		}
 	}
+	if act.IType == nil {
+		act.IType = Config.IType(act.IID)
+	}
 	it := act.IType
 	//溢出判定
 	if act.AType == ActTypeAdd || act.AType == ActTypeNew {
