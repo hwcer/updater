@@ -32,7 +32,7 @@ func ParseInt32(i interface{}) (r int32, ok bool) {
 func ParseMap(k string, i interface{}) (r map[string]interface{}) {
 	if k!="*"{
 		r = make(map[string]interface{})
-		r[ItemNameVAL] = i
+		r[k] = i
 		return r
 	}
 	switch i.(type) {
