@@ -51,8 +51,8 @@ func doHMapAct(data *Data, act *Cache) (r interface{},err error) {
 		r, err = data.Add(act.Key, v)
 	case ActTypeSet:
 		var ret interface{}
-		values := ParseMap(act.Key,act.Val)
-		for k, v := range values {
+		values := make(map[string]interface{})
+		for k, v := range ParseMap(act.Key,act.Val) {
 			if ret,err = data.Set(k, v); err == nil {
 				values[k] = ret
 			}else{
