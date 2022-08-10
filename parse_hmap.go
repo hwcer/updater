@@ -85,18 +85,22 @@ func hmapHandleDel(t *Table, act *Cache) error {
 }
 
 func hmapHandleNew(h *Table, act *Cache) (err error) {
-	val, err := tableHandleNewItem(h, act)
-	if err!=nil{
+	if _,err = tableHandleNewItem(h, act);err!=nil{
 		return err
 	}
-	data,_ := h.dataset.Get(act.OID)
-	if _,err = doHMapAct(data,act);err!=nil{
+	val,_ := h.dataset.Get(act.OID)
+	if _,err = doHMapAct(val,act);err!=nil{
 		return
 	}
+	data, ok := val.item.(ModelTable)
+	if !ok {
+		return  errors.New("IType.New return error")
+	}
+	item := data.Copy()
 	bulkWrite := h.BulkWrite()
 	act.AType = ActTypeNew
-	act.Ret = []interface{}{val}
-	bulkWrite.Insert(val)
+	act.Ret = []interface{}{item}
+	bulkWrite.Insert(item)
 	return
 }
 
@@ -192,15 +196,11 @@ func hmapHandleSet(h *Table, act *Cache) (err error) {
 	return
 }
 
-func tableHandleNewItem(t *Table, act *Cache) (interface{}, error) {
+func tableHandleNewItem(t *Table, act *Cache) (interface{},error) {
 	v, err := act.IType.New(t.updater, act)
 	if err != nil {
-		return nil, err
+		return nil,err
 	}
-	data, ok := v.(ModelTable)
-	if !ok {
-		return nil, errors.New("IType.New return error")
-	}
-	t.dataset.Set(data)
-	return data.Copy(), nil
+	t.dataset.Set(v)
+	return  v,nil
 }
