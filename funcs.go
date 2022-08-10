@@ -28,8 +28,13 @@ func ParseInt32(i interface{}) (r int32, ok bool) {
 	}
 	return
 }
-
-func ParseMap(i interface{}) (r map[string]interface{}) {
+//TODO
+func ParseMap(k string, i interface{}) (r map[string]interface{}) {
+	if k!="*"{
+		r = make(map[string]interface{})
+		r[ItemNameVAL] = i
+		return r
+	}
 	switch i.(type) {
 	case map[string]interface{}:
 		r, _ = i.(map[string]interface{})

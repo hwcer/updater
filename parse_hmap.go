@@ -36,6 +36,42 @@ func hmapHandleResolve(t *Table, act *Cache) error {
 	return nil
 }
 
+
+
+func doHMapAct(data *Data, act *Cache) (err error) {
+	switch act.AType {
+	case ActTypeAdd,ActTypeSub:
+		v, ok := ParseInt(act.Val)
+		if !ok || v <= 0 {
+			return ErrActValIllegal(act)
+		}
+		if act.AType == ActTypeSub{
+			v = -v
+		}
+		act.Ret, err = data.Add(act.Key, v)
+	case ActTypeSet:
+		act.Ret = act.Val
+		values := ParseMap(act.Key,act.Val)
+		for k, v := range values {
+			if err = data.Set(k, v); err != nil {
+				return
+			}
+		}
+	case ActTypeMax,ActTypeMin:
+		v, ok := ParseInt(act.Val)
+		if !ok {
+			return ErrActValIllegal(act)
+		}
+		var d int64
+		d, _ = data.GetInt(act.Key)
+		if (act.AType == ActTypeMax && v > d) || (act.AType == ActTypeMin && v < d) {
+			err = data.Set(act.Key, v)
+			act.Ret = v
+		}
+	}
+	return
+}
+
 func hmapHandleDel(t *Table, act *Cache) error {
 	act.AType = ActTypeDel
 	if !t.dataset.Del(act.OID) {
@@ -47,11 +83,18 @@ func hmapHandleDel(t *Table, act *Cache) error {
 }
 
 func hmapHandleNew(h *Table, act *Cache) (err error) {
-	data, err := tableHandleNewItem(h, act)
+	val, err := tableHandleNewItem(h, act)
+	if err!=nil{
+		return err
+	}
+	data,_ := h.dataset.Get(act.OID)
+	if err = doHMapAct(data,act);err!=nil{
+		return
+	}
 	bulkWrite := h.BulkWrite()
 	act.AType = ActTypeNew
-	act.Ret = []interface{}{data}
-	bulkWrite.Insert(data)
+	act.Ret = []interface{}{val}
+	bulkWrite.Insert(val)
 	return
 }
 
@@ -60,16 +103,12 @@ func hmapHandleAdd(h *Table, act *Cache) (err error) {
 	if !ok {
 		return hmapHandleNew(h, act)
 	}
-	bulkWrite := h.BulkWrite()
-	v, ok := ParseInt(act.Val)
-	if !ok || v <= 0 {
-		return ErrActValIllegal(act)
-	}
-	if act.Ret, err = data.Add(ItemNameVAL, v); err != nil {
+	if err = doHMapAct(data,act);err!=nil{
 		return
 	}
+	bulkWrite := h.BulkWrite()
 	upsert := update.Update{}
-	upsert.Inc(ItemNameVAL, v)
+	upsert.Inc(act.Key, act.Val)
 	bulkWrite.Update(upsert, act.OID)
 	return nil
 }
@@ -79,14 +118,11 @@ func hmapHandleSub(h *Table, act *Cache) (err error) {
 	if !ok {
 		return hmapHandleNew(h, act)
 	}
-	v, ok := ParseInt(act.Val)
-	if !ok || v <= 0 {
-		return ErrActValIllegal(act)
-	}
-	bulkWrite := h.BulkWrite()
-	if act.Ret, err = data.Add(ItemNameVAL, -v); err != nil {
+	if err = doHMapAct(data,act);err!=nil{
 		return
 	}
+	v, _ := ParseInt(act.Val)
+	bulkWrite := h.BulkWrite()
 	upsert := update.Update{}
 	upsert.Inc(ItemNameVAL, -v)
 	bulkWrite.Update(upsert, act.OID)
@@ -98,16 +134,13 @@ func hmapHandleMax(h *Table, act *Cache) (err error) {
 	if !ok {
 		return hmapHandleNew(h, act)
 	}
-	v, ok := ParseInt(act.Val)
-	if !ok {
-		return ErrActValIllegal(act)
+	if err = doHMapAct(data,act);err!=nil{
+		return
 	}
-	var d int64
-	d, ok = data.GetInt(act.Key)
-	if ok && v > d {
-		err = hmapHandleSet(h, act)
-	} else {
+	if act.Ret == nil{
 		act.AType = ActTypeDrop
+	}else {
+		act.AType = ActTypeSet
 	}
 	return
 }
@@ -117,16 +150,13 @@ func hmapHandleMin(h *Table, act *Cache) (err error) {
 	if !ok {
 		return hmapHandleNew(h, act)
 	}
-	v, ok := ParseInt(act.Val)
-	if !ok {
-		return ErrActValIllegal(act)
+	if err = doHMapAct(data,act);err!=nil{
+		return
 	}
-	var d int64
-	d, ok = data.GetInt(act.Key)
-	if ok && v < d {
-		err = hmapHandleSet(h, act)
-	} else {
+	if act.Ret == nil{
 		act.AType = ActTypeDrop
+	}else {
+		act.AType = ActTypeSet
 	}
 	return
 }
@@ -136,17 +166,15 @@ func hmapHandleSet(h *Table, act *Cache) (err error) {
 	if !ok {
 		return hmapHandleNew(h, act)
 	}
+	if err = doHMapAct(data,act);err!=nil{
+		return
+	}
+
 	bulkWrite := h.BulkWrite()
-	act.Ret = act.Val
-	act.AType = ActTypeSet
-	val := ParseMap(act.Val)
 	upsert := update.Update{}
-	for k, v := range val {
-		if err = data.Set(k, v); err != nil {
-			return
-		}
-		b, _ := data.Get(k)
-		upsert.Set(k, b)
+	values := ParseMap(act.Key,act.Val)
+	for k, v := range values {
+		upsert.Set(k, v)
 	}
 	bulkWrite.Update(upsert, act.OID)
 	return
