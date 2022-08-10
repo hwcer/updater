@@ -50,13 +50,16 @@ func doHMapAct(data *Data, act *Cache) (err error) {
 		}
 		act.Ret, err = data.Add(act.Key, v)
 	case ActTypeSet:
-		act.Ret = act.Val
 		values := ParseMap(act.Key,act.Val)
+		var r interface{}
 		for k, v := range values {
-			if err = data.Set(k, v); err != nil {
+			if r,err = data.Set(k, v); err == nil {
+				values[k] = r
+			}else{
 				return
 			}
 		}
+		act.Ret = values
 	case ActTypeMax,ActTypeMin:
 		v, ok := ParseInt(act.Val)
 		if !ok {
@@ -65,8 +68,7 @@ func doHMapAct(data *Data, act *Cache) (err error) {
 		var d int64
 		d, _ = data.GetInt(act.Key)
 		if (act.AType == ActTypeMax && v > d) || (act.AType == ActTypeMin && v < d) {
-			err = data.Set(act.Key, v)
-			act.Ret = v
+			act.Ret,err = data.Set(act.Key, v)
 		}
 	}
 	return
@@ -141,6 +143,10 @@ func hmapHandleMax(h *Table, act *Cache) (err error) {
 		act.AType = ActTypeDrop
 	}else {
 		act.AType = ActTypeSet
+		bulkWrite := h.BulkWrite()
+		upsert := update.Update{}
+		upsert.Set(act.Key, act.Ret)
+		bulkWrite.Update(upsert, act.OID)
 	}
 	return
 }
@@ -157,6 +163,10 @@ func hmapHandleMin(h *Table, act *Cache) (err error) {
 		act.AType = ActTypeDrop
 	}else {
 		act.AType = ActTypeSet
+		bulkWrite := h.BulkWrite()
+		upsert := update.Update{}
+		upsert.Set(act.Key, act.Ret)
+		bulkWrite.Update(upsert, act.OID)
 	}
 	return
 }
@@ -169,10 +179,9 @@ func hmapHandleSet(h *Table, act *Cache) (err error) {
 	if err = doHMapAct(data,act);err!=nil{
 		return
 	}
-
 	bulkWrite := h.BulkWrite()
 	upsert := update.Update{}
-	values := ParseMap(act.Key,act.Val)
+	values := act.Ret.(map[string]interface{})
 	for k, v := range values {
 		upsert.Set(k, v)
 	}

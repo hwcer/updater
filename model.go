@@ -57,7 +57,7 @@ type ModelGetVal interface {
 
 //ModelSetVal 设置属性
 type ModelSetVal interface {
-	SetVal(key string, val interface{}) error
+	SetVal(key string, val interface{}) (interface{},error)
 }
 
 //ModelAddVal 增加属性

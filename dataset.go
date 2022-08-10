@@ -79,19 +79,19 @@ func (this *Data) GetInt(key string) (int64, bool) {
 	return ParseInt(v)
 }
 
-func (this *Data) Set(key string, val interface{}) error {
+func (this *Data) Set(key string, val interface{}) (interface{},error) {
 	if m, ok := this.item.(ModelSetVal); ok {
 		return m.SetVal(key, val)
 	}
 	reflectValue := this.Reflect()
 	if !reflectValue.IsValid() {
-		return nil
+		return val,nil   //TODO
 	}
 	field := this.schema.LookUpField(key)
 	if field == nil {
-		return fmt.Errorf("item field not exist:%v", key)
+		return nil,fmt.Errorf("item field not exist:%v", key)
 	}
-	return field.Set(reflectValue, val)
+	return val,field.Set(reflectValue, val)
 }
 
 func (this *Data) Add(key string, val int64) (r int64, err error) {
@@ -104,12 +104,12 @@ func (this *Data) Add(key string, val int64) (r int64, err error) {
 		return 0, errors.New("item field not number")
 	}
 	r = v + val
-	err = this.Set(key, r)
+	_,err = this.Set(key, r)
 	return
 }
 func (this *Data) MSet(vs map[string]interface{}) (err error) {
 	for k, v := range vs {
-		if err = this.Set(k, v); err != nil {
+		if _,err = this.Set(k, v); err != nil {
 			return
 		}
 	}

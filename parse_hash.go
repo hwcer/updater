@@ -69,10 +69,10 @@ func hashHandleMin(h *Hash, act *Cache) (err error) {
 
 func hashHandleSet(h *Hash, act *Cache) (err error) {
 	act.Ret = act.Val
-	if err = h.data.Set(act.Key, act.Val); err != nil {
+	var r interface{}
+	if r,err = h.data.Set(act.Key, act.Val); err != nil {
 		return
 	}
-	b, _ := h.data.Get(act.Key)
-	h.update.Set(act.Key, b)
+	h.update.Set(act.Key, r)
 	return
 }
