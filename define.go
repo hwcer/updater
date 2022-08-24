@@ -1,5 +1,13 @@
 package updater
 
+import "github.com/hwcer/cosmo"
+
+var db *cosmo.DB
+
+func SetDB(v *cosmo.DB) {
+	db = v
+}
+
 /*
 UGet 统一返回[]bson.M
 */
@@ -51,3 +59,9 @@ type Handle interface {
 	Verify() error
 	release()
 }
+
+var Config = struct {
+	IMax    func(iid int32) int64
+	IType   func(iid int32) IType                   //通过道具ID查找数据模型
+	ParseId func(oid string) (iid int32, err error) //解析OID获得IID
+}{}

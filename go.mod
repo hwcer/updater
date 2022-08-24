@@ -1,30 +1,13 @@
 module github.com/hwcer/updater
 
-go 1.17
+go 1.16
 
-replace (
-	github.com/hwcer/cosgo v0.0.0 => ../cosgo
-	github.com/hwcer/cosmo v0.0.0 => ../cosmo
+require (
+	github.com/hwcer/cosmo v0.0.0-20220824034431-bf49956a24eb
+	go.mongodb.org/mongo-driver v1.10.1
 )
 
 require (
-	github.com/hwcer/cosgo v0.0.0
-	github.com/hwcer/cosmo v0.0.0
-)
-
-require go.mongodb.org/mongo-driver v1.9.1
-
-require (
-	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/golang/snappy v0.0.1 // indirect
-	github.com/jinzhu/now v1.1.4 // indirect
-	github.com/klauspost/compress v1.13.6 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
-	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
-	github.com/xdg-go/scram v1.0.2 // indirect
-	github.com/xdg-go/stringprep v1.0.2 // indirect
-	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
-	golang.org/x/crypto v0.0.0-20201216223049-8b5274cf687f // indirect
-	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9 // indirect
-	golang.org/x/text v0.3.7 // indirect
+	github.com/hwcer/cosgo v0.0.0-20220824031802-dd74ab81616c
+	github.com/hwcer/logger v0.0.0-20220824032233-d521abb0ee68
 )

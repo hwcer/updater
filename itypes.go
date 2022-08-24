@@ -1,0 +1,29 @@
+package updater
+
+// 一个IType对于一种数据模型
+type IType interface {
+	New(u *Updater, act *Cache) (item interface{}, err error) //生成空对象和默认字段
+	Model() string                                            //对应数据库model名字(Table Name)
+	Stackable() bool                                          //unique=true 一个玩家角色只生成一条数据(可堆叠)
+	CreateId(u *Updater, iid int32) (oid string, err error)   //生成OID或者字段名
+}
+
+//ITypeNew 创建新对象
+//type ITypeNew interface {
+//	New(u *Updater, act *Cache) (item interface{}, err error)
+//}
+
+// ITypeResolve 分解方式,如果没有分解方式超出上限则使用系统默认方式（邮件）处理
+type ITypeResolve interface {
+	Resolve(id int32, num int32) (newId int32, newNum int32, ok bool)
+}
+
+//ITypeOnCreate 生成新道具时
+//type ITypeOnCreate interface {
+//	OnCreate(u *Updater, item interface{})
+//}
+
+// ITypeOnChange 道具即将改变时(add sub)
+type ITypeOnChange interface {
+	OnChange(u *Updater, c *Cache) bool
+}
