@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/hwcer/cosmo"
 	"strconv"
@@ -31,7 +30,9 @@ type iTypeTest struct {
 func newiTypeiTypeTest(model string, stackable bool) *iTypeTest {
 	return &iTypeTest{model: model, stackable: stackable}
 }
-
+func (this *iTypeTest) New(u *Updater, act *Cache) (interface{}, error) {
+	return &Item{}, nil
+}
 func (this *iTypeTest) Model() string {
 	return this.model
 }
@@ -96,12 +97,9 @@ func TestRegister(t *testing.T) {
 	u.Add(1100, 1)
 	u.Add(1101, 1)
 	//u.Add(1102, 1)
-	r, err := u.Save()
+	err := u.Save()
 	if err != nil {
 		t.Errorf("ERR:%v", err)
-	} else {
-		b, _ := json.Marshal(r)
-		t.Logf("cache:%v", string(b))
 	}
 }
 
@@ -114,7 +112,7 @@ func BenchmarkNew(b *testing.B) {
 		u.Add(1101, 10)
 		u.Add(1101, 100)
 		//u.Add(1102, 1)
-		_, _ = u.Save()
+		_ = u.Save()
 		u.Release()
 	}
 
