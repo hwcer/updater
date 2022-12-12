@@ -3,9 +3,9 @@ package test
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/adapter"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/v2"
 )
 
 var ITypeRecord = &iTypeRecord{id: 20}

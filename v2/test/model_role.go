@@ -2,9 +2,9 @@ package test
 
 import (
 	"fmt"
-	"github.com/hwcer/adapter"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/v2"
 )
 
 var ITypeRole = &iTypeRole{iType: iType{id: 11, unique: true}, fields: map[int32]string{}}

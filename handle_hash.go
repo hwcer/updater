@@ -2,8 +2,8 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/logger"
 )
 
 //type HashModelObjectID interface {

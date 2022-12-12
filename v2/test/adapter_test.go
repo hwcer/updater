@@ -2,8 +2,8 @@ package test
 
 import (
 	"encoding/json"
-	"github.com/hwcer/adapter"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/updater/v2"
 	"testing"
 )
 

@@ -3,9 +3,9 @@ package updater
 import (
 	"context"
 	"fmt"
-	"github.com/hwcer/adapter/bson"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/utils"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/bson"
 	"time"
 )
 

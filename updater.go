@@ -1,8 +1,8 @@
 package updater
 
 import (
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/utils"
-	"github.com/hwcer/logger"
 	"time"
 )
 

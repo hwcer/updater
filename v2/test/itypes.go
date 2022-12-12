@@ -3,7 +3,7 @@ package test
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/adapter"
+	"github.com/hwcer/updater/v2"
 	"strconv"
 	"strings"
 	"sync/atomic"

@@ -3,9 +3,9 @@ package updater
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/adapter/bson"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/bson"
 	"reflect"
 )
 

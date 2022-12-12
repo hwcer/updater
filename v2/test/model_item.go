@@ -2,10 +2,10 @@ package test
 
 import (
 	"fmt"
-	"github.com/hwcer/adapter"
-	"github.com/hwcer/adapter/bson"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/clause"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/bson"
+	"github.com/hwcer/updater/v2"
 )
 
 var ITypeItem = &iTypeItem{iType{id: 30, unique: true}}

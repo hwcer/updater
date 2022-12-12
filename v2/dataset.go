@@ -1,7 +1,7 @@
 package updater
 
 import (
-	"github.com/hwcer/adapter/bson"
+	"github.com/hwcer/updater/bson"
 )
 
 type Dataset map[string]int64

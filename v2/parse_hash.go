@@ -2,7 +2,7 @@ package updater
 
 import (
 	"errors"
-	"github.com/hwcer/adapter/bson"
+	"github.com/hwcer/updater/bson"
 )
 
 var hashParseHandle = make(map[ActType]func(*Hash, *Cache, int64) error)

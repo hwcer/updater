@@ -1,9 +1,9 @@
 package updater
 
 import (
-	"github.com/hwcer/adapter/bson"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/bson"
 )
 
 type DocumentModel interface {

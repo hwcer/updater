@@ -2,9 +2,9 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo"
 	"github.com/hwcer/cosmo/utils"
-	"github.com/hwcer/logger"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -74,7 +74,7 @@ func (this *Table) Add(k int32, v int32) {
 	}
 }
 
-//Val  oid --堆数量,iid所有数据(不可堆叠)
+// Val  oid --堆数量,iid所有数据(不可堆叠)
 func (this *Table) Val(id interface{}) (r int64) {
 	switch id.(type) {
 	case string:
@@ -87,7 +87,7 @@ func (this *Table) Val(id interface{}) (r int64) {
 	return
 }
 
-//Get 返回道具对象
+// Get 返回道具对象
 func (this *Table) Get(id interface{}) (interface{}, bool) {
 	_, oid, _, err := this.ParseId(id)
 	if err != nil {
@@ -97,8 +97,8 @@ func (this *Table) Get(id interface{}) (interface{}, bool) {
 	return this.dataset.Data(oid)
 }
 
-//Set id= iid||oid ,v=map[string]interface{} || bson.M
-//v 非Map对象时，一律转换为Map{"val":v}
+// Set id= iid||oid ,v=map[string]interface{} || bson.M
+// v 非Map对象时，一律转换为Map{"val":v}
 func (this *Table) Set(id interface{}, v interface{}) {
 	iid, oid, it, err := this.ParseId(id)
 	if err != nil {
@@ -225,7 +225,7 @@ func (this *Table) Save() (cache []*Cache, err error) {
 	if this.bulkWrite == nil {
 		return
 	}
-	_, err = this.bulkWrite.Save()
+	err = this.bulkWrite.Save()
 	if err == nil {
 		cache = this.cache
 		this.cache = nil
@@ -299,7 +299,7 @@ func (this *Table) doAct(act *Cache) (err error) {
 	}
 }
 
-//ParseId 解析道具，不可叠加道具不能使用iid解析
+// ParseId 解析道具，不可叠加道具不能使用iid解析
 // it 可能为空(用不到)
 func (this *Table) ParseId(id interface{}) (iid int32, oid string, it IType, err error) {
 	switch id.(type) {
