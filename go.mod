@@ -1,6 +1,6 @@
 module github.com/hwcer/updater
 
-go 1.17
+go 1.18
 
 replace (
 	github.com/hwcer/cosgo v0.0.1 => ../cosgo
@@ -10,7 +10,7 @@ replace (
 require (
 	github.com/hwcer/cosgo v0.0.1
 	github.com/hwcer/cosmo v0.0.1
-	go.mongodb.org/mongo-driver v1.10.1
+	go.mongodb.org/mongo-driver v1.11.1
 )
 
 require (
