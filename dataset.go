@@ -3,7 +3,7 @@ package updater
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/cosmo/schema"
+	"github.com/hwcer/cosgo/schema"
 	"reflect"
 )
 
@@ -79,19 +79,19 @@ func (this *Data) GetInt(key string) (int64, bool) {
 	return ParseInt(v)
 }
 
-func (this *Data) Set(key string, val interface{}) (interface{},error) {
+func (this *Data) Set(key string, val interface{}) (interface{}, error) {
 	if m, ok := this.item.(ModelSetVal); ok {
 		return m.SetVal(key, val)
 	}
 	reflectValue := this.Reflect()
 	if !reflectValue.IsValid() {
-		return val,nil   //TODO
+		return val, nil //TODO
 	}
 	field := this.schema.LookUpField(key)
 	if field == nil {
-		return nil,fmt.Errorf("item field not exist:%v", key)
+		return nil, fmt.Errorf("item field not exist:%v", key)
 	}
-	return val,field.Set(reflectValue, val)
+	return val, field.Set(reflectValue, val)
 }
 
 func (this *Data) Add(key string, val int64) (r int64, err error) {
@@ -104,12 +104,12 @@ func (this *Data) Add(key string, val int64) (r int64, err error) {
 		return 0, errors.New("item field not number")
 	}
 	r = v + val
-	_,err = this.Set(key, r)
+	_, err = this.Set(key, r)
 	return
 }
 func (this *Data) MSet(vs map[string]interface{}) (err error) {
 	for k, v := range vs {
-		if _,err = this.Set(k, v); err != nil {
+		if _, err = this.Set(k, v); err != nil {
 			return
 		}
 	}
@@ -173,7 +173,7 @@ func (this *Dataset) Data(oid string) (interface{}, bool) {
 	}
 }
 
-//Count 统计道具数量,如果道具不可叠加 则统计所有
+// Count 统计道具数量,如果道具不可叠加 则统计所有
 // 叠加道具效果捅Val
 func (this *Dataset) Count(iid int32) (r int64) {
 	for _, oid := range this.Indexes(iid) {
@@ -182,7 +182,7 @@ func (this *Dataset) Count(iid int32) (r int64) {
 	return
 }
 
-//Indexes 配置ID为id的道具oid集合
+// Indexes 配置ID为id的道具oid集合
 func (this *Dataset) Indexes(iid int32) (r []string) {
 	if v, ok := this.indexes[iid]; ok {
 		r = append(r, v...)
@@ -190,7 +190,7 @@ func (this *Dataset) Indexes(iid int32) (r []string) {
 	return
 }
 
-//release 重置清空数据
+// release 重置清空数据
 func (this *Dataset) release() {
 	this.dataset = make(map[string]*Data)
 	this.indexes = make(map[int32][]string)

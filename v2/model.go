@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosmo"
+	"github.com/hwcer/cosgo/schema"
 )
 
 type Parser string
@@ -45,7 +45,7 @@ func Register(model iModel, itypes ...IType) error {
 		return fmt.Errorf("parser unknown:%v", parser)
 	}
 	i := &Model{iModel: model}
-	sch, err := cosmo.Options.Parse(model)
+	sch, err := schema.Parse(model)
 	if err != nil {
 		return err
 	}

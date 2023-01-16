@@ -1,8 +1,6 @@
 package dataset
 
-import (
-	"github.com/hwcer/cosmo/schema"
-)
+import "github.com/hwcer/cosgo/schema"
 
 func NewTable() *Table {
 	table := &Table{}

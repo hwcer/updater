@@ -1,8 +1,7 @@
 package updater
 
 import (
-	"github.com/hwcer/cosmo"
-	"github.com/hwcer/cosmo/schema"
+	"github.com/hwcer/cosgo/schema"
 )
 
 type ParseType int8
@@ -28,7 +27,7 @@ type Model struct {
 
 func Register(pt ParseType, mod interface{}) (err error) {
 	i := &Model{Parse: pt, Model: mod}
-	i.Schema, err = schema.Parse(mod, cosmo.Options)
+	i.Schema, err = schema.Parse(mod)
 	if err != nil {
 		return
 	}
@@ -38,29 +37,29 @@ func Register(pt ParseType, mod interface{}) (err error) {
 	return nil
 }
 
-//ModelHash Hash必须有具备的方法
+// ModelHash Hash必须有具备的方法
 type ModelHash interface {
 	New() interface{}
 	ObjectId(u *Updater) string //HASH KEY
 }
 
-//ModelTable Table必须具备的方法
+// ModelTable Table必须具备的方法
 type ModelTable interface {
 	Copy() interface{}
 	MakeSlice() interface{} //[]ModelTable
 }
 
-//ModelGetVal 获取属性
+// ModelGetVal 获取属性
 type ModelGetVal interface {
 	GetVal(key string) (interface{}, bool)
 }
 
-//ModelSetVal 设置属性
+// ModelSetVal 设置属性
 type ModelSetVal interface {
-	SetVal(key string, val interface{}) (interface{},error)
+	SetVal(key string, val interface{}) (interface{}, error)
 }
 
-//ModelAddVal 增加属性
+// ModelAddVal 增加属性
 type ModelAddVal interface {
 	AddVal(key string, val int64) (r int64, err error)
 }
