@@ -80,10 +80,10 @@ func (u *Updater) Uid() string {
 
 //Time 获取Updater启动时间
 func (u *Updater) Time() time.Time {
-	return u.time.Time()
+	return u.time.Now()
 }
 func (u *Updater) Unix() int64 {
-	return u.time.Time().Unix()
+	return u.time.Unix()
 }
 
 //Strict true:检查sub, false: 不检查
