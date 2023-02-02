@@ -18,8 +18,8 @@ type Updater struct {
 	Flags    flags
 }
 
-func New() (u *Updater) {
-	u = &Updater{}
+func New(uid string) (u *Updater) {
+	u = &Updater{uid: uid}
 	u.dict = make(map[string]Handle, len(modelsDict))
 	for _, model := range modelsRank {
 		if model.Parse == ParseTypeHash {
@@ -28,28 +28,20 @@ func New() (u *Updater) {
 			u.dict[model.Name] = NewTable(model, u)
 		}
 	}
-	u.release()
+	u.Release()
 	return
 }
 
-//Reset 重置
-func (u *Updater) Reset(uid string) {
-	if u.uid != "" {
-		logger.Fatal("请不要重复调用Reset")
-	}
-	u.uid = uid
+// Reset 重置
+func (u *Updater) Reset() *Updater {
 	u.time = utils.Time.New(time.Now())
 	u.events = make(map[EventsType][]EventsHandle)
 	u.Flags = flags{}
+	return u
 }
 
-//Release 释放
+// Release 释放
 func (u *Updater) Release() {
-	u.uid = ""
-	u.release()
-}
-
-func (u *Updater) release() {
 	u.cache = nil
 	u.changed = false
 	u.overflow = make(map[int32]int64)
@@ -78,7 +70,7 @@ func (u *Updater) Uid() string {
 	return u.uid
 }
 
-//Time 获取Updater启动时间
+// Time 获取Updater启动时间
 func (u *Updater) Time() time.Time {
 	return u.time.Now()
 }
@@ -86,7 +78,7 @@ func (u *Updater) Unix() int64 {
 	return u.time.Unix()
 }
 
-//Strict true:检查sub, false: 不检查
+// Strict true:检查sub, false: 不检查
 func (u *Updater) Strict(b bool) {
 	u.strict = b
 }
@@ -153,7 +145,7 @@ func (u *Updater) Val(id interface{}) (r int64) {
 	return
 }
 
-//Keys 通过iid或者oid添加需要获取的道具信息
+// Keys 通过iid或者oid添加需要获取的道具信息
 func (u *Updater) Keys(ids ...int32) {
 	for _, id := range ids {
 		if w := u.getModuleType(id); w != nil {
