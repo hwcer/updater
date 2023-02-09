@@ -16,6 +16,7 @@ type Updater struct {
 	events   map[EventsType][]EventsHandle
 	overflow map[int32]int64 //道具溢出,需要使用邮件等其他方式处理
 	Flags    flags
+	Monitor  func(*Updater, *Cache) //所有操作Cache时都会调用此方法
 }
 
 func New(uid string) (u *Updater) {

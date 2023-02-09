@@ -92,6 +92,7 @@ func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 	oid := this.ObjectId()
 	act := &Cache{OID: oid, IID: iid, AType: t, Key: key, Val: v}
 	act.IType = it
+	//ITYPE 监控
 	if act.IType != nil {
 		if onChange, ok := act.IType.(ITypeOnChange); ok {
 			if !onChange.OnChange(this.updater, act) {
@@ -99,7 +100,10 @@ func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 			}
 		}
 	}
-
+	//通用监控
+	if this.updater.Monitor != nil {
+		this.updater.Monitor(this.updater, act)
+	}
 	this.base.Act(act)
 	if this.update != nil {
 		this.Verify()

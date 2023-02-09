@@ -145,11 +145,17 @@ func (this *Table) act(act *Cache) {
 		logger.Error("IType Not Exist :%v", act.IID)
 		return
 	}
+	//ITYPE 监控
 	if onChange, ok := act.IType.(ITypeOnChange); ok {
 		if !onChange.OnChange(this.updater, act) {
 			return
 		}
 	}
+	//通用监控
+	if this.updater.Monitor != nil {
+		this.updater.Monitor(this.updater, act)
+	}
+
 	if act.AType != ActTypeDel && act.OID != "" {
 		this.base.Select(act.OID)
 	}
