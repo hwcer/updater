@@ -91,7 +91,7 @@ func (this *Table) Val(id interface{}) (r int64) {
 func (this *Table) Get(id interface{}) (interface{}, bool) {
 	_, oid, _, err := this.ParseId(id)
 	if err != nil {
-		logger.Error(err)
+		logger.Debug(err)
 		return nil, false
 	}
 	return this.dataset.Data(oid)
@@ -102,7 +102,7 @@ func (this *Table) Get(id interface{}) (interface{}, bool) {
 func (this *Table) Set(id interface{}, v interface{}) {
 	iid, oid, it, err := this.ParseId(id)
 	if err != nil {
-		logger.Error(err)
+		logger.Debug(err)
 		return
 	}
 	var k string
@@ -120,7 +120,7 @@ func (this *Table) Set(id interface{}, v interface{}) {
 func (this *Table) Del(id interface{}) {
 	iid, oid, it, err := this.ParseId(id)
 	if err != nil {
-		logger.Error(err)
+		logger.Debug(err)
 		return
 	}
 	act := &Cache{OID: oid, IID: iid, AType: ActTypeDel, Key: "*", Val: 0}
@@ -142,7 +142,7 @@ func (this *Table) act(act *Cache) {
 		act.IType = Config.IType(act.IID)
 	}
 	if act.IType == nil {
-		logger.Error("IType Not Exist :%v", act.IID)
+		logger.Debug("IType Not Exist :%v", act.IID)
 		return
 	}
 	//ITYPE 监控
@@ -172,16 +172,16 @@ func (this *Table) addAct(t ActType, k int32, v int32) {
 	}
 	it := Config.IType(k)
 	if it == nil {
-		logger.Error("ParseId IType unknown:%v", k)
+		logger.Debug("ParseId IType unknown:%v", k)
 		return
 	}
 	if !it.Stackable() {
-		logger.Error("不可叠加道具只能使用OID进行Del操作:%v", k)
+		logger.Debug("不可叠加道具只能使用OID进行Del操作:%v", k)
 	}
 
 	oid, err := it.CreateId(this.base.updater, k)
 	if err != nil {
-		logger.Error("updater.Table CreateId error:%v", err)
+		logger.Debug("updater.Table CreateId error:%v", err)
 		return
 	}
 	act := &Cache{OID: oid, IID: k, AType: t, Key: "val", Val: v}
