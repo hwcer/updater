@@ -4,14 +4,12 @@ type EventsType int32
 type EventsHandle func(adapter *Updater) error
 
 const (
-	EventsTypeBeforeData EventsType = iota
-	EventsTypeFinishData
-	EventsTypeBeforeVerify
-	EventsTypeFinishVerify
-	EventsTypeBeforeSave
-	EventsTypeFinishSave
+	EventsPreData   EventsType = iota //执行data前
+	EventsPreVerify                   //执行Verify前
+	EventsPreSubmit                   //执行Save前
 )
 
+//EventsTypeOverflow
 //
 ////全局事件
 //var Events = NewEvents()

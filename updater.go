@@ -233,8 +233,9 @@ func (u *Updater) getModuleType(id interface{}) Handle {
 	default:
 		iid, _ = ParseInt32(id)
 	}
-	if iid == 0 {
-		logger.Warn("Updater.getModuleType id illegal: %v", id)
+	if iid <= 0 {
+		//logger.Warn("Updater.getModuleType id illegal: %v", id)
+		return nil
 	}
 	it := Config.IType(iid)
 	if it == nil {

@@ -10,15 +10,15 @@ import (
 )
 
 type Updater struct {
-	ctx      context.Context
-	uid      string
-	dict     map[string]Handle
-	time     *utils.DateTime
-	cache    []*Cache
-	strict   bool //严格模式下使用sub会检查数量
-	changed  bool
-	events   map[EventsType][]EventsHandle
-	overflow map[int32]int64 //道具溢出,需要使用邮件等其他方式处理
+	ctx     context.Context
+	uid     string
+	dict    map[string]Handle
+	time    *utils.DateTime
+	cache   []*Cache
+	strict  bool //严格模式下使用sub会检查数量
+	events  map[EventsType][]EventsHandle
+	changed bool
+	//overflow map[int32]int64 //道具溢出,需要使用邮件等其他方式处理
 }
 
 func New() (u *Updater) {
@@ -44,7 +44,7 @@ func (u *Updater) Reset(uid string, ctx context.Context) {
 	u.ctx = context.WithValue(ctx, "", nil)
 	u.time = utils.Time.New(time.Now())
 	u.events = make(map[EventsType][]EventsHandle)
-	u.overflow = make(map[int32]int64)
+	//u.overflow = make(map[int32]int64)
 	for _, w := range u.dict {
 		w.reset()
 	}
@@ -58,7 +58,6 @@ func (u *Updater) Release() {
 	u.strict = true
 	u.events = nil
 	u.changed = false
-	u.overflow = nil
 	for _, w := range u.dict {
 		w.release()
 	}
@@ -80,21 +79,17 @@ func (u *Updater) On(t EventsType, f EventsHandle) {
 func (u *Updater) Uid() string {
 	return u.uid
 }
-
-// Time 获取Updater启动时间
-func (u *Updater) Time() time.Time {
-	return u.time.Time()
-}
-func (u *Updater) Unix() int64 {
-	return u.time.Time().Unix()
-}
-func (u *Updater) DateTime() *utils.DateTime {
+func (u *Updater) Time() *utils.DateTime {
 	return u.time
 }
 
 // Strict true:检查sub, false: 不检查
 func (u *Updater) Strict(b bool) {
 	u.strict = b
+}
+
+func (u *Updater) Context() context.Context {
+	return u.ctx
 }
 
 func (u *Updater) Get(id ikey) (r any) {
@@ -166,7 +161,7 @@ func (u *Updater) Data() (err error) {
 	if u.uid == "" {
 		return
 	}
-	if err = u.Emit(EventsTypeBeforeData); err != nil {
+	if err = u.Emit(EventsPreData); err != nil {
 		return err
 	}
 	for _, w := range u.handles() {
@@ -175,9 +170,6 @@ func (u *Updater) Data() (err error) {
 		}
 	}
 	u.changed = false
-	if err = u.Emit(EventsTypeFinishData); err != nil {
-		return err
-	}
 	return
 }
 
@@ -190,32 +182,25 @@ func (u *Updater) Save() (err error) {
 			return
 		}
 	}
-	if err = u.Emit(EventsTypeBeforeVerify); err != nil {
+	if err = u.Emit(EventsPreVerify); err != nil {
 		return err
 	}
-	handles := u.handles()
-	for _, w := range handles {
+	hs := u.handles()
+	for _, w := range hs {
 		if err = w.Verify(); err != nil {
 			return
 		}
 	}
-
-	if err = u.Emit(EventsTypeFinishVerify); err != nil {
-		return err
-	}
-	if err = u.Emit(EventsTypeBeforeSave); err != nil {
+	if err = u.Emit(EventsPreSubmit); err != nil {
 		return err
 	}
 	var cache []*Cache
-	for _, w := range handles {
+	for _, w := range hs {
 		if cache, err = w.Save(); err != nil {
 			return
 		} else {
 			u.cache = append(u.cache, cache...)
 		}
-	}
-	if err = u.Emit(EventsTypeFinishSave); err != nil {
-		return err
 	}
 	return
 }
