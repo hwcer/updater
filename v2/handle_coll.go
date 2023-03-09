@@ -287,7 +287,7 @@ func (this *Collection) doAct(cache *Cache) (err error) {
 				}
 			}
 			if overflow > 0 {
-				this.Adapter.overflow[cache.IID] += overflow
+				//this.Adapter.overflow[cache.IID] += overflow
 			}
 		}
 		if val == 0 {
