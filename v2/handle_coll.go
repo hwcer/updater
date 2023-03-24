@@ -2,253 +2,266 @@ package updater
 
 import (
 	"github.com/hwcer/cosgo/logger"
-	"github.com/hwcer/cosmo/clause"
-	"github.com/hwcer/updater/bson"
+	"github.com/hwcer/cosmo"
+	"github.com/hwcer/updater/v2/dataset"
+	"github.com/hwcer/updater/v2/dirty"
 )
 
+type Receive func(oid string, doc any)
+
 type collectionModel interface {
-	Getter(adapter *Updater, filter clause.Filter) ([]any, error)
-	BulkWrite(adapter *Updater, model any) BulkWrite
+	New(update *Updater, fn Receive) error //获取所有列表
+	Getter(adapter *Updater, keys []string, fn Receive) error
+	Setter(adapter *Updater, bulkWrite *cosmo.BulkWrite) error
+	BulkWrite(adapter *Updater) *cosmo.BulkWrite
 }
 
 type Collection struct {
-	base
-	bson.Collection
-	model     collectionModel
-	bulkWrite BulkWrite
+	*statement
+	keys    documentKeys
+	model   collectionModel
+	dirty   dirty.Dirty
+	Dataset dataset.Collection
 }
 
-func NewCollection(adapter *Updater, model any) Handle {
+func NewCollection(u *Updater, model any, ram RAMType) Handle {
 	r := &Collection{}
-	r.base = *NewBase(adapter)
 	r.model = model.(collectionModel)
+	r.statement = NewStatement(u, ram, r.Operator)
 	return r
 }
+
+// Has 查询key(DBName)是否已经初始化
+func (this *Collection) has(key string) (r bool) {
+	if this.statement.ram == RAMTypeAlways || (this.keys != nil && this.keys[key]) {
+		return true
+	}
+	if this.dirty != nil && this.dirty.Has(key) {
+		return true
+	}
+	if this.Dataset != nil && this.Dataset.Has(key) {
+		return true
+	}
+	return false
+}
+
+//	func (this *Collection) set(src any, k string, v any) error {
+//		if i, ok := src.(documentSet); ok {
+//			return i.Set(k, v)
+//		}
+//		sch, err := schema.Parse(src)
+//		if err != nil {
+//			return err
+//		}
+//		if err = sch.SetValue(this.dataset, k, v); err != nil {
+//			return err
+//		}
+//		logger.Debug("建议给%v添加Set接口提升性能", sch.Name)
+//		return nil
+//	}
+func (this *Collection) get(k string) (r *dataset.Document) {
+	//if this.dirty != nil {
+	//	var ok bool
+	//	if r, ok = this.dirty[k]; ok {
+	//		return //执行过程中修改
+	//	}
+	//}
+	return this.Dataset.Get(k)
+}
+
+//	func (this *Document) val(k string) (r int64) {
+//		if v := this.get(k); v != nil {
+//			r = ParseInt64(v)
+//		}
+//		return
+//	}
+func (this *Collection) save() (err error) {
+	if len(this.dirty) == 0 {
+		return
+	}
+	bulkWrite := this.model.BulkWrite(this.Updater)
+	if err = this.model.Setter(this.statement.Updater, this.dirty.BulkWrite(bulkWrite)); err == nil {
+		this.dirty = nil
+	}
+	return
+}
+
 func (this *Collection) reset() {
-	this.base.reset()
-	this.Collection = bson.Collection{}
+	this.keys = documentKeys{}
+	this.statement.reset()
+	if this.dirty == nil {
+		this.dirty = dirty.New()
+	}
+	if this.Dataset == nil {
+		this.Dataset = dataset.New()
+		if this.statement.ram == RAMTypeAlways {
+			this.Error = this.model.New(this.statement.Updater, this.Receive)
+		}
+	}
 }
 
 func (this *Collection) release() {
-	this.base.release()
-	this.bulkWrite = nil
-	this.Collection = nil
-}
-
-func (this *Collection) Sub(k ikey, v ival) {
-	if cache, ok := this.createCache(ActTypeSub, k, v); ok && bson.ParseInt64(cache.Val) > 0 {
-		this.act(cache)
+	this.keys = nil
+	this.statement.release()
+	if this.statement.ram == RAMTypeNone {
+		this.dirty = nil
+		this.Dataset = nil
 	}
 }
 
-func (this *Collection) Max(k ikey, v ival) {
-	if cache, ok := this.createCache(ActTypeMax, k, v); ok {
-		this.act(cache)
-	}
+// 关闭时执行,玩家下线
+func (this *Collection) destruct() (err error) {
+	return this.save()
 }
 
-func (this *Collection) Min(k ikey, v ival) {
-	if cache, ok := this.createCache(ActTypeMin, k, v); ok {
-		this.act(cache)
-	}
-}
-
-func (this *Collection) Add(k ikey, v ival) {
-	if cache, ok := this.createCache(ActTypeAdd, k, v); ok && bson.ParseInt64(cache.Val) > 0 {
-		if it := cache.GetIType(); !it.Unique() {
-			cache.AType = ActTypeNew
+// Get 返回item,不可叠加道具只能使用oid获取
+func (this *Collection) Get(key any) (r any) {
+	if oid, err := this.Updater.CreateId(key); err == nil {
+		if i := this.get(oid); i != nil {
+			r = i.Interface()
 		}
-		this.act(cache)
+	} else {
+		logger.Debug(err)
 	}
-}
-
-// Set id= iid||oid ,v=map[string]interface{}
-// v类型为数字时，一律转换为Map{"val":v}
-//
-//	v=map[key]val 中key可以是使用"."操作符号(a.b.c =1)
-func (this *Collection) Set(k ikey, v any) {
-	if cache, ok := this.createCache(ActTypeSet, k, v); ok {
-		this.act(cache)
-	}
-}
-
-func (this *Collection) Del(k ikey) {
-	if cache, ok := this.createCache(ActTypeMin, k, 0); ok {
-		this.act(cache)
-	}
-}
-
-// Get 返回bson.Document
-func (this *Collection) Get(id ikey) any {
-	return this.Document(id)
+	return
 }
 
 // Val 直接获取 item中的val值
-func (this *Collection) Val(id ikey) (r int64) {
-	if doc := this.Document(id); doc != nil {
-		r = doc.GetInt64(ItemNameVAL)
-	}
-	return
-}
-
-func (this *Collection) Bind(k ikey, i any) error {
-	id, err := this.Adapter.CreateId(k)
-	if err != nil {
-		return err
-	}
-	return this.Collection.Unmarshal(id, i)
-}
-
-func (this *Collection) Select(keys ...ikey) {
-	for _, k := range keys {
-		if id, err := this.Adapter.CreateId(k); err == nil {
-			this.base.Select(id)
+func (this *Collection) Val(key any) (r int64) {
+	if oid, err := this.Updater.CreateId(key); err == nil {
+		if i := this.get(oid); i != nil {
+			r = i.VAL()
 		}
 	}
-}
-
-func (this *Collection) Document(k ikey) (doc bson.Document) {
-	if id, err := this.Adapter.CreateId(k); err == nil {
-		doc = this.Collection.Get(id)
-	}
 	return
 }
 
-func (this *Collection) act(cache *Cache) {
-	if this.Error != nil {
+func (this *Collection) Select(keys ...any) {
+	if this.ram == RAMTypeAlways {
 		return
 	}
-	if cache.AType.MustSelect() {
-		this.base.Select(cache.OID)
-	}
-	it := cache.GetIType()
-	if listener, ok := it.(ITypeListener); ok {
-		if this.Error = listener.Listener(this.Adapter, cache); this.Error != nil {
-			return
+	for _, k := range keys {
+		if oid, err := this.Updater.CreateId(k); err == nil && !this.has(oid) {
+			this.keys[oid] = true
+		} else {
+			logger.Debug(err)
 		}
-	}
-	this.base.Act(cache)
-	if this.bulkWrite != nil {
-		_ = this.Verify()
 	}
 }
 
-func (this *Collection) Data() error {
+//func (this *Collection) act(cache *Cache) {
+//	if this.Error != nil {
+//		return
+//	}
+//	if cache.AType.MustSelect() {
+//		this.base.Select(cache.OID)
+//	}
+//	it := cache.GetIType()
+//	if listener, ok := it.(ITypeListener); ok {
+//		if this.Error = listener.Listener(this.Adapter, cache); this.Error != nil {
+//			return
+//		}
+//	}
+//	this.base.Act(cache)
+//	if this.bulkWrite != nil {
+//		_ = this.Verify()
+//	}
+//}
+
+func (this *Collection) Data() (err error) {
 	if this.Error != nil {
 		return this.Error
 	}
-	query := this.base.Fields.Query()
-	if len(query) == 0 {
+	if len(this.keys) == 0 {
 		return nil
 	}
-	defer this.base.Fields.done()
-
-	rows, err := this.model.Getter(this.Adapter, query)
-	if err != nil {
-		return err
-	}
-	for _, row := range rows {
-		if _, err = this.Collection.Set(row, false); err != nil {
-			return err
-		}
-	}
-	return nil
+	keys := this.keys.Keys()
+	err = this.model.Getter(this.Updater, keys, this.Receive)
+	this.keys = nil
+	return
 }
 
 func (this *Collection) Verify() (err error) {
 	if this.Error != nil {
 		return this.Error
 	}
-	defer func() {
-		this.base.acts = nil
-	}()
-	_ = this.BulkWrite()
-	if len(this.base.acts) == 0 {
-		return nil
-	}
-	for _, act := range this.base.acts {
-		if err = this.doAct(act); err != nil {
+	for _, act := range this.statement.operator {
+		if err = this.Parse(act); err != nil {
 			return
 		}
+		if act.Effective() && act.Operator.IsValid() {
+			//this.dirty[act.OID] = act.Ret //todo 修改内存
+		}
 	}
-	return nil
+	return
 }
 
-func (this *Collection) Save() (cache []*Cache, err error) {
+func (this *Collection) Save() (err error) {
 	if this.Error != nil {
-		return nil, this.Error
+		return this.Error
 	}
-	if this.bulkWrite == nil {
-		return
-	}
-	defer func() {
-		if this.Error == nil {
-			this.cache = nil
+	//同步到内存
+	for _, act := range this.statement.operator {
+
+		if act.Operator.IsValid() {
+			if e := this.set(act.Field, act.Ret); e != nil {
+				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,key:%v,val:%v", this.schema.Table, act.Field, act.Ret)
+			} else {
+				this.dirty.Parse(act.Operator, act.OID, act.Field, act.Value)
+			}
 		}
-	}()
-	if err == this.bulkWrite.Save() {
-		cache = this.cache
+	}
+	this.statement.done()
+	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+		logger.Warn("同步数据失败,等待下次同步:%v", err)
+		err = nil
 	}
 	return
 }
 
-// Count 统计iid数量之和(val累加)
-func (this *Collection) Count(iid int32) (r int64) {
-	this.Collection.Range(func(_ string, doc bson.Document) bool {
-		if doc.GetInt32(ItemNameIID) == iid {
-			r += doc.GetInt64(ItemNameVAL)
-		}
-		return true
-	})
-	return
-}
+func (this *Collection) Operator(t dirty.Operator, k any, v any) {
+	cache := dirty.NewCache(t, v)
 
-func (this *Collection) BulkWrite() BulkWrite {
-	if this.bulkWrite == nil {
-		this.bulkWrite = this.model.BulkWrite(this.Adapter, this.model)
-	}
-	return this.bulkWrite
-}
-
-func (this *Collection) createCache(t ActType, k ikey, v ival) (cache *Cache, ok bool) {
-	cache = &Cache{AType: t, Val: v}
-	if bson.IsNumber(v) {
-		cache.Key = ItemNameVAL
+	//del set 使用oid,iid,使用iid时,必须可以无限叠加,具有唯一OID
+	if t == dirty.OperatorTypeDel || t == dirty.OperatorTypeSet {
+		cache.OID, cache.IID, this.Error = this.Updater.ObjectId(k)
 	} else {
-		cache.Key = CacheKeyWildcard
+		cache.IID = ParseInt32(k)
+	}
+	if this.Error != nil || cache.IID <= 0 {
+		return
 	}
 
-	defer func() {
-		if this.Error != nil || cache.IID == 0 {
-			ok = false
+	if t == dirty.OperatorTypeSet {
+		if d := dirty.ParseValue(v); d != nil {
+			cache.Value = d
 		} else {
-			ok = true
+			logger.Warn("Collection.Set参数错误;k:%v,v:%v", k, v)
+			return
 		}
-	}()
-	if IsOID(k) {
-		cache.OID = k.(string)
-		cache.IID, this.Error = Config.ParseId(this.Adapter, cache.OID)
-		return
+	} else if t != dirty.OperatorTypeDel {
+		cache.Field = dataset.ItemNameVAL
+		cache.Value = v
 	}
-	cache.IID = bson.ParseInt32(k)
-	if this.Error != nil || cache.IID == 0 {
-		return
+	//if cache.OID, this.Error = this.Updater.CreateId(cache.IID); this.Error != nil {
+	//	return
+	//}
+	if it := this.Updater.IType(cache.IID); it != nil {
+		if listener, ok := it.(ITypeListener); ok {
+			if this.Error = listener.Listener(this.Updater, cache); this.Error != nil {
+				return
+			}
+		}
 	}
-	it := cache.GetIType()
-	if it == nil {
-		this.Error = ErrITypeNotExist(cache.IID)
-		return
-	}
-	if it.Unique() {
-		cache.OID, this.Error = this.Adapter.CreateId(cache.IID)
-	} else if t != ActTypeAdd && t != ActTypeNew {
-		this.Error = ErrActKeyIllegal(cache)
-		logger.Warn("不可叠加道具只能使用OID进行%v操作:%v", t.String(), k)
-	}
-	return
+	this.statement.Operator(cache)
 }
 
-func (this *Collection) doAct(cache *Cache) (err error) {
+// Receive 接收业务逻辑层数据
+func (this *Collection) Receive(id string, data any) {
+	this.Dataset.Set(id, data)
+}
+
+func (this *Collection) verify(cache *dirty.Cache) (err error) {
 	defer func() {
 		if err == nil {
 			this.base.cache = append(this.base.cache, cache)
@@ -257,7 +270,7 @@ func (this *Collection) doAct(cache *Cache) (err error) {
 			this.base.Error = err
 		}
 	}()
-	val := bson.ParseInt64(cache.Val)
+	val := ParseInt64(cache.Val)
 	//检查扣除道具时数量是否足够
 	if this.Adapter.strict && cache.AType == ActTypeSub {
 		dv := this.Val(cache.OID)

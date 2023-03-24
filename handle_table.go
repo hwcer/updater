@@ -172,7 +172,7 @@ func (this *Table) addAct(t ActType, k int32, v int32) {
 	}
 	it := Config.IType(k)
 	if it == nil {
-		logger.Debug("ParseId IType unknown:%v", k)
+		logger.Debug("ObjectId IType unknown:%v", k)
 		return
 	}
 	if !it.Stackable() {
@@ -316,14 +316,14 @@ func (this *Table) ParseId(id interface{}) (iid int32, oid string, it IType, err
 		if iid, _ = ParseInt32(id); iid > 0 {
 			it = Config.IType(iid)
 			if it == nil {
-				err = fmt.Errorf("ParseId IType unknown:%v", id)
+				err = fmt.Errorf("ObjectId IType unknown:%v", id)
 			} else if !it.Stackable() {
 				err = fmt.Errorf("不可叠加道具不能使用IID进行操作:%v", id)
 			} else {
 				oid, err = it.CreateId(this.base.updater, iid)
 			}
 		} else {
-			err = fmt.Errorf("ParseId args illegal:%v", id)
+			err = fmt.Errorf("ObjectId args illegal:%v", id)
 		}
 	}
 	return

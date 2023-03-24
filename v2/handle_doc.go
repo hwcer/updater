@@ -1,201 +1,294 @@
 package updater
 
 import (
+	"fmt"
 	"github.com/hwcer/cosgo/logger"
-	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/updater/bson"
+	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/updater/v2/dataset"
+	"github.com/hwcer/updater/v2/dirty"
 )
 
-type DocumentModel interface {
-	Getter(adapter *Updater, keys []string) (any, error) //获取数据接口,返回 []byte(bson.raw) , bson.Document
-	Setter(adapter *Updater, update update.Update) error //保存数据接口
+/*
+建议使用 Document.Get(nil) 获取dataset.(struct) 直接读struct字段
+切记不要直接修改dataset
+建议使用dataset中实现以下接口提高性能
+
+	Get(k string) any              //获取k的值
+	Set(k string, v any) error    //设置k值的为v
+*/
+type documentModel interface {
+	New(update *Updater, init bool) (any, error)                  //获取对象,init==true时需要初始化对象(从数据库中获取值)
+	Getter(update *Updater, model any, keys []string) error       //获取数据接口,需要对data进行赋值
+	Setter(update *Updater, model any, data map[string]any) error //保存数据接口,需要从data中取值
 }
+
+//type documentGet interface {
+//	Get(string) any
+//}
+//type documentSet interface {
+//	Set(k string, v any) error
+//}
+
+type documentKeys map[string]bool
+type documentDirty map[string]any
+
+func (this documentKeys) Keys() (r []string) {
+	for k, _ := range this {
+		r = append(r, k)
+	}
+	return
+}
+func (this documentKeys) Merge(src documentKeys) {
+	for k, v := range src {
+		this[k] = v
+	}
+}
+
+//func (this documentDirty) Merge(src dirty.Value) {
+//	for k, v := range src {
+//		if s, ok := k.(string); ok {
+//			this[s] = v
+//		}
+//	}
+//}
 
 // Document 文档存储
 type Document struct {
-	base
-	bson.Document
-	model  DocumentModel
-	update update.Update
+	*statement
+	keys   documentKeys
+	dirty  documentDirty
+	model  documentModel //handle model
+	fields documentKeys  //非内存模式已经初始化的字段
+	schema *schema.Schema
+	//update  map[string]any //更新器
+	dataset any
 }
 
-func NewDocument(adapter *Updater, model any) Handle {
+func NewDocument(u *Updater, model any, ram RAMType) Handle {
 	r := &Document{}
-	r.base = *NewBase(adapter)
-	r.model = model.(DocumentModel)
+	r.model = model.(documentModel)
+	r.statement = NewStatement(u, ram, r.Operator)
 	return r
 }
 
+// Has 查询key(DBName)是否已经初始化
+func (this *Document) has(key string) (r bool) {
+	if this.statement.ram == RAMTypeAlways || (this.keys != nil && this.keys[key]) || (this.fields != nil && this.fields[key]) {
+		return true
+	}
+	if this.dirty != nil {
+		_, r = this.dirty[key]
+	}
+	return false
+}
+
+func (this *Document) set(k string, v any) (err error) {
+	if i, ok := this.dataset.(dataset.ModelSet); ok {
+		return i.Set(k, v)
+	}
+	err = this.schema.SetValue(this.dataset, k, v)
+	logger.Debug("建议给%v添加Set接口提升性能", this.schema.Name)
+	return
+}
+func (this *Document) get(k string) (r any) {
+	if this.dirty != nil {
+		var ok bool
+		if r, ok = this.dirty[k]; ok {
+			return //执行过程中修改
+		}
+	}
+	if i, ok := this.dataset.(dataset.ModelGet); ok {
+		return i.Get(k)
+	}
+	r = this.schema.GetValue(this.dataset, k)
+	logger.Debug("建议给%v添加Get接口提升性能", this.schema.Name)
+	return
+}
+func (this *Document) val(k string) (r int64) {
+	if v := this.get(k); v != nil {
+		r = ParseInt64(v)
+	}
+	return
+}
+
+//func (this *Document) Merge(src dirty.Value) (err error) {
+//	for k, v := range src {
+//		if s, ok := k.(string); ok {
+//			if err = this.set(s, v); err != nil {
+//				return
+//			}
+//		}
+//	}
+//	return
+//}
+
+func (this *Document) save() (err error) {
+	if len(this.dirty) == 0 {
+		return
+	}
+	if err = this.model.Setter(this.statement.Updater, this.dataset, this.dirty); err == nil {
+		this.dirty = nil
+	}
+	return
+}
+
+// reset 运行时开始时
 func (this *Document) reset() {
-	this.base.reset()
-	this.Document = bson.New()
+	this.keys = documentKeys{}
+	if this.dirty == nil {
+		this.dirty = documentDirty{}
+	}
+	if this.fields == nil && this.statement.ram != RAMTypeAlways {
+		this.fields = documentKeys{}
+	}
+	if this.dataset == nil {
+		if this.statement.ram == RAMTypeAlways {
+			this.dataset, this.Error = this.model.New(this.statement.Updater, true)
+		} else {
+			this.dataset, this.Error = this.model.New(this.statement.Updater, false)
+		}
+	}
+	if this.schema == nil {
+		this.schema, this.Error = schema.Parse(this.dataset)
+	}
 }
 
+// release 运行时释放
 func (this *Document) release() {
-	this.update = nil
-	this.base.release()
-	this.Document = nil
-}
-func (this *Document) Del(k ikey) {
-	this.act(ActTypeDel, k, nil)
-}
-
-func (this *Document) Add(k ikey, v ival) {
-	this.act(ActTypeAdd, k, v)
+	this.keys = nil
+	this.statement.release()
+	if this.statement.ram == RAMTypeNone {
+		this.dirty = nil
+		this.fields = nil
+		this.dataset = nil
+	}
 }
 
-func (this *Document) Sub(k ikey, v ival) {
-	this.act(ActTypeSub, k, v)
+// 关闭时执行,玩家下线
+func (this *Document) destruct() (err error) {
+	return this.save()
 }
 
-func (this *Document) Max(k ikey, v ival) {
-	this.act(ActTypeMax, k, v)
-}
-
-func (this *Document) Min(k ikey, v ival) {
-	this.act(ActTypeMin, k, v)
-}
-
-// Set 设置字段值,  k：int32 ,string(可以使用 . 操作符操作子对象字段)
-func (this *Document) Set(k ikey, v any) {
-	this.act(ActTypeSet, k, v)
-}
-
-// Get 同Element仅仅包装接口
-// k：int32 ,string(可以使用 . 操作符操作子对象字段)
-func (this *Document) Get(k ikey) any {
-	return this.Element(k)
-}
-
-func (this *Document) Val(k ikey) (r int64) {
-	if ele := this.Element(k); ele != nil {
-		r = ele.GetInt64()
+// Get k==nil 获取的是整个struct
+// 不建议使用GET获取特定字段值
+func (this *Document) Get(k any) (r any) {
+	if k == nil || this.dataset == nil {
+		return this.dataset
+	}
+	if _, key, err := this.ObjectId(k); err == nil {
+		r = this.get(key)
 	}
 	return
 }
 
-// Bind 数据绑定,k为空时绑定当前对象，否则递归查找子对象并绑定
-// k 可以使用.符合 递归子对象
-// 绑定整个Document时 k="" 或者 k="."
-func (this *Document) Bind(k ikey, i interface{}) (err error) {
-	if ele := this.Element(k); ele != nil {
-		err = ele.Unmarshal(i)
+// Val 不建议使用Val获取特定字段值的int64值
+func (this *Document) Val(k any) (r int64) {
+	if v := this.Get(k); v != nil {
+		r = ParseInt64(v)
 	}
 	return
 }
 
-func (this *Document) Select(keys ...ikey) {
+func (this *Document) Select(keys ...any) {
+	if this.ram == RAMTypeAlways {
+		return
+	}
 	for _, k := range keys {
-		if field, err := this.Adapter.CreateId(k); err == nil {
-			this.base.Select(field)
+		if _, key, err := this.ObjectId(k); err == nil && !this.has(key) {
+			this.keys[key] = true
 		} else {
 			logger.Warn(err)
 		}
 	}
 }
 
-func (this *Document) Element(k ikey) (r *bson.Element) {
-	field, err := this.Adapter.CreateId(k)
-	if err == nil {
-		r = this.Document.Get(field)
-	} else {
-		logger.Warn(err)
+func (this *Document) Data() (err error) {
+	if this.Error != nil {
+		return this.Error
 	}
-	return
-}
-
-func (this *Document) act(t ActType, k ikey, v ival) {
-	var err error
-	defer func() {
-		if err != nil {
-			this.Error = err
-		}
-	}()
-
-	cache := &Cache{AType: t, Val: v}
-	cache.IID, cache.Key, err = this.ParseId(k)
-	if err != nil {
-		return
-	}
-	this.base.Select(cache.Key)
-	it := cache.GetIType()
-	if listener, ok := it.(ITypeListener); ok {
-		if this.Error = listener.Listener(this.Adapter, cache); this.Error != nil {
-			return
-		}
-	}
-	this.base.Act(cache)
-	if this.update != nil {
-		_ = this.Verify()
-	}
-}
-
-func (this *Document) Data() error {
-	keys := this.base.Fields.keys
-	if len(keys) == 0 {
+	if len(this.keys) == 0 {
 		return nil
 	}
-	defer this.base.Fields.done()
-	data, err := this.model.Getter(this.Adapter, keys)
-	if err != nil {
-		return err
+	keys := this.keys.Keys()
+	if err = this.model.Getter(this.Updater, this.dataset, keys); err == nil {
+		this.fields.Merge(this.keys)
 	}
-	doc, err := bson.Marshal(data)
-	if err != nil {
-		return err
-	}
-	this.Document.Merge(doc, false)
-	return nil
+	this.keys = nil
+	return
 }
 
 func (this *Document) Verify() (err error) {
 	if this.Error != nil {
 		return this.Error
 	}
-	defer func() {
-		if err == nil {
-			this.cache = append(this.cache, this.acts...)
-			this.acts = nil
-		} else {
-			this.update = nil
-			this.base.Error = err
-		}
-	}()
-	if this.update == nil {
-		this.update = update.New()
-	}
-	if len(this.base.acts) == 0 {
+	if len(this.statement.operator) == 0 {
 		return
 	}
-	for _, act := range this.base.acts {
-		if err = documentParse(this, act); err != nil {
+	for _, act := range this.statement.operator {
+		if err = this.Parse(act); err != nil {
 			return
 		}
+		if act.Effective() && act.Operator.IsValid() {
+			this.dirty[act.Field] = act.Value
+		}
 	}
 	return
 }
 
-func (this *Document) Save() (cache []*Cache, err error) {
+func (this *Document) Save() (err error) {
 	if this.Error != nil {
-		return nil, this.Error
+		return this.Error
 	}
-	if this.update == nil || len(this.update) == 0 {
+	//同步到内存
+	for _, act := range this.statement.operator {
+		if act.Operator.IsValid() {
+			if e := this.set(act.Field, act.Value); e != nil {
+				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,value:%v", this.schema.Table, act.Value)
+			} else if !act.Effective() {
+				this.dirty[act.Field] = act.Value
+			}
+		}
+	}
+	this.statement.done()
+	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+		logger.Warn("数据库[%v]同步数据错误,等待下次同步:%v", this.schema.Table, err)
+		err = nil
+	}
+	return
+}
+
+func (this *Document) ObjectId(k any) (iid int32, key string, err error) {
+	key, iid, err = this.Updater.ObjectId(k)
+	if err == nil {
+		field := this.schema.LookUpField(key)
+		if field != nil {
+			key = field.DBName
+		} else {
+			err = fmt.Errorf("document field not exist")
+		}
+	}
+	return
+}
+
+func (this *Document) Operator(t dirty.Operator, k any, v any) {
+	if t == dirty.OperatorTypeDel {
+		logger.Debug("updater document del is disabled")
 		return
 	}
-	if err = this.model.Setter(this.Adapter, this.update); err == nil {
-		cache = this.base.cache
-		this.base.cache = nil
+	cache := dirty.NewCache(t, v)
+	cache.IID, cache.Field, this.Error = this.ObjectId(k)
+	if this.Error != nil {
+		return
 	}
-	return
-}
-
-func (this *Document) ParseId(k ikey) (iid int32, oid string, err error) {
-	if IsOID(k) {
-		oid = k.(string)
-		iid, _ = this.Adapter.ParseId(k)
-	} else {
-		iid = bson.ParseInt32(k)
-		oid, err = this.Adapter.CreateId(k)
+	if !this.has(cache.Field) {
+		this.keys[cache.Field] = true
 	}
-	return
+	if it := this.Updater.IType(cache.IID); it != nil {
+		if listener, ok := it.(ITypeListener); ok {
+			if this.Error = listener.Listener(this.Updater, cache); this.Error != nil {
+				return
+			}
+		}
+	}
+	this.statement.Operator(cache)
 }

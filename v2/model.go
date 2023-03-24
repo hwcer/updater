@@ -9,11 +9,11 @@ type Parser string
 
 const (
 	ParserTypeHash       Parser = "hash"       //Map[string]int64模式
-	ParserTypeDocument          = "document"   //Document
-	ParserTypeCollection        = "collection" //Collection 模式
+	ParserTypeDocument          = "document"   //Document 单文档模式
+	ParserTypeCollection        = "collection" //Collection 文档集合模式
 )
 
-var handles = make(map[Parser]func(adapter *Updater, model any) Handle)
+var handles = make(map[Parser]func(updater *Updater, model any, ram RAMType) Handle)
 
 func init() {
 	handles[ParserTypeHash] = NewHash
@@ -22,7 +22,7 @@ func init() {
 }
 
 // NewHandle 注册新解析器
-func NewHandle(name Parser, f func(adapter *Updater, model any) Handle) {
+func NewHandle(name Parser, f func(adapter *Updater, model any, ram RAMType) Handle) {
 	handles[name] = f
 }
 

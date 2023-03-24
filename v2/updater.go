@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/utils"
-	"github.com/hwcer/updater/bson"
 	"time"
 )
 
@@ -210,7 +209,7 @@ func (u *Updater) Cache() (ret []*Cache) {
 }
 
 // IType 通过ikey获取IType
-func (u *Updater) IType(k ikey) (it IType) {
+func (u *Updater) IType(k any) (it IType) {
 	if iid, err := u.ParseId(k); err == nil {
 		id := Config.IType(iid)
 		it = itypesDict[id]
@@ -218,34 +217,43 @@ func (u *Updater) IType(k ikey) (it IType) {
 	return
 }
 
-func (u *Updater) ParseId(id ikey) (iid int32, err error) {
-	if IsIID(id) {
-		return bson.ParseInt32(id), nil
-	}
-	switch v := id.(type) {
-	case string:
+func (u *Updater) ParseId(key any) (iid int32, err error) {
+	if v, ok := key.(string); ok {
 		iid, err = Config.ParseId(u, v)
-	default:
-		err = fmt.Errorf("parse key illegal:%v", id)
+	} else {
+		iid = ParseInt32(key)
 	}
 	return
 }
 
 // CreateId 通过IID创建OID,不可堆叠道具，不可使用此接口
-func (u *Updater) CreateId(k ikey) (oid string, err error) {
-	if IsOID(k) {
-		return k.(string), nil
+func (u *Updater) CreateId(key any) (oid string, err error) {
+	if v, ok := key.(string); ok {
+		return v, nil
 	}
-	iid := bson.ParseInt32(k)
+	iid := ParseInt32(key)
 	itk := Config.IType(iid)
 	itv := itypesDict[itk]
 	if itv == nil {
-		return "", fmt.Errorf("IType unknown:%v", k)
+		return "", fmt.Errorf("IType unknown:%v", iid)
 	}
 	if !itv.Unique() {
-		return "", fmt.Errorf("IType is not unique:%v", k)
+		return "", fmt.Errorf("item IType not unique:%v", iid)
 	}
 	return itv.CreateId(u, iid)
+}
+
+// ObjectId 根据id(iid,oid)同时获取iid,oid/key
+func (u *Updater) ObjectId(id any) (oid string, iid int32, err error) {
+	switch v := id.(type) {
+	case string:
+		oid = v
+		iid, err = u.ParseId(oid)
+	default:
+		iid = ParseInt32(id)
+		oid, err = u.CreateId(iid)
+	}
+	return
 }
 
 // Handle 根据 name(string)

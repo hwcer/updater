@@ -41,7 +41,7 @@ func ErrCreateIdUnknown(name string) *ErrMsg {
 }
 
 func ErrDataNotExist(oid string) *ErrMsg {
-	return NewError("Data Not Exist", oid)
+	return NewError("data Not Exist", oid)
 }
 
 func ErrActValIllegal(act *Cache) *ErrMsg {
