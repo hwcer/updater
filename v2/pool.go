@@ -13,18 +13,20 @@ type pool struct {
 
 func init() {
 	Pool.Pool.New = func() any {
-		return New()
+		return New("")
 	}
 }
 
 func (p *pool) Acquire(uid string, ctx context.Context) *Updater {
 	i := p.Pool.Get()
 	v, _ := i.(*Updater)
-	v.Reset(uid, ctx)
+	v.uid = uid
+	v.Reset(ctx)
 	return v
 }
 
 func (p *pool) Release(v *Updater) {
 	v.Release()
+	v.uid = ""
 	p.Pool.Put(v)
 }

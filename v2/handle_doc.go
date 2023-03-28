@@ -17,17 +17,10 @@ import (
 	Set(k string, v any) error    //设置k值的为v
 */
 type documentModel interface {
-	New(update *Updater, init bool) (any, error)                  //获取对象,init==true时需要初始化对象(从数据库中获取值)
+	Init(update *Updater, init bool) (any, error)                 //获取对象,init==true时需要初始化对象(从数据库中获取值)
 	Getter(update *Updater, model any, keys []string) error       //获取数据接口,需要对data进行赋值
 	Setter(update *Updater, model any, data map[string]any) error //保存数据接口,需要从data中取值
 }
-
-//type documentGet interface {
-//	Get(string) any
-//}
-//type documentSet interface {
-//	Set(k string, v any) error
-//}
 
 type documentKeys map[string]bool
 type documentDirty map[string]any
@@ -43,14 +36,6 @@ func (this documentKeys) Merge(src documentKeys) {
 		this[k] = v
 	}
 }
-
-//func (this documentDirty) Merge(src dirty.Value) {
-//	for k, v := range src {
-//		if s, ok := k.(string); ok {
-//			this[s] = v
-//		}
-//	}
-//}
 
 // Document 文档存储
 type Document struct {
@@ -91,12 +76,6 @@ func (this *Document) set(k string, v any) (err error) {
 	return
 }
 func (this *Document) get(k string) (r any) {
-	if this.dirty != nil {
-		var ok bool
-		if r, ok = this.dirty[k]; ok {
-			return //执行过程中修改
-		}
-	}
 	if i, ok := this.dataset.(dataset.ModelGet); ok {
 		return i.Get(k)
 	}
@@ -104,23 +83,17 @@ func (this *Document) get(k string) (r any) {
 	logger.Debug("建议给%v添加Get接口提升性能", this.schema.Name)
 	return
 }
+
 func (this *Document) val(k string) (r int64) {
+	if v, ok := this.values[k]; ok {
+		return v
+	}
 	if v := this.get(k); v != nil {
 		r = ParseInt64(v)
+		this.values[k] = r
 	}
 	return
 }
-
-//func (this *Document) Merge(src dirty.Value) (err error) {
-//	for k, v := range src {
-//		if s, ok := k.(string); ok {
-//			if err = this.set(s, v); err != nil {
-//				return
-//			}
-//		}
-//	}
-//	return
-//}
 
 func (this *Document) save() (err error) {
 	if len(this.dirty) == 0 {
@@ -135,6 +108,7 @@ func (this *Document) save() (err error) {
 // reset 运行时开始时
 func (this *Document) reset() {
 	this.keys = documentKeys{}
+	this.statement.reset()
 	if this.dirty == nil {
 		this.dirty = documentDirty{}
 	}
@@ -143,9 +117,9 @@ func (this *Document) reset() {
 	}
 	if this.dataset == nil {
 		if this.statement.ram == RAMTypeAlways {
-			this.dataset, this.Error = this.model.New(this.statement.Updater, true)
+			this.dataset, this.Error = this.model.Init(this.statement.Updater, true)
 		} else {
-			this.dataset, this.Error = this.model.New(this.statement.Updater, false)
+			this.dataset, this.Error = this.model.Init(this.statement.Updater, false)
 		}
 	}
 	if this.schema == nil {
@@ -172,10 +146,7 @@ func (this *Document) destruct() (err error) {
 // Get k==nil 获取的是整个struct
 // 不建议使用GET获取特定字段值
 func (this *Document) Get(k any) (r any) {
-	if k == nil || this.dataset == nil {
-		return this.dataset
-	}
-	if _, key, err := this.ObjectId(k); err == nil {
+	if key, err := this.ObjectId(k); err == nil {
 		r = this.get(key)
 	}
 	return
@@ -183,8 +154,8 @@ func (this *Document) Get(k any) (r any) {
 
 // Val 不建议使用Val获取特定字段值的int64值
 func (this *Document) Val(k any) (r int64) {
-	if v := this.Get(k); v != nil {
-		r = ParseInt64(v)
+	if key, err := this.ObjectId(k); err == nil {
+		r = this.val(key)
 	}
 	return
 }
@@ -194,7 +165,7 @@ func (this *Document) Select(keys ...any) {
 		return
 	}
 	for _, k := range keys {
-		if _, key, err := this.ObjectId(k); err == nil && !this.has(key) {
+		if key, err := this.ObjectId(k); err == nil && !this.has(key) {
 			this.keys[key] = true
 		} else {
 			logger.Warn(err)
@@ -228,10 +199,8 @@ func (this *Document) Verify() (err error) {
 		if err = this.Parse(act); err != nil {
 			return
 		}
-		if act.Effective() && act.Operator.IsValid() {
-			this.dirty[act.Field] = act.Value
-		}
 	}
+	this.statement.verified = true
 	return
 }
 
@@ -242,10 +211,10 @@ func (this *Document) Save() (err error) {
 	//同步到内存
 	for _, act := range this.statement.operator {
 		if act.Operator.IsValid() {
-			if e := this.set(act.Field, act.Value); e != nil {
+			if e := this.set(act.Key, act.Value); e != nil {
 				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,value:%v", this.schema.Table, act.Value)
-			} else if !act.Effective() {
-				this.dirty[act.Field] = act.Value
+			} else {
+				this.dirty[act.Key] = act.Value
 			}
 		}
 	}
@@ -257,8 +226,13 @@ func (this *Document) Save() (err error) {
 	return
 }
 
-func (this *Document) ObjectId(k any) (iid int32, key string, err error) {
-	key, iid, err = this.Updater.ObjectId(k)
+func (this *Document) ObjectId(k any) (key string, err error) {
+	switch v := k.(type) {
+	case string:
+		key = v
+	default:
+		key, err = this.Updater.CreateId(v)
+	}
 	if err == nil {
 		field := this.schema.LookUpField(key)
 		if field != nil {
@@ -276,19 +250,16 @@ func (this *Document) Operator(t dirty.Operator, k any, v any) {
 		return
 	}
 	cache := dirty.NewCache(t, v)
-	cache.IID, cache.Field, this.Error = this.ObjectId(k)
+	cache.OID = this.schema.Table
+	cache.Key, this.Error = this.ObjectId(k)
 	if this.Error != nil {
 		return
 	}
-	if !this.has(cache.Field) {
-		this.keys[cache.Field] = true
-	}
-	if it := this.Updater.IType(cache.IID); it != nil {
-		if listener, ok := it.(ITypeListener); ok {
-			if this.Error = listener.Listener(this.Updater, cache); this.Error != nil {
-				return
-			}
-		}
+	if !this.has(cache.Key) {
+		this.keys[cache.Key] = true
 	}
 	this.statement.Operator(cache)
+	if this.verified {
+		_ = this.Verify()
+	}
 }

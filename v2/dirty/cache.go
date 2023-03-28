@@ -7,13 +7,14 @@ func NewCache(t Operator, v any) *Cache {
 //type CacheHandle func(c *Cache, k, v any) any
 
 type Cache struct {
-	OID       string   `json:"o"` //object id
-	IID       int32    `json:"i"` //item id
-	Field     string   `json:"k"` //字段名
-	Value     any      `json:"v"` //增量
-	Result    any      `json:"r"` //结果,类型和Value一样
-	Operator  Operator `json:"t"` //操作类型
-	effective bool     //立即生效,仅在需要最终一致时使用,比如体力自动回复
+	OID    string `json:"o,omitempty"` //object id
+	IID    int32  `json:"i,omitempty"` //item id
+	Key    string `json:"k,omitempty"` //字段名
+	Value  any    `json:"v"`           //增量
+	Result any    `json:"r"`           //结果,类型和Value一样
+	//update   Update
+	Operator Operator `json:"t"` //操作类型
+	//effective bool //立即生效,仅在需要最终一致时使用,比如体力自动回复
 }
 
 //func (this *Cache) Do(f CacheHandle) {
@@ -22,12 +23,23 @@ type Cache struct {
 //	}
 //}
 
-// Enable 开启立即生效模式
-func (this *Cache) Enable() {
-	this.effective = true
+func (this *Cache) Update() Update {
+	if r := ParseUpdate(this.Value); r != nil {
+		return r
+	}
+	key := this.Key
+	if key == "" {
+		key = "val"
+	}
+	return NewUpdate(key, this.Value)
 }
 
-// Effective 是否立即生效
-func (this *Cache) Effective() bool {
-	return this.effective
-}
+// Enable 开启立即生效模式
+//func (this *Cache) Enable() {
+//	this.effective = true
+//}
+//
+//// Effective 是否立即生效
+//func (this *Cache) Effective() bool {
+//	return this.effective
+//}

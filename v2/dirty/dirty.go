@@ -2,11 +2,16 @@ package dirty
 
 import (
 	"github.com/hwcer/cosgo/logger"
-	"github.com/hwcer/cosmo"
 )
 
 func New() Dirty {
 	return Dirty{}
+}
+
+type BulkWrite interface {
+	Update(data any, where ...any)
+	Insert(documents ...any)
+	Delete(where ...any)
 }
 
 type Dirty map[string]*Data
@@ -38,13 +43,13 @@ func (this Dirty) Update(operator Operator, id string, src any) {
 }
 
 // BulkWrite 使用Dirty数据填充BulkWrite
-func (this Dirty) BulkWrite(bulkWrite *cosmo.BulkWrite) *cosmo.BulkWrite {
+func (this Dirty) BulkWrite(bulkWrite BulkWrite) BulkWrite {
 	for k, v := range this {
 		switch v.bulkWrite {
 		case BulkWriteTypeDelete:
 			bulkWrite.Delete(k)
 		case BulkWriteTypeCreate:
-			bulkWrite.Insert(v.data)
+			bulkWrite.Insert(v.data.([]any)...)
 		case BulkWriteTypeUpdate:
 			bulkWrite.Update(v.Update, k)
 		}

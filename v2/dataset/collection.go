@@ -28,6 +28,16 @@ func (this Collection) Del(id string) {
 	delete(this, id)
 }
 
+func (this Collection) Count(iid int32) (r int64) {
+	//TODO 索引
+	for _, v := range this {
+		if v.IID() == iid {
+			r += v.VAL()
+		}
+	}
+	return
+}
+
 // Update 更新信息
 func (this Collection) Update(operator dirty.Operator, id string, src any) (err error) {
 	switch operator {

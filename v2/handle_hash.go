@@ -1,9 +1,14 @@
 package updater
 
-import "github.com/hwcer/updater/v2/dirty"
+import (
+	"fmt"
+	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/updater/v2/dirty"
+)
 
 type hashModel interface {
-	New(u *Updater, symbol any) (map[int32]int64, error)                  //获取所有数据集
+	Init(u *Updater, symbol any) (map[int32]int64, error)                 //获取所有数据集
 	Symbol(u *Updater) any                                                //获取信息标识符号,如果和当前不一样将会重置数据
 	Getter(u *Updater, symbol any, keys []int32) (map[int32]int64, error) //获取数据接口,返回 []byte(bson.raw) , bson.Document
 	Setter(u *Updater, symbol any, update map[int32]int64) error          //保存数据接口
@@ -28,6 +33,7 @@ func (data hashData) Merge(src hashData) {
 // Hash HashMAP储存
 type Hash struct {
 	*statement
+	db      string
 	keys    hashKeys
 	model   hashModel
 	symbol  any      //标记时效性
@@ -39,6 +45,11 @@ func NewHash(u *Updater, model any, ram RAMType) Handle {
 	r := &Hash{}
 	r.model = model.(hashModel)
 	r.statement = NewStatement(u, ram, r.Operator)
+	if sch, err := schema.Parse(model); err == nil {
+		r.db = sch.Table
+	} else {
+		logger.Fatal(err)
+	}
 	return r
 }
 
@@ -59,14 +70,14 @@ func (this *Hash) has(key int32) (r bool) {
 	}
 	return
 }
-func (this *Hash) get(k int32) (r int64) {
-	if this.dirty != nil {
-		var ok bool
-		if r, ok = this.dirty[k]; ok {
-			return
-		}
+
+func (this *Hash) val(iid int32) (r int64) {
+	if v, ok := this.values[iid]; ok {
+		return v
 	}
-	return this.dataset[k]
+	r = this.dataset[iid]
+	this.values[iid] = r
+	return r
 }
 
 func (this *Hash) save() (err error) {
@@ -93,7 +104,7 @@ func (this *Hash) reset() {
 	}
 	if this.dataset == nil {
 		if this.statement.ram == RAMTypeAlways {
-			this.dataset, this.Error = this.model.New(this.statement.Updater, this.symbol)
+			this.dataset, this.Error = this.model.Init(this.statement.Updater, this.symbol)
 		} else {
 			this.dataset = hashData{}
 		}
@@ -117,13 +128,13 @@ func (this *Hash) destruct() (err error) {
 
 func (this *Hash) Get(k any) (r any) {
 	if id, _ := k.(int32); id > 0 {
-		r = this.get(id)
+		r = this.val(id)
 	}
 	return
 }
 func (this *Hash) Val(k any) (r int64) {
 	if id, _ := k.(int32); id > 0 {
-		r = this.get(id)
+		r = this.val(id)
 	}
 	return
 }
@@ -162,16 +173,15 @@ func (this *Hash) Verify() (err error) {
 		return this.Error
 	}
 	if len(this.statement.operator) == 0 {
+		fmt.Printf("hash operator为空")
 		return
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
 			return
 		}
-		if act.Effective() && act.Operator.IsValid() {
-			this.dirty[act.IID] = act.Result.(int64)
-		}
 	}
+	this.statement.verified = true
 	return
 }
 
@@ -197,19 +207,13 @@ func (this *Hash) Operator(t dirty.Operator, k any, v any) {
 		return
 	}
 	cache := dirty.NewCache(t, v)
+	cache.OID = this.db
 	cache.IID = id
 	if !this.has(id) {
 		this.keys[id] = true
 	}
-	if it := this.Updater.IType(cache.IID); it != nil {
-		if listener, ok := it.(ITypeListener); ok {
-			if this.Error = listener.Listener(this.statement.Updater, cache); this.Error != nil {
-				return
-			}
-		}
-	}
 	this.statement.Operator(cache)
-	//if this.update != nil {
-	//	_ = this.Verify()
-	//}
+	if this.verified {
+		_ = this.Verify()
+	}
 }

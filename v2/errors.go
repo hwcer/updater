@@ -57,10 +57,11 @@ func ErrActKeyIllegal(act *dirty.Cache) *ErrMsg {
 	return NewError("act key illegal", act.IID)
 }
 
-//
-//var (
-//	ErrFieldNotExist    = NewError("field not exist")
-//	ErrHashModelIllegal = NewError("hash mode illegal")
-//
-//	//ErrActValIllegal = NewError("act val illegal")
-//)
+var (
+	ErrUidEmpty = NewError("user id empty")
+	//ErrFieldNotExist    = NewError("field not exist")
+	//ErrFieldNotExist    = NewError("field not exist")
+	//ErrHashModelIllegal = NewError("hash mode illegal")
+
+	//ErrActValIllegal = NewError("act val illegal")
+)

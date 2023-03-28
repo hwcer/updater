@@ -1,45 +1,70 @@
 package test
 
 import (
-	"encoding/json"
-	"github.com/hwcer/cosgo/logger"
+	"errors"
+	"fmt"
 	"github.com/hwcer/updater/v2"
+	"github.com/hwcer/updater/v2/dirty"
+	"strconv"
+	"strings"
+	"sync/atomic"
 )
 
-func Acquire(uid string) *updater.Updater {
-	return updater.Pool.Acquire(uid, nil)
+const Split = "-"
+const Userid = "test"
+
+func init() {
+	updater.Config.IMax = func(iid int32) int64 {
+		return 0
+	}
+	updater.Config.IType = func(iid int32) int32 {
+		s := strconv.Itoa(int(iid))
+		v, _ := strconv.ParseInt(s[0:2], 10, 32)
+		return int32(v)
+	}
+	updater.Config.ParseId = ParseId
 }
 
-func Release(v *updater.Updater) {
-	updater.Pool.Release(v)
-}
-
-type operator struct {
-	Cmd   string
-	Data  any
-	Where any
-}
-
-type BulkWrite struct {
-	operator []operator
-}
-
-func (this *BulkWrite) Save() (err error) {
-	for _, op := range this.operator {
-		b, _ := json.Marshal(op)
-		logger.Info("%v", string(b))
+// ParseId  oid TO iid
+func ParseId(_ *updater.Updater, oid string) (iid int32, err error) {
+	arr := strings.Split(oid, Split)
+	if len(arr) < 2 {
+		return 0, fmt.Errorf("oid错误:%v", oid)
+	}
+	var v int
+	if v, err = strconv.Atoi(arr[1]); err == nil {
+		iid = int32(v)
 	}
 	return
 }
 
-func (this *BulkWrite) Update(data interface{}, where ...interface{}) {
-	this.operator = append(this.operator, operator{"Update", data, where})
+type iType struct {
+	id     int32
+	seed   int32
+	unique bool
 }
 
-func (this *BulkWrite) Insert(documents ...interface{}) {
-	this.operator = append(this.operator, operator{"Insert", documents, nil})
+func (this *iType) Id() int32 {
+	return this.id
 }
 
-func (this *BulkWrite) Delete(where ...interface{}) {
-	this.operator = append(this.operator, operator{"Delete", nil, where})
+func (this *iType) New(_ *updater.Updater, cache *dirty.Cache) (any, error) {
+	return nil, errors.New("没有重载New方法，理论上不应该调用此方法，请检查代码")
+}
+
+func (this *iType) Unique() bool {
+	return this.unique
+}
+
+// CreateId 创建道具唯一ID，注意要求可以使用itypes.go中ParseId函数解析
+func (this *iType) CreateId(a *updater.Updater, iid int32) (string, error) {
+	b := strings.Builder{}
+	b.WriteString(a.Uid())
+	b.WriteString(Split)
+	b.WriteString(strconv.Itoa(int(iid)))
+	if !this.Unique() {
+		b.WriteString(Split)
+		b.WriteString(strconv.Itoa(int(atomic.AddInt32(&this.seed, 1))))
+	}
+	return b.String(), nil
 }

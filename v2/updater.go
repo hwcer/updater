@@ -5,44 +5,39 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/utils"
+	"github.com/hwcer/updater/v2/dirty"
 	"time"
 )
 
 type Updater struct {
-	ctx     context.Context
-	uid     string
-	dict    map[string]Handle
-	time    *utils.DateTime
-	cache   []*Cache
-	strict  bool //严格模式下使用sub会检查数量
-	events  map[EventsType][]EventsHandle
-	changed bool
-	//overflow map[int32]int64 //道具溢出,需要使用邮件等其他方式处理
+	ctx       context.Context
+	uid       string
+	dict      map[string]Handle
+	time      *utils.DateTime
+	plugs     map[plugsType][]plugsHandle
+	changed   bool
+	emitter   emitter
+	tolerance bool //宽容模式下,扣除道具不足时允许扣成0,而不是报错
 }
 
-func New() (u *Updater) {
-	u = &Updater{}
+func New(uid string) (u *Updater) {
+	u = &Updater{uid: uid}
 	u.dict = make(map[string]Handle)
 	for _, model := range modelsRank {
-		parser := model.Parser()
-		u.dict[model.Name] = handles[parser](u, model.iModel)
+		u.dict[model.name] = handles[model.parser](u, model.model, model.ram)
 	}
 	u.Release()
 	return
 }
 
 // Reset 重置
-func (u *Updater) Reset(uid string, ctx context.Context) {
-	if u.uid != "" {
-		logger.Fatal("请不要重复调用Reset")
-	}
-	u.uid = uid
+func (u *Updater) Reset(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	u.ctx = context.WithValue(ctx, "", nil)
 	u.time = utils.Time.New(time.Now())
-	u.events = make(map[EventsType][]EventsHandle)
+	//u.plugs = map[plugsType][]plugsHandle{}
 	//u.overflow = make(map[int32]int64)
 	for _, w := range u.dict {
 		w.reset()
@@ -51,28 +46,13 @@ func (u *Updater) Reset(uid string, ctx context.Context) {
 
 // Release 释放
 func (u *Updater) Release() {
-	u.uid = ""
 	u.ctx = nil
-	u.cache = nil
-	u.strict = true
-	u.events = nil
+	u.plugs = nil
 	u.changed = false
+	u.tolerance = false
 	for _, w := range u.dict {
 		w.release()
 	}
-}
-
-func (u *Updater) Emit(t EventsType) (err error) {
-	for _, f := range u.events[t] {
-		if err = f(u); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func (u *Updater) On(t EventsType, f EventsHandle) {
-	u.events[t] = append(u.events[t], f)
 }
 
 func (u *Updater) Uid() string {
@@ -82,85 +62,83 @@ func (u *Updater) Time() *utils.DateTime {
 	return u.time
 }
 
-// Strict true:检查sub, false: 不检查
-func (u *Updater) Strict(b bool) {
-	u.strict = b
+// Tolerance 开启宽容模式,道具不足时扣成0
+func (u *Updater) Tolerance() {
+	u.tolerance = true
 }
 
 func (u *Updater) Context() context.Context {
 	return u.ctx
 }
 
-func (u *Updater) Get(id ikey) (r any) {
+func (u *Updater) Get(id any) (r any) {
 	if w := u.handle(id); w != nil {
 		r = w.Get(id)
 	}
 	return
 }
 
-func (u *Updater) Set(id ikey, v any) {
+func (u *Updater) Set(id any, v ...any) {
 	if w := u.handle(id); w != nil {
-		w.Set(id, v)
+		w.Set(id, v...)
 	}
 }
 
-func (u *Updater) Add(iid ikey, num ival) {
+func (u *Updater) Add(iid int32, num int32) {
 	if w := u.handle(iid); w != nil {
 		w.Add(iid, num)
 	}
 }
 
-func (u *Updater) Sub(iid ikey, num ival) {
+func (u *Updater) Sub(iid int32, num int32) {
 	if w := u.handle(iid); w != nil {
 		w.Sub(iid, num)
 	}
 }
 
-func (u *Updater) Max(iid ikey, num ival) {
+func (u *Updater) Max(iid int32, num int32) {
 	if w := u.handle(iid); w != nil {
 		w.Max(iid, num)
 	}
 }
 
-func (u *Updater) Min(iid ikey, num ival) {
+func (u *Updater) Min(iid int32, num int32) {
 	if w := u.handle(iid); w != nil {
 		w.Min(iid, num)
 	}
 }
 
-func (u *Updater) Val(id ikey) (r int64) {
+func (u *Updater) Val(id any) (r int64) {
 	if w := u.handle(id); w != nil {
 		r = w.Val(id)
 	}
 	return
 }
 
-func (u *Updater) Del(id ikey) {
+func (u *Updater) Del(id any) {
 	if w := u.handle(id); w != nil {
 		w.Del(id)
 	}
 }
 
-func (u *Updater) Bind(id string, i any) (err error) {
-	if w := u.handle(id); w != nil {
-		err = w.Bind(id, i)
-	}
-	return
-}
-
-func (u *Updater) Select(fields ...ikey) {
-	for _, field := range fields {
-		if w := u.handle(field); w != nil {
-			w.Select(field)
+func (u *Updater) Select(keys ...any) {
+	for _, k := range keys {
+		if w := u.handle(k); w != nil {
+			w.Select(keys...)
 		}
 	}
 }
 
 func (u *Updater) Data() (err error) {
 	if u.uid == "" {
-		return
+		return ErrUidEmpty
 	}
-	if err = u.Emit(EventsPreData); err != nil {
+	defer func() {
+		if err == nil {
+			u.changed = false
+		}
+	}()
+	if err = u.doPlugs(PlugsTypePreData); err != nil {
 		return err
 	}
 	for _, w := range u.handles() {
@@ -168,20 +146,19 @@ func (u *Updater) Data() (err error) {
 			return
 		}
 	}
-	u.changed = false
 	return
 }
 
 func (u *Updater) Save() (err error) {
 	if u.uid == "" {
-		return
+		return ErrUidEmpty
 	}
 	if u.changed {
 		if err = u.Data(); err != nil {
 			return
 		}
 	}
-	if err = u.Emit(EventsPreVerify); err != nil {
+	if err = u.doPlugs(PlugsTypePreVerify); err != nil {
 		return err
 	}
 	hs := u.handles()
@@ -190,22 +167,26 @@ func (u *Updater) Save() (err error) {
 			return
 		}
 	}
-	if err = u.Emit(EventsPreSubmit); err != nil {
+	if err = u.doPlugs(PlugsTypePreSave); err != nil {
 		return err
 	}
-	var cache []*Cache
 	for _, w := range hs {
-		if cache, err = w.Save(); err != nil {
+		if err = w.Save(); err != nil {
 			return
-		} else {
-			u.cache = append(u.cache, cache...)
 		}
+	}
+	if err = u.doPlugs(PlugsTypePreSubmit); err != nil {
+		return err
 	}
 	return
 }
 
-func (u *Updater) Cache() (ret []*Cache) {
-	return u.cache
+func (u *Updater) Submit() (r []*dirty.Cache) {
+	for _, w := range u.handles() {
+		r = append(r, w.submit()...)
+	}
+	u.doEvents()
+	return r
 }
 
 // IType 通过ikey获取IType
@@ -262,7 +243,7 @@ func (u *Updater) Handle(name string) Handle {
 }
 
 // Handle 根据iid,oid获取模型不支持Hash,Document的字段查询
-func (u *Updater) handle(k ikey) Handle {
+func (u *Updater) handle(k any) Handle {
 	iid, err := u.ParseId(k)
 	if err != nil {
 		logger.Warn("%v", err)
@@ -272,13 +253,14 @@ func (u *Updater) handle(k ikey) Handle {
 	model, ok := modelsDict[itk]
 	if !ok {
 		logger.Warn("Updater.handle not exists: %v", k)
+		return nil
 	}
-	return u.Handle(model.Name)
+	return u.Handle(model.name)
 }
 
 func (u *Updater) handles() (r []Handle) {
 	for _, model := range modelsRank {
-		r = append(r, u.dict[model.Name])
+		r = append(r, u.dict[model.name])
 	}
 	return
 }

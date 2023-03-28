@@ -5,58 +5,56 @@ import (
 	"github.com/hwcer/cosgo/schema"
 )
 
-type Parser string
+type Parser int8
+type handleFunc func(updater *Updater, model any, ram RAMType) Handle
 
 const (
-	ParserTypeHash       Parser = "hash"       //Map[string]int64模式
-	ParserTypeDocument          = "document"   //Document 单文档模式
-	ParserTypeCollection        = "collection" //Collection 文档集合模式
+	ParserTypeHash       Parser = iota //Map[string]int64模式
+	ParserTypeDocument                 //Document 单文档模式
+	ParserTypeCollection               //Collection 文档集合模式
 )
 
-var handles = make(map[Parser]func(updater *Updater, model any, ram RAMType) Handle)
+var handles = make(map[Parser]handleFunc)
 
 func init() {
-	handles[ParserTypeHash] = NewHash
-	handles[ParserTypeDocument] = NewDocument
-	handles[ParserTypeCollection] = NewCollection
+	NewHandle(ParserTypeHash, NewHash)
+	NewHandle(ParserTypeDocument, NewDocument)
+	NewHandle(ParserTypeCollection, NewCollection)
 }
 
 // NewHandle 注册新解析器
-func NewHandle(name Parser, f func(adapter *Updater, model any, ram RAMType) Handle) {
+func NewHandle(name Parser, f handleFunc) {
 	handles[name] = f
 }
 
 var modelsRank []*Model
 var modelsDict = make(map[int32]*Model)
-var itypesDict = make(map[int32]IType)
+var itypesDict = make(map[int32]IType) //ITypeId = IType
 
 type Model struct {
-	iModel
-	Name string
+	ram    RAMType
+	name   string
+	model  any
+	parser Parser
 }
 
-type iModel interface {
-	Parser() Parser
-}
-
-func Register(model iModel, itypes ...IType) error {
-	parser := model.Parser()
+func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 	if _, ok := handles[parser]; !ok {
 		return fmt.Errorf("parser unknown:%v", parser)
 	}
-	i := &Model{iModel: model}
+	mod := &Model{ram: ram, model: model, parser: parser}
 	sch, err := schema.Parse(model)
 	if err != nil {
 		return err
 	}
-	i.Name = sch.Table
-	modelsRank = append(modelsRank, i)
+	mod.name = sch.Table
+	modelsRank = append(modelsRank, mod)
 	for _, it := range itypes {
 		id := it.Id()
 		if _, ok := modelsDict[id]; ok {
-			return fmt.Errorf("model IType(%v)已经存在:%v", it, i.Name)
+			return fmt.Errorf("model IType(%v)已经存在:%v", it, mod.name)
 		}
-		modelsDict[id] = i
+		modelsDict[id] = mod
 		itypesDict[id] = it
 	}
 	return nil

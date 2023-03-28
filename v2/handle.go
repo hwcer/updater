@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/updater/v2/dirty"
 )
 
@@ -17,9 +18,11 @@ type statement struct {
 	ram      RAMType
 	cache    []*dirty.Cache
 	Error    error
+	values   map[any]int64 //执行过程中的数量过程
 	handle   func(t dirty.Operator, k any, v any)
 	Updater  *Updater
 	operator []*dirty.Cache //操作
+	verified bool           //是否已经检查过
 }
 
 func NewStatement(u *Updater, ram RAMType, handle func(t dirty.Operator, k any, v any)) *statement {
@@ -32,14 +35,16 @@ func (stmt *statement) done() {
 }
 
 func (stmt *statement) reset() {
-
+	stmt.values = map[any]int64{}
 }
 
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
 	stmt.cache = nil
 	stmt.Error = nil
+	stmt.values = nil
 	stmt.operator = nil
+	stmt.verified = false
 	//b.Fields.release()
 }
 
@@ -59,7 +64,7 @@ func (stmt *statement) Operator(c *dirty.Cache, before ...bool) {
 //	return b.Fields.Has(key)
 //}
 
-func (stmt *statement) Cache() []*dirty.Cache {
+func (stmt *statement) submit() []*dirty.Cache {
 	return stmt.cache
 }
 
@@ -84,14 +89,14 @@ func (this *statement) Sub(k int32, v int32) {
 	this.handle(dirty.OperatorTypeSub, k, v)
 }
 
-func (this *statement) Max(k int32, v int64) {
+func (this *statement) Max(k int32, v int32) {
 	if k <= 0 {
 		return
 	}
 	this.handle(dirty.OperatorTypeMax, k, v)
 }
 
-func (this *statement) Min(k int32, v int64) {
+func (this *statement) Min(k int32, v int32) {
 	if k <= 0 {
 		return
 	}
@@ -112,6 +117,10 @@ func (this *statement) Set(k any, v ...any) {
 	case 1:
 		this.handle(dirty.OperatorTypeSet, k, v[0])
 	case 2:
-		this.handle(dirty.OperatorTypeSet, k, dirty.NewValue(v[0], v[1]))
+		if field, ok := v[0].(string); ok {
+			this.handle(dirty.OperatorTypeSet, k, dirty.NewUpdate(field, v[1]))
+		} else {
+			logger.Debug("set args error:%v", v)
+		}
 	}
 }

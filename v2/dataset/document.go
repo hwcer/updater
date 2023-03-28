@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/updater/v2/dirty"
 )
 
 func NewDocument(i any) *Document {
@@ -62,7 +63,7 @@ func (this *Document) Add(key string, val int64) (r int64, err error) {
 	return
 }
 
-func (this *Document) Update(data map[string]any) (err error) {
+func (this *Document) Update(data dirty.Update) (err error) {
 	if m, ok := this.item.(ModelSet); ok {
 		for k, v := range data {
 			if err = m.Set(k, v); err != nil {

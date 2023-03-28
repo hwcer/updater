@@ -37,9 +37,9 @@ func (at Operator) ToString() string {
 	case OperatorTypeSet:
 		return "Set"
 	case OperatorTypeDel:
-		return "Delete"
+		return "Del"
 	case OperatorTypeNew:
-		return "Create"
+		return "New"
 	case OperatorTypeResolve:
 		return "Resolve"
 	case OperatorTypeMax:
