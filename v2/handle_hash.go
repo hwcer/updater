@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/v2/operator"
@@ -182,10 +181,6 @@ func (this *Hash) Data() error {
 func (this *Hash) Verify() (err error) {
 	if this.Error != nil {
 		return this.Error
-	}
-	if len(this.statement.operator) == 0 {
-		fmt.Printf("hash operator为空")
-		return
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {

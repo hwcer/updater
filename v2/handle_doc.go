@@ -203,9 +203,6 @@ func (this *Document) Verify() (err error) {
 	if this.Error != nil {
 		return this.Error
 	}
-	if len(this.statement.operator) == 0 {
-		return
-	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
 			return
