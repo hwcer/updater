@@ -3,6 +3,7 @@ package test
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/hwcer/cosgo/values"
 	"github.com/hwcer/updater/v2"
 	"testing"
 	"time"
@@ -78,12 +79,12 @@ func doEvent(u *Player) {
 		u.Sub(3001, 1)
 	}
 	_ = u.Save()
-	u.Emit(eventTest, updater.EventArgs{"N": v})
+	u.Emit(eventTest, values.Values{"N": v})
 }
 
-func listenerTest(u *updater.Updater, args updater.EventArgs) bool {
+func listenerTest(u *updater.Updater, args values.Values) bool {
 	fmt.Printf("收到事件:%v\n", args)
-	if args["N"].(int64) <= 2 {
+	if args.GetInt64("N") <= 2 {
 		return false
 	}
 	return true

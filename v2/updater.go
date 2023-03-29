@@ -62,7 +62,7 @@ func (u *Updater) Destruct() (err error) {
 			return
 		}
 	}
-	return nil
+	return
 }
 
 func (u *Updater) Uid() string {

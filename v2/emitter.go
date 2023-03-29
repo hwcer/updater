@@ -1,15 +1,16 @@
 package updater
 
+import "github.com/hwcer/cosgo/values"
+
 type EventType int32
-type EventArgs map[any]any
 
 var events = make(map[EventType][]listener)
 
 // listener 返回false时将移除,全局事件无法移除
-type listener func(*Updater, EventArgs) bool
+type listener func(*Updater, values.Values) bool
 
 type emitter struct {
-	events    map[EventType][]EventArgs
+	events    map[EventType][]values.Values
 	listeners map[EventType][]listener
 }
 
@@ -27,9 +28,9 @@ func (u *Updater) On(name EventType, handle listener) {
 }
 
 // Emit Updater.Save之后统一触发
-func (u *Updater) Emit(name EventType, args EventArgs) {
+func (u *Updater) Emit(name EventType, args values.Values) {
 	if u.emitter.events == nil {
-		u.emitter.events = map[EventType][]EventArgs{}
+		u.emitter.events = map[EventType][]values.Values{}
 	}
 	u.emitter.events[name] = append(u.emitter.events[name], args)
 }
