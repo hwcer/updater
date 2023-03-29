@@ -55,6 +55,16 @@ func (u *Updater) Release() {
 	}
 }
 
+// Destruct 是否所有缓存,并将改变写入数据库,返回错误时无法写入数据库,应该排除数据库后再次尝试关闭
+func (u *Updater) Destruct() (err error) {
+	for _, w := range u.dict {
+		if err = w.destruct(); err != nil {
+			return
+		}
+	}
+	return nil
+}
+
 func (u *Updater) Uid() string {
 	return u.uid
 }

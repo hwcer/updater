@@ -272,3 +272,8 @@ func (this *Document) Operator(t operator.Types, k any, v any) {
 		_ = this.Verify()
 	}
 }
+
+// Interface 用来导出dataset
+func (this *Document) Interface() any {
+	return this.dataset
+}

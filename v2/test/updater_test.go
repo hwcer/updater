@@ -13,7 +13,7 @@ const (
 )
 
 func TestNew(t *testing.T) {
-	player := updater.New(Userid)
+	player := NewPlayer(Userid)
 	player.On(eventTest, listenerTest)
 	doWork(player)
 	for i := 0; i < 10; i++ {
@@ -21,7 +21,7 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func doWork(player *updater.Updater) {
+func doWork(player *Player) {
 	st := time.Now()
 	player.Reset(nil)
 	defer player.Release()
@@ -61,11 +61,11 @@ func doWork(player *updater.Updater) {
 		}
 	}
 	fmt.Printf("GET 1102:%v\n", player.Val(1102))
-	fmt.Printf("GET Name:%v\n", role.Get("name"))
+	fmt.Printf("GET Name:%v\n", player.Role.Name)
 	fmt.Printf("共计用时:%v\n", time.Since(st))
 }
 
-func doEvent(u *updater.Updater) {
+func doEvent(u *Player) {
 	u.Reset(nil)
 	defer func() {
 		u.Submit()
