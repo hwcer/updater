@@ -1,8 +1,8 @@
 package updater
 
-import (
-	"github.com/hwcer/updater/v2/dirty"
-)
+import "github.com/hwcer/updater/v2/operator"
+
+const ZeroInt64 = int64(0)
 
 type Handle interface {
 	Del(k any)            //删除道具
@@ -19,10 +19,10 @@ type Handle interface {
 	Verify() error      //验证数据
 	Select(keys ...any) //非内存模式时获取特定道具
 
-	reset()                 //运行时开始时
-	submit() []*dirty.Cache //将执行结果发送给前端
-	release()               //运行时释放缓存信息
-	destruct() error        //关闭
+	reset()                       //运行时开始时
+	submit() []*operator.Operator //将执行结果发送给前端
+	release()                     //运行时释放缓存信息
+	destruct() error              //关闭
 }
 
 var Config = struct {
@@ -35,7 +35,7 @@ var Config = struct {
 // 多种数据类型 可以用一种数据模型(model,一张表结构)
 type IType interface {
 	Id() int32                                                    //IType 唯一标志
-	New(u *Updater, c *dirty.Cache) (item any, err error)         //生成空对象和默认字段,新对象中必须对oid,uid,iid,val进行赋值
+	New(u *Updater, c *operator.Operator) (item any, err error)   //生成空对象和默认字段,新对象中必须对oid,uid,iid,val进行赋值
 	Unique() bool                                                 //unique=true 一个玩家角色只生成一条数据(可堆叠,oid=uid+iid),unique=false时oid=uid+iid+random
 	CreateId(adapter *Updater, iid int32) (oid string, err error) //使用IID创建OID,或者查找Field
 }
@@ -45,5 +45,5 @@ type IType interface {
 // 使用Resolve前，需要使用ITypeListener监听将可能分解成的道具ID使用adapter.Select预读数据
 // 使用Resolve时需要关联IMax指定道具上限
 type ITypeResolve interface {
-	Resolve(adapter *Updater, cache *dirty.Cache) error
+	Resolve(adapter *Updater, cache *operator.Operator) error
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
 func NewDocument(i any) *Document {
@@ -16,16 +16,16 @@ type Document struct {
 }
 
 func (this *Document) OID() string {
-	v := this.Get(ItemNameOID)
+	v := this.Get(operator.ItemNameOID)
 	r, _ := v.(string)
 	return r
 }
 func (this *Document) IID() int32 {
-	v := this.Get(ItemNameIID)
+	v := this.Get(operator.ItemNameIID)
 	return ParseInt32(v)
 }
 func (this *Document) VAL() int64 {
-	v := this.Get(ItemNameVAL)
+	v := this.Get(operator.ItemNameVAL)
 	return ParseInt64(v)
 }
 
@@ -33,24 +33,24 @@ func (this *Document) Get(key string) any {
 	if m, ok := this.item.(ModelGet); ok {
 		return m.Get(key)
 	}
-	sch, err := schema.Parse(this)
+	sch, err := schema.Parse(this.item)
 	if err != nil {
 		logger.Error(err)
 		return nil
 	}
-	return sch.GetValue(this, key)
+	return sch.GetValue(this.item, key)
 }
 
 func (this *Document) Set(key string, val any) error {
 	if m, ok := this.item.(ModelSet); ok {
 		return m.Set(key, val)
 	}
-	sch, err := schema.Parse(this)
+	sch, err := schema.Parse(this.item)
 	if err != nil {
 		logger.Error(err)
 		return nil
 	}
-	return sch.SetValue(this, key, val)
+	return sch.SetValue(this.item, key, val)
 }
 
 func (this *Document) Add(key string, val int64) (r int64, err error) {
@@ -63,7 +63,7 @@ func (this *Document) Add(key string, val int64) (r int64, err error) {
 	return
 }
 
-func (this *Document) Update(data dirty.Update) (err error) {
+func (this *Document) Update(data Update) (err error) {
 	if m, ok := this.item.(ModelSet); ok {
 		for k, v := range data {
 			if err = m.Set(k, v); err != nil {
@@ -71,13 +71,13 @@ func (this *Document) Update(data dirty.Update) (err error) {
 			}
 		}
 	}
-	sch, err := schema.Parse(this)
+	sch, err := schema.Parse(this.item)
 	if err != nil {
 		logger.Error(err)
 		return nil
 	}
 	for k, v := range data {
-		if err = sch.SetValue(this, k, v); err != nil {
+		if err = sch.SetValue(this.item, k, v); err != nil {
 			return
 		}
 	}

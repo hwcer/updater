@@ -1,9 +1,17 @@
 package dataset
 
 import (
+	"github.com/hwcer/updater/v2/operator"
 	"go.mongodb.org/mongo-driver/bson"
 	"strings"
 )
+
+type ModelGet interface {
+	Get(string) any
+}
+type ModelSet interface {
+	Set(k string, v any) error
+}
 
 func Format(s ...string) string {
 	return strings.Join(s, ".")
@@ -43,7 +51,7 @@ func ParseMap(k string, i any) (r map[string]any) {
 		r, _ = i.(bson.M)
 	default:
 		r = make(map[string]interface{})
-		r[ItemNameVAL] = i
+		r[operator.ItemNameVAL] = i
 	}
 	return
 }

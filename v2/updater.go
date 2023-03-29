@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/utils"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 	"time"
 )
 
@@ -181,7 +181,7 @@ func (u *Updater) Save() (err error) {
 	return
 }
 
-func (u *Updater) Submit() (r []*dirty.Cache) {
+func (u *Updater) Submit() (r []*operator.Operator) {
 	for _, w := range u.handles() {
 		r = append(r, w.submit()...)
 	}

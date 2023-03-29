@@ -3,7 +3,7 @@ package updater
 import (
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/updater/v2/dataset"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
 type Receive func(oid string, doc any)
@@ -11,15 +11,15 @@ type Receive func(oid string, doc any)
 type collectionModel interface {
 	Init(update *Updater, fn Receive) error //初始化所有列表
 	Getter(update *Updater, keys []string, fn Receive) error
-	Setter(update *Updater, bulkWrite dirty.BulkWrite) error
-	BulkWrite(update *Updater) dirty.BulkWrite
+	Setter(update *Updater, bulkWrite dataset.BulkWrite) error
+	BulkWrite(update *Updater) dataset.BulkWrite
 }
 
 type Collection struct {
 	*statement
 	keys    documentKeys
 	model   collectionModel
-	dirty   dirty.Dirty
+	dirty   dataset.Dirty
 	Dataset dataset.Collection
 }
 
@@ -72,7 +72,7 @@ func (this *Collection) reset() {
 	this.keys = documentKeys{}
 	this.statement.reset()
 	if this.dirty == nil {
-		this.dirty = dirty.New()
+		this.dirty = dataset.NewDirty()
 	}
 	if this.Dataset == nil {
 		this.Dataset = dataset.New()
@@ -116,6 +116,28 @@ func (this *Collection) Val(key any) (r int64) {
 		}
 	}
 	return
+}
+
+// Set 设置 k= oid||iid
+// Set(oid||iid,map[string]any)
+// Set(oid||iid,key string,val any)
+func (this *Collection) Set(k any, v ...any) {
+	switch len(v) {
+	case 1:
+		if update := dataset.ParseUpdate(v[0]); update != nil {
+			this.Operator(operator.TypeSet, k, update)
+		} else {
+			this.Error = ErrArgsIllegal(k, v)
+		}
+	case 2:
+		if field, ok := v[0].(string); ok {
+			this.Operator(operator.TypeSet, k, dataset.NewUpdate(field, v[1]))
+		} else {
+			this.Error = ErrArgsIllegal(k, v)
+		}
+	default:
+		this.Error = ErrArgsIllegal(k, v)
+	}
 }
 
 func (this *Collection) Select(keys ...any) {
@@ -165,13 +187,13 @@ func (this *Collection) Save() (err error) {
 		return this.Error
 	}
 	//同步到内存
-	for _, act := range this.statement.operator {
-		if act.Operator.IsValid() {
-			if err = this.Dataset.Update(act.Operator, act.OID, act.Update()); err != nil {
-				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,key:%v,val:%v,err:%v", act.Key, act.Value, err)
+	for _, cache := range this.statement.operator {
+		if cache.TYP.IsValid() {
+			if err = this.Dataset.Update(cache); err != nil {
+				logger.Warn("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, cache)
 				err = nil
 			} else {
-				this.dirty.Update(act.Operator, act.OID, act.Update())
+				this.dirty.Update(cache)
 			}
 		}
 	}
@@ -183,32 +205,36 @@ func (this *Collection) Save() (err error) {
 	return
 }
 
-func (this *Collection) Operator(t dirty.Operator, k any, v any) {
+func (this *Collection) Operator(t operator.Types, k any, v any) {
 	if this.Error != nil {
 		return
 	}
-	cache := dirty.NewCache(t, v)
+	op := operator.New(t, v)
+	op.Value = v
 	//del set 使用oid,iid,使用iid时,必须可以无限叠加,具有唯一OID
-	if t == dirty.OperatorTypeDel || t == dirty.OperatorTypeSet {
-		cache.OID, cache.IID, this.Error = this.Updater.ObjectId(k)
+	if t == operator.TypeDel || t == operator.TypeSet {
+		op.OID, op.IID, this.Error = this.Updater.ObjectId(k)
 	} else {
-		cache.IID = ParseInt32(k)
+		op.IID = ParseInt32(k)
 	}
-	if this.Error != nil || cache.IID <= 0 {
+	if this.Error != nil {
 		return
 	}
-
-	if t == dirty.OperatorTypeSet {
-		if d := dirty.ParseUpdate(v); d != nil {
-			cache.Value = d
-		} else {
-			logger.Warn("Collection.Set参数错误;k:%v,v:%v", k, v)
-			return
-		}
-	} else if t != dirty.OperatorTypeDel {
-		cache.Value = v
+	if op.IID <= 0 {
+		this.Errorf("iid illegal:%v", op)
+		return
 	}
-	this.statement.Operator(cache)
+	it := this.Updater.IType(op.IID)
+	if it == nil {
+		this.Error = ErrITypeNotExist(op.IID)
+		return
+	}
+	if it.Unique() {
+		this.operatorUnique(op)
+	} else {
+		this.operatorMultiple(op)
+	}
+	this.statement.Operator(op)
 	if this.verified {
 		_ = this.Verify()
 	}
@@ -219,17 +245,13 @@ func (this *Collection) Receive(id string, data any) {
 	this.Dataset.Set(id, data)
 }
 
-func (this *Collection) verify(cache *dirty.Cache) (err error) {
+func (this *Collection) verify(cache *operator.Operator) (err error) {
 	it := this.Updater.IType(cache.IID)
 	if it == nil {
 		return ErrITypeNotExist(cache.IID)
 	}
-	//不能叠加的道具只能NEW
-	if cache.Operator == dirty.OperatorTypeAdd && !it.Unique() {
-		cache.Operator = dirty.OperatorTypeNew
-	}
 	//溢出判定
-	if cache.Operator == dirty.OperatorTypeAdd || cache.Operator == dirty.OperatorTypeNew {
+	if cache.TYP == operator.TypeAdd || cache.TYP == operator.TypeNew {
 		val := ParseInt64(cache.Value)
 		num := this.Dataset.Count(cache.IID)
 		tot := val + num
@@ -254,8 +276,25 @@ func (this *Collection) verify(cache *dirty.Cache) (err error) {
 			}
 		}
 		if val == 0 {
-			cache.Operator = dirty.OperatorTypeResolve
+			cache.TYP = operator.TypeResolve
 		}
 	}
 	return
+}
+
+// operatorUnique 可以无限叠加的装备
+func (this *Collection) operatorUnique(op *operator.Operator) {
+	if op.OID == "" {
+		op.OID, this.Error = this.Updater.CreateId(op.IID)
+	}
+}
+
+// operatorMultiple 不可以叠加的道具不能SUB,只能DEL
+func (this *Collection) operatorMultiple(op *operator.Operator) {
+	switch op.TYP {
+	case operator.TypeSub:
+		this.Errorf("sub disabled:%v", op.IID)
+	case operator.TypeAdd:
+		op.TYP = operator.TypeNew
+	}
 }

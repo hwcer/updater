@@ -5,7 +5,7 @@ import (
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/v2/dataset"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
 /*
@@ -146,7 +146,7 @@ func (this *Document) destruct() (err error) {
 // Get k==nil 获取的是整个struct
 // 不建议使用GET获取特定字段值
 func (this *Document) Get(k any) (r any) {
-	if key, err := this.ObjectId(k); err == nil {
+	if key, _, err := this.ObjectId(k); err == nil {
 		r = this.get(key)
 	}
 	return
@@ -154,10 +154,21 @@ func (this *Document) Get(k any) (r any) {
 
 // Val 不建议使用Val获取特定字段值的int64值
 func (this *Document) Val(k any) (r int64) {
-	if key, err := this.ObjectId(k); err == nil {
+	if key, _, err := this.ObjectId(k); err == nil {
 		r = this.val(key)
 	}
 	return
+}
+
+// Set 设置
+// Set(k string,v any)
+func (this *Document) Set(k any, v ...any) {
+	switch len(v) {
+	case 1:
+		this.Operator(operator.TypeSet, k, v[0])
+	default:
+		this.Error = ErrArgsIllegal(k, v)
+	}
 }
 
 func (this *Document) Select(keys ...any) {
@@ -165,7 +176,7 @@ func (this *Document) Select(keys ...any) {
 		return
 	}
 	for _, k := range keys {
-		if key, err := this.ObjectId(k); err == nil && !this.has(key) {
+		if key, _, err := this.ObjectId(k); err == nil && !this.has(key) {
 			this.keys[key] = true
 		} else {
 			logger.Warn(err)
@@ -210,7 +221,7 @@ func (this *Document) Save() (err error) {
 	}
 	//同步到内存
 	for _, act := range this.statement.operator {
-		if act.Operator.IsValid() {
+		if act.TYP.IsValid() {
 			if e := this.set(act.Key, act.Value); e != nil {
 				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,value:%v", this.schema.Table, act.Value)
 			} else {
@@ -226,11 +237,12 @@ func (this *Document) Save() (err error) {
 	return
 }
 
-func (this *Document) ObjectId(k any) (key string, err error) {
+func (this *Document) ObjectId(k any) (key string, iid int32, err error) {
 	switch v := k.(type) {
 	case string:
 		key = v
 	default:
+		iid = ParseInt32(k)
 		key, err = this.Updater.CreateId(v)
 	}
 	if err == nil {
@@ -244,14 +256,14 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 	return
 }
 
-func (this *Document) Operator(t dirty.Operator, k any, v any) {
-	if t == dirty.OperatorTypeDel {
+func (this *Document) Operator(t operator.Types, k any, v any) {
+	if t == operator.TypeDel {
 		logger.Debug("updater document del is disabled")
 		return
 	}
-	cache := dirty.NewCache(t, v)
+	cache := operator.New(t, v)
 	cache.OID = this.schema.Table
-	cache.Key, this.Error = this.ObjectId(k)
+	cache.Key, cache.IID, this.Error = this.ObjectId(k)
 	if this.Error != nil {
 		return
 	}

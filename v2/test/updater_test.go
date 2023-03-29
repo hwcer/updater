@@ -15,25 +15,27 @@ func TestNew(t *testing.T) {
 	//role 信息
 	player.Add(1102, 100)
 	player.Sub(1102, 20)
-	player.Set(1102, 200)
+	player.Set(1102, 10)
+	//player.Sub(1102, 20) //Item Not Enough：[1102 20 10]
 	//日常数据
 	player.Add(2001, 10)
 	player.Max(2001, 100)
 	player.Sub(2001, 20)
-	//player.Set(2002, 2000) //todo
+	player.Set(2002, 2000)
+	player.Del(2002)
+	//player.Sub(2002, 1) //Item Not Enough
 	//常规道具
 	player.Add(3001, 100)
 	player.Add(3001, 10)
 	player.Sub(3001, 20)
 	player.Max(3001, 9999)
-	player.Set(3001, 1) //todo
+	player.Set(3001, "val", 1)
 	player.Set(3001, "attach", "nbhh")
 	//player.Sub(3001, 50)
 
 	//添加装备
+	player.Add(4001, 2)
 	player.Add(4001, 1)
-	player.Add(4001, 1)
-	player.Sub(4001, 1) //todo
 
 	role := player.Handle("role").(*updater.Document)
 	role.Set("name", "test2")
@@ -43,7 +45,7 @@ func TestNew(t *testing.T) {
 	} else {
 		for _, c := range player.Submit() {
 			b, _ := json.Marshal(c)
-			fmt.Printf("save cache[%v]:%v\n", c.Operator.ToString(), string(b))
+			fmt.Printf("save cache[%v]:%v\n", c.TYP.ToString(), string(b))
 		}
 	}
 

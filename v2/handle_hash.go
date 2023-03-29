@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
 type hashModel interface {
@@ -33,7 +33,7 @@ func (data hashData) Merge(src hashData) {
 // Hash HashMAP储存
 type Hash struct {
 	*statement
-	db      string
+	name    string //model database name
 	keys    hashKeys
 	model   hashModel
 	symbol  any      //标记时效性
@@ -46,7 +46,7 @@ func NewHash(u *Updater, model any, ram RAMType) Handle {
 	r.model = model.(hashModel)
 	r.statement = NewStatement(u, ram, r.Operator)
 	if sch, err := schema.Parse(model); err == nil {
-		r.db = sch.Table
+		r.name = sch.Table
 	} else {
 		logger.Fatal(err)
 	}
@@ -139,6 +139,17 @@ func (this *Hash) Val(k any) (r int64) {
 	return
 }
 
+// Set 设置
+// Set(k int32,v int64)
+func (this *Hash) Set(k any, v ...any) {
+	switch len(v) {
+	case 1:
+		this.Operator(operator.TypeSet, k, v[0])
+	default:
+		this.Error = ErrArgsIllegal(k, v)
+	}
+}
+
 // Select 指定需要更新的字段
 func (this *Hash) Select(keys ...any) {
 	if this.statement.ram == RAMTypeAlways {
@@ -190,7 +201,7 @@ func (this *Hash) Save() (err error) {
 		return this.Error
 	}
 	for _, act := range this.statement.operator {
-		if act.Operator.IsValid() {
+		if act.TYP.IsValid() {
 			v := act.Result.(int64)
 			this.dirty[act.IID] = v
 			this.dataset[act.IID] = v
@@ -200,14 +211,20 @@ func (this *Hash) Save() (err error) {
 	return this.save()
 }
 
-func (this *Hash) Operator(t dirty.Operator, k any, v any) {
-	id, _ := k.(int32)
-	if id <= 0 {
-		this.statement.Errorf("updater Map Operator key must int32:%v", k)
+func (this *Hash) Operator(t operator.Types, k any, v any) {
+	id, ok := TryParseInt32(k)
+	if !ok {
+		this.Errorf("updater Hash Operator key must int32:%v", k)
 		return
 	}
-	cache := dirty.NewCache(t, v)
-	cache.OID = this.db
+	if t != operator.TypeDel {
+		if _, ok := TryParseInt64(v); !ok {
+			this.Errorf("updater Hash Operator val must int64:%v", v)
+			return
+		}
+	}
+	cache := operator.New(t, v)
+	cache.OID = this.name
 	cache.IID = id
 	if !this.has(id) {
 		this.keys[id] = true

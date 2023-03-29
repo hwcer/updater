@@ -2,79 +2,82 @@ package updater
 
 import (
 	"errors"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
-var documentParseHandle = make(map[dirty.Operator]func(*Document, *dirty.Cache) error)
+var documentParseHandle = make(map[operator.Types]func(*Document, *operator.Operator) error)
 
 func init() {
-	documentParseHandle[dirty.OperatorTypeAdd] = documentParseAdd
-	documentParseHandle[dirty.OperatorTypeSet] = documentParseSet
-	documentParseHandle[dirty.OperatorTypeSub] = documentParseSub
-	documentParseHandle[dirty.OperatorTypeMax] = documentParseMax
-	documentParseHandle[dirty.OperatorTypeMin] = documentParseMin
+	documentParseHandle[operator.TypeAdd] = documentParseAdd
+	documentParseHandle[operator.TypeSet] = documentParseSet
+	documentParseHandle[operator.TypeSub] = documentParseSub
+	documentParseHandle[operator.TypeMax] = documentParseMax
+	documentParseHandle[operator.TypeMin] = documentParseMin
 }
 
-func (this *Document) Parse(act *dirty.Cache) error {
-	if f, ok := documentParseHandle[act.Operator]; ok {
-		return f(this, act)
+func (this *Document) Parse(op *operator.Operator) error {
+	if f, ok := documentParseHandle[op.TYP]; ok {
+		return f(this, op)
 	}
 	return errors.New("hash_act_parser not exist")
 }
 
-func documentParseAdd(this *Document, cache *dirty.Cache) (err error) {
-	v := ParseInt64(cache.Value)
-	r := this.val(cache.Key) + v
-	cache.Result = r
-	this.values[cache.Key] = r
+func documentParseAdd(this *Document, op *operator.Operator) (err error) {
+	v := ParseInt64(op.Value)
+	r := this.val(op.Key) + v
+	op.Result = r
+	this.values[op.Key] = r
 	return
 }
 
-func documentParseSub(this *Document, cache *dirty.Cache) (err error) {
-	d := this.val(cache.Key)
-	v := ParseInt64(cache.Value)
-	if d < v {
+func documentParseSub(this *Document, op *operator.Operator) (err error) {
+	d := this.val(op.Key)
+	v := ParseInt64(op.Value)
+	if v > d {
 		if this.Updater.tolerance {
-			cache.Operator = dirty.OperatorTypeDrop
+			v = d
 		} else {
-			err = ErrItemNotEnough(cache.IID, v, d)
+			err = ErrItemNotEnough(op.IID, v, d)
 		}
 		return
 	}
-	r := d - v
-	cache.Result = r
-	this.values[cache.Key] = r
-	return
-}
-
-func documentParseSet(this *Document, cache *dirty.Cache) (err error) {
-	cache.Result = cache.Value
-	if r, ok := TryParseInt64(cache.Value); ok {
-		this.values[cache.Key] = r
+	if d <= 0 {
+		op.TYP = operator.TypeDrop
+	} else {
+		r := d - v
+		op.Result = r
+		this.values[op.Key] = r
 	}
 	return
 }
 
-func documentParseMax(this *Document, cache *dirty.Cache) (err error) {
-	v := ParseInt64(cache.Value)
-	if d := this.val(cache.Key); v > d {
-		cache.Result = v
-		this.values[cache.Key] = v
-		cache.Operator = dirty.OperatorTypeSet
-	} else {
-		cache.Result = dirty.OperatorTypeDrop
+func documentParseSet(this *Document, op *operator.Operator) (err error) {
+	op.TYP = operator.TypeSet
+	op.Result = op.Value
+	if r, ok := TryParseInt64(op.Value); ok {
+		this.values[op.Key] = r
 	}
 	return
 }
 
-func documentParseMin(this *Document, cache *dirty.Cache) (err error) {
-	v := ParseInt64(cache.Value)
-	if d := this.val(cache.Key); v < d {
-		cache.Result = v
-		this.values[cache.Key] = v
-		cache.Operator = dirty.OperatorTypeSet
+func documentParseMax(this *Document, op *operator.Operator) (err error) {
+	v := ParseInt64(op.Value)
+	if d := this.val(op.Key); v > d {
+		op.Result = v
+		this.values[op.Key] = v
 	} else {
-		cache.Operator = dirty.OperatorTypeDrop
+		op.TYP = operator.TypeDrop
+	}
+	return
+}
+
+func documentParseMin(this *Document, op *operator.Operator) (err error) {
+	v := ParseInt64(op.Value)
+	if d := this.val(op.Key); v < d {
+		op.Result = v
+		this.values[op.Key] = v
+	} else {
+		op.TYP = operator.TypeDrop
 	}
 	return
 }

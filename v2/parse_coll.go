@@ -4,42 +4,42 @@ import (
 	"fmt"
 	"github.com/hwcer/updater/bson"
 	"github.com/hwcer/updater/v2/dataset"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
 // 无限叠加的道具
-var collectionParseHandle = make(map[dirty.Operator]func(*Collection, *dirty.Cache) error)
+var collectionParseHandle = make(map[operator.Types]func(*Collection, *operator.Operator) error)
 
 func init() {
-	collectionParseHandle[dirty.OperatorTypeNew] = collectionHandleNew
-	collectionParseHandle[dirty.OperatorTypeAdd] = collectionHandleAdd
-	collectionParseHandle[dirty.OperatorTypeSub] = collectionHandleSub
-	collectionParseHandle[dirty.OperatorTypeSet] = collectionHandleSet
-	collectionParseHandle[dirty.OperatorTypeDel] = collectionHandleDel
-	collectionParseHandle[dirty.OperatorTypeMax] = collectionHandleMax
-	collectionParseHandle[dirty.OperatorTypeMin] = collectionHandleMin
-	collectionParseHandle[dirty.OperatorTypeResolve] = collectionHandleResolve
+	collectionParseHandle[operator.TypeNew] = collectionHandleNew
+	collectionParseHandle[operator.TypeAdd] = collectionHandleAdd
+	collectionParseHandle[operator.TypeSub] = collectionHandleSub
+	collectionParseHandle[operator.TypeSet] = collectionHandleSet
+	collectionParseHandle[operator.TypeDel] = collectionHandleDel
+	collectionParseHandle[operator.TypeMax] = collectionHandleMax
+	collectionParseHandle[operator.TypeMin] = collectionHandleMin
+	collectionParseHandle[operator.TypeResolve] = collectionHandleResolve
 }
 
-func (this *Collection) Parse(act *dirty.Cache) (err error) {
-	f, ok := collectionParseHandle[act.Operator]
+func (this *Collection) Parse(act *operator.Operator) (err error) {
+	f, ok := collectionParseHandle[act.TYP]
 	if !ok {
-		return fmt.Errorf("collectionParseHandle not exist:%v", act.Operator)
+		return fmt.Errorf("collectionParseHandle not exist:%v", act.TYP)
 	}
 	return f(this, act)
 }
 
 // hmapHandleResolve 仅仅标记不做任何处理
-func collectionHandleResolve(coll *Collection, act *dirty.Cache) error {
+func collectionHandleResolve(coll *Collection, act *operator.Operator) error {
 	return nil
 }
 
-func collectionHandleDel(coll *Collection, act *dirty.Cache) error {
+func collectionHandleDel(coll *Collection, act *operator.Operator) error {
 	return nil
 }
 
-func collectionHandleNew(coll *Collection, cache *dirty.Cache) error {
-	cache.Operator = dirty.OperatorTypeNew
+func collectionHandleNew(coll *Collection, cache *operator.Operator) error {
+	cache.TYP = operator.TypeNew
 	if it := coll.Updater.IType(cache.IID); !it.Unique() {
 		return collectionHandleNewMultiple(coll, cache)
 	} else {
@@ -47,7 +47,7 @@ func collectionHandleNew(coll *Collection, cache *dirty.Cache) error {
 	}
 }
 
-func collectionHandleAdd(coll *Collection, cache *dirty.Cache) (err error) {
+func collectionHandleAdd(coll *Collection, cache *operator.Operator) (err error) {
 	d := coll.val(cache.IID)
 	if d <= 0 {
 		return collectionHandleNew(coll, cache)
@@ -58,7 +58,7 @@ func collectionHandleAdd(coll *Collection, cache *dirty.Cache) (err error) {
 	return
 }
 
-func collectionHandleSub(coll *Collection, cache *dirty.Cache) (err error) {
+func collectionHandleSub(coll *Collection, cache *operator.Operator) (err error) {
 	d := coll.val(cache.IID)
 	v := bson.ParseInt64(cache.Value)
 	if v > d {
@@ -69,7 +69,7 @@ func collectionHandleSub(coll *Collection, cache *dirty.Cache) (err error) {
 		}
 	}
 	if d <= 0 {
-		cache.Operator = dirty.OperatorTypeDrop
+		cache.TYP = operator.TypeDrop
 	} else {
 		r := d - v
 		cache.Result = r
@@ -78,39 +78,42 @@ func collectionHandleSub(coll *Collection, cache *dirty.Cache) (err error) {
 	return
 }
 
-func collectionHandleSet(coll *Collection, cache *dirty.Cache) (err error) {
+func collectionHandleSet(coll *Collection, cache *operator.Operator) (err error) {
 	d := coll.val(cache.IID)
 	if d <= 0 {
 		return collectionHandleNew(coll, cache)
 	}
 	cache.Result = cache.Value
-	cache.Operator = dirty.OperatorTypeSet
-	update := cache.Update()
-	if v, ok := update[dataset.ItemNameVAL]; ok {
+	cache.TYP = operator.TypeSet
+	update, _ := cache.Value.(dataset.Update)
+	if v, ok := update[operator.ItemNameVAL]; ok {
 		coll.values[cache.IID] = ParseInt64(v)
 	}
 	return
 }
-
-func collectionHandleMax(coll *Collection, cache *dirty.Cache) (err error) {
+func collectionTransformSet(coll *Collection, cache *operator.Operator) error {
+	cache.Value = dataset.NewUpdate(operator.ItemNameVAL, cache.Value)
+	return collectionHandleSet(coll, cache)
+}
+func collectionHandleMax(coll *Collection, cache *operator.Operator) (err error) {
 	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v > d {
-		err = collectionHandleSet(coll, cache)
+		err = collectionTransformSet(coll, cache)
 	} else {
-		cache.Operator = dirty.OperatorTypeDrop
+		cache.TYP = operator.TypeDrop
 	}
 	return
 }
 
-func collectionHandleMin(coll *Collection, cache *dirty.Cache) (err error) {
+func collectionHandleMin(coll *Collection, cache *operator.Operator) (err error) {
 	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v < d {
-		err = collectionHandleSet(coll, cache)
+		err = collectionTransformSet(coll, cache)
 	} else {
-		cache.Operator = dirty.OperatorTypeDrop
+		cache.TYP = operator.TypeDrop
 	}
 	return
 }
 
-func collectionHandleNewUnique(coll *Collection, cache *dirty.Cache) error {
+func collectionHandleNewUnique(coll *Collection, cache *operator.Operator) error {
 	it := coll.Updater.IType(cache.IID)
 	if it == nil {
 		return ErrITypeNotExist(cache.IID)
@@ -123,7 +126,7 @@ func collectionHandleNewUnique(coll *Collection, cache *dirty.Cache) error {
 		return err
 	}
 }
-func collectionHandleNewMultiple(coll *Collection, cache *dirty.Cache) error {
+func collectionHandleNewMultiple(coll *Collection, cache *operator.Operator) error {
 	it := coll.Updater.IType(cache.IID)
 	if it == nil {
 		return ErrITypeNotExist(cache.IID)

@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
 type ErrMsg struct {
@@ -19,6 +19,9 @@ func (e *ErrMsg) Error() string {
 }
 func NewError(msg interface{}, args ...interface{}) *ErrMsg {
 	return &ErrMsg{msg: msg, args: args}
+}
+func ErrArgsIllegal(args ...any) *ErrMsg {
+	return NewError("args illegal", args...)
 }
 
 func ErrItemNotExist(iid int32) *ErrMsg {
@@ -53,7 +56,7 @@ func ErrITypeNotExist(iid int32) *ErrMsg {
 //	return NewError("act val illegal", act.Val)
 //}
 
-func ErrActKeyIllegal(act *dirty.Cache) *ErrMsg {
+func ErrActKeyIllegal(act *operator.Operator) *ErrMsg {
 	return NewError("act key illegal", act.IID)
 }
 

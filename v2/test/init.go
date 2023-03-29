@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hwcer/updater/v2"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -48,7 +48,7 @@ func (this *iType) Id() int32 {
 	return this.id
 }
 
-func (this *iType) New(_ *updater.Updater, cache *dirty.Cache) (any, error) {
+func (this *iType) New(_ *updater.Updater, op *operator.Operator) (any, error) {
 	return nil, errors.New("没有重载New方法，理论上不应该调用此方法，请检查代码")
 }
 

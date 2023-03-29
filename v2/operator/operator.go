@@ -1,19 +1,18 @@
-package dirty
+package operator
 
-func NewCache(t Operator, v any) *Cache {
-	return &Cache{Operator: t, Value: v}
+func New(t Types, v any) *Operator {
+	return &Operator{TYP: t, Value: v}
 }
 
 //type CacheHandle func(c *Cache, k, v any) any
 
-type Cache struct {
+type Operator struct {
 	OID    string `json:"o,omitempty"` //object id
 	IID    int32  `json:"i,omitempty"` //item id
+	TYP    Types  `json:"t"`           //操作类型
 	Key    string `json:"k,omitempty"` //字段名
 	Value  any    `json:"v"`           //增量
 	Result any    `json:"r"`           //结果,类型和Value一样
-	//update   Update
-	Operator Operator `json:"t"` //操作类型
 	//effective bool //立即生效,仅在需要最终一致时使用,比如体力自动回复
 }
 
@@ -23,16 +22,16 @@ type Cache struct {
 //	}
 //}
 
-func (this *Cache) Update() Update {
-	if r := ParseUpdate(this.Value); r != nil {
-		return r
-	}
-	key := this.Key
-	if key == "" {
-		key = "val"
-	}
-	return NewUpdate(key, this.Value)
-}
+//func (this *Cache) Update() Update {
+//	if r := ParseUpdate(this.Value); r != nil {
+//		return r
+//	}
+//	key := this.Key
+//	if key == "" {
+//		key = "val"
+//	}
+//	return NewUpdate(key, this.Value)
+//}
 
 // Enable 开启立即生效模式
 //func (this *Cache) Enable() {

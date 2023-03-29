@@ -2,8 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
 type RAMType int8
@@ -16,16 +15,16 @@ const (
 
 type statement struct {
 	ram      RAMType
-	cache    []*dirty.Cache
+	cache    []*operator.Operator
 	Error    error
 	values   map[any]int64 //执行过程中的数量过程
-	handle   func(t dirty.Operator, k any, v any)
+	handle   func(t operator.Types, k any, v any)
 	Updater  *Updater
-	operator []*dirty.Cache //操作
-	verified bool           //是否已经检查过
+	operator []*operator.Operator //操作
+	verified bool                 //是否已经检查过
 }
 
-func NewStatement(u *Updater, ram RAMType, handle func(t dirty.Operator, k any, v any)) *statement {
+func NewStatement(u *Updater, ram RAMType, handle func(t operator.Types, k any, v any)) *statement {
 	return &statement{ram: ram, handle: handle, Updater: u}
 }
 
@@ -52,9 +51,9 @@ func (stmt *statement) Errorf(format string, args ...any) {
 	stmt.Error = fmt.Errorf(format, args)
 }
 
-func (stmt *statement) Operator(c *dirty.Cache, before ...bool) {
+func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
 	if len(before) > 0 && before[0] {
-		stmt.operator = append([]*dirty.Cache{c}, stmt.operator...)
+		stmt.operator = append([]*operator.Operator{c}, stmt.operator...)
 	} else {
 		stmt.operator = append(stmt.operator, c)
 	}
@@ -64,7 +63,7 @@ func (stmt *statement) Operator(c *dirty.Cache, before ...bool) {
 //	return b.Fields.Has(key)
 //}
 
-func (stmt *statement) submit() []*dirty.Cache {
+func (stmt *statement) submit() []*operator.Operator {
 	return stmt.cache
 }
 
@@ -79,48 +78,48 @@ func (this *statement) Add(k int32, v int32) {
 	if k <= 0 || v <= 0 {
 		return
 	}
-	this.handle(dirty.OperatorTypeAdd, k, v)
+	this.handle(operator.TypeAdd, k, v)
 }
 
 func (this *statement) Sub(k int32, v int32) {
 	if k <= 0 || v <= 0 {
 		return
 	}
-	this.handle(dirty.OperatorTypeSub, k, v)
+	this.handle(operator.TypeSub, k, v)
 }
 
 func (this *statement) Max(k int32, v int32) {
 	if k <= 0 {
 		return
 	}
-	this.handle(dirty.OperatorTypeMax, k, v)
+	this.handle(operator.TypeMax, k, v)
 }
 
 func (this *statement) Min(k int32, v int32) {
 	if k <= 0 {
 		return
 	}
-	this.handle(dirty.OperatorTypeMin, k, v)
+	this.handle(operator.TypeMin, k, v)
 }
 
 func (this *statement) Del(k any) {
-	this.handle(dirty.OperatorTypeDel, k, nil)
+	this.handle(operator.TypeDel, k, nil)
 }
 
 // Set set结果
 // coll       Set(iid,k,v) Set(iid,map[any]any)
 // hash doc   Set(k,v)   Set(map[any]any)
-func (this *statement) Set(k any, v ...any) {
-	switch len(v) {
-	case 0:
-		this.handle(dirty.OperatorTypeSet, k, nil)
-	case 1:
-		this.handle(dirty.OperatorTypeSet, k, v[0])
-	case 2:
-		if field, ok := v[0].(string); ok {
-			this.handle(dirty.OperatorTypeSet, k, dirty.NewUpdate(field, v[1]))
-		} else {
-			logger.Debug("set args error:%v", v)
-		}
-	}
-}
+//func (this *statement) Set(k any, v ...any) {
+//	switch len(v) {
+//	case 0:
+//		this.handle(dirty.OperatorTypeSet, k, nil)
+//	case 1:
+//		this.handle(dirty.OperatorTypeSet, k, v[0])
+//	case 2:
+//		if field, ok := v[0].(string); ok {
+//			this.handle(dirty.OperatorTypeSet, k, dirty.NewUpdate(field, v[1]))
+//		} else {
+//			logger.Debug("set args error:%v", v)
+//		}
+//	}
+//}

@@ -5,8 +5,6 @@ import (
 	"github.com/hwcer/updater/v2"
 )
 
-var roleData = &Role{}
-
 var ITypeRole = &iTypeRole{iType: iType{id: 11, unique: true}, fields: map[int32]string{}}
 
 func init() {
@@ -14,7 +12,7 @@ func init() {
 	ITypeRole.Register(1101, "name")
 	ITypeRole.Register(1102, "level")
 	ITypeRole.Register(1103, "money")
-	if err := updater.Register(updater.ParserTypeDocument, updater.RAMTypeAlways, roleData, ITypeRole); err != nil {
+	if err := updater.Register(updater.ParserTypeDocument, updater.RAMTypeAlways, &Role{}, ITypeRole); err != nil {
 		fmt.Printf("%v\n", err)
 	}
 }
@@ -27,20 +25,23 @@ type Role struct {
 }
 
 func (this *Role) Init(u *updater.Updater, init bool) (any, error) {
+	r := &Role{}
 	if init {
-		roleData.Uid = u.Uid()
-		roleData.Name = "test"
+		//从数据库获取数据
+		r.Uid = u.Uid()
+		r.Name = "test"
 	}
-	return roleData, nil
+	fmt.Printf("Role Init:%+v \n", r)
+	return r, nil
 }
 
 func (this *Role) Getter(update *updater.Updater, model any, keys []string) error {
-	fmt.Printf("需要从DB中获取以下值填充到model.Role:%v\n", keys)
+	fmt.Printf("====== Role Getter:%v\n", keys)
 	return nil
 }
 
 func (this *Role) Setter(update *updater.Updater, model any, data map[string]any) error {
-	fmt.Printf("需要将以下值保存到db.Role:%v\n", data)
+	fmt.Printf("====== Role Setter:%v\n", data)
 	return nil
 }
 

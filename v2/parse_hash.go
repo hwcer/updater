@@ -2,84 +2,86 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/v2/dirty"
+	"github.com/hwcer/updater/v2/operator"
 )
 
-var hashParseHandle = make(map[dirty.Operator]func(*Hash, *dirty.Cache) error)
+var hashParseHandle = make(map[operator.Types]func(*Hash, *operator.Operator) error)
 
 func init() {
-	hashParseHandle[dirty.OperatorTypeDel] = hashParseDel
-	hashParseHandle[dirty.OperatorTypeAdd] = hashParseAdd
-	hashParseHandle[dirty.OperatorTypeSub] = hashParseSub
-	hashParseHandle[dirty.OperatorTypeMax] = hashParseMax
-	hashParseHandle[dirty.OperatorTypeMin] = hashParseMin
-	hashParseHandle[dirty.OperatorTypeSet] = hashParseSet
+	hashParseHandle[operator.TypeDel] = hashParseDel
+	hashParseHandle[operator.TypeAdd] = hashParseAdd
+	hashParseHandle[operator.TypeSub] = hashParseSub
+	hashParseHandle[operator.TypeMax] = hashParseMax
+	hashParseHandle[operator.TypeMin] = hashParseMin
+	hashParseHandle[operator.TypeSet] = hashParseSet
 }
 
-func (this *Hash) Parse(act *dirty.Cache) error {
-	if f, ok := hashParseHandle[act.Operator]; ok {
-		return f(this, act)
+func (this *Hash) Parse(op *operator.Operator) error {
+	if f, ok := hashParseHandle[op.TYP]; ok {
+		return f(this, op)
 	}
-	return fmt.Errorf("map parser not exist:%v", act)
+	return fmt.Errorf("map parser not exist:%v", op)
 }
 
-func hashParseAdd(this *Hash, cache *dirty.Cache) (err error) {
-	v := ParseInt64(cache.Value)
-	r := this.val(cache.IID) + v
-	cache.Result = r
-	this.values[cache.IID] = r
+func hashParseAdd(this *Hash, op *operator.Operator) (err error) {
+	v := ParseInt64(op.Value)
+	r := this.val(op.IID) + v
+	op.Result = r
+	this.values[op.IID] = r
 	return
 }
 
-func hashParseSub(this *Hash, cache *dirty.Cache) (err error) {
-	d := this.val(cache.IID)
-	v := ParseInt64(cache.Value)
-	if d < v {
+func hashParseSub(this *Hash, op *operator.Operator) (err error) {
+	d := this.val(op.IID)
+	v := ParseInt64(op.Value)
+	if v > d {
 		if this.Updater.tolerance {
-			cache.Operator = dirty.OperatorTypeDrop
+			v = d
 		} else {
-			err = ErrItemNotEnough(cache.IID, v, d)
+			err = ErrItemNotEnough(op.IID, v, d)
 		}
 		return
 	}
-	r := d - v
-	cache.Result = r
-	this.values[cache.IID] = r
-	return
-}
-
-func hashParseMax(this *Hash, cache *dirty.Cache) (err error) {
-	v := ParseInt64(cache.Value)
-	if d := this.val(cache.IID); v > d {
-		cache.Result = v
-		this.values[cache.IID] = v
-		cache.Operator = dirty.OperatorTypeSet
+	if d <= 0 {
+		op.TYP = operator.TypeDrop
 	} else {
-		cache.Result = dirty.OperatorTypeDrop
+		r := d - v
+		op.Result = r
+		this.values[op.Key] = r
 	}
 	return
 }
 
-func hashParseMin(this *Hash, cache *dirty.Cache) (err error) {
-	v := ParseInt64(cache.Value)
-	if d := this.val(cache.IID); v < d {
-		cache.Result = v
-		this.values[cache.IID] = v
-		cache.Operator = dirty.OperatorTypeSet
+func hashParseSet(this *Hash, op *operator.Operator) (err error) {
+	op.TYP = operator.TypeSet
+	v := ParseInt64(op.Value)
+	op.Result = v
+	this.values[op.IID] = v
+	return
+}
+
+func hashParseDel(this *Hash, cache *operator.Operator) (err error) {
+	cache.Result = ZeroInt64
+	this.values[cache.IID] = ZeroInt64
+	return
+}
+
+func hashParseMax(this *Hash, op *operator.Operator) (err error) {
+	v := ParseInt64(op.Value)
+	if d := this.val(op.IID); v > d {
+		err = hashParseSet(this, op)
 	} else {
-		cache.Operator = dirty.OperatorTypeDrop
+		op.Result = operator.TypeDrop
 	}
 	return
 }
 
-func hashParseSet(this *Hash, cache *dirty.Cache) (err error) {
-	v := ParseInt64(cache.Value)
-	cache.Result = v
-	this.values[cache.IID] = v
-	return
-}
-func hashParseDel(this *Hash, cache *dirty.Cache) (err error) {
-	cache.Result = 0
-	this.values[cache.IID] = 0
+func hashParseMin(this *Hash, op *operator.Operator) (err error) {
+	v := ParseInt64(op.Value)
+	if d := this.val(op.IID); v < d {
+		err = hashParseSet(this, op)
+	} else {
+		op.TYP = operator.TypeDrop
+	}
 	return
 }
