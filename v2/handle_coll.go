@@ -9,8 +9,7 @@ import (
 type Receive func(oid string, doc any)
 
 type collectionModel interface {
-	Init(update *Updater, fn Receive) error //初始化所有列表
-	Getter(update *Updater, keys []string, fn Receive) error
+	Getter(update *Updater, keys []string, fn Receive) error //keys==nil 初始化所有
 	Setter(update *Updater, bulkWrite dataset.BulkWrite) error
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
@@ -76,9 +75,6 @@ func (this *Collection) reset() {
 	}
 	if this.Dataset == nil {
 		this.Dataset = dataset.New()
-		if this.statement.ram == RAMTypeAlways {
-			this.Updater.Error = this.model.Init(this.statement.Updater, this.Receive)
-		}
 	}
 }
 
@@ -89,6 +85,13 @@ func (this *Collection) release() {
 		this.dirty = nil
 		this.Dataset = nil
 	}
+}
+func (this *Collection) construct() error {
+	this.Dataset = dataset.New()
+	if this.statement.ram == RAMTypeAlways {
+		this.Updater.Error = this.model.Getter(this.Updater, nil, this.Receive)
+	}
+	return this.Updater.Error
 }
 
 // 关闭时执行,玩家下线

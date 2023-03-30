@@ -17,8 +17,8 @@ import (
 	Set(k string, v any) error    //设置k值的为v
 */
 type documentModel interface {
-	Init(update *Updater, init bool) (any, error)                 //获取对象,init==true时需要初始化对象(从数据库中获取值)
-	Getter(update *Updater, model any, keys []string) error       //获取数据接口,需要对data进行赋值
+	Model(update *Updater) any                                    //获取对象
+	Getter(update *Updater, model any, keys []string) error       //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, model any, data map[string]any) error //保存数据接口,需要从data中取值
 }
 
@@ -116,11 +116,7 @@ func (this *Document) reset() {
 		this.fields = documentKeys{}
 	}
 	if this.dataset == nil {
-		if this.statement.ram == RAMTypeAlways {
-			this.dataset, this.Updater.Error = this.model.Init(this.statement.Updater, true)
-		} else {
-			this.dataset, this.Updater.Error = this.model.Init(this.statement.Updater, false)
-		}
+		this.dataset = this.model.Model(this.Updater)
 	}
 	if this.schema == nil {
 		this.schema, this.Updater.Error = schema.Parse(this.dataset)
@@ -136,6 +132,13 @@ func (this *Document) release() {
 		this.fields = nil
 		this.dataset = nil
 	}
+}
+func (this *Document) construct() error {
+	this.dataset = this.model.Model(this.Updater)
+	if this.statement.ram == RAMTypeAlways {
+		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
+	}
+	return this.Updater.Error
 }
 
 // 关闭时执行,玩家下线

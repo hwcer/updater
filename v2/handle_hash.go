@@ -7,7 +7,6 @@ import (
 )
 
 type hashModel interface {
-	Init(u *Updater, symbol any) (map[int32]int64, error)                 //获取所有数据集
 	Symbol(u *Updater) any                                                //获取信息标识符号,如果和当前不一样将会重置数据
 	Getter(u *Updater, symbol any, keys []int32) (map[int32]int64, error) //获取数据接口,返回 []byte(bson.raw) , bson.Document
 	Setter(u *Updater, symbol any, update map[int32]int64) error          //保存数据接口
@@ -102,11 +101,7 @@ func (this *Hash) reset() {
 		this.dirty = hashData{}
 	}
 	if this.dataset == nil {
-		if this.statement.ram == RAMTypeAlways {
-			this.dataset, this.Updater.Error = this.model.Init(this.statement.Updater, this.symbol)
-		} else {
-			this.dataset = hashData{}
-		}
+		this.dataset = hashData{}
 	}
 }
 
@@ -118,6 +113,13 @@ func (this *Hash) release() {
 		this.dirty = nil
 		this.dataset = nil
 	}
+}
+func (this *Hash) construct() error {
+	this.symbol = this.model.Symbol(this.Updater)
+	if this.statement.ram == RAMTypeAlways {
+		this.dataset, this.Updater.Error = this.model.Getter(this.Updater, this.symbol, nil)
+	}
+	return this.Updater.Error
 }
 
 // 关闭时执行,玩家下线

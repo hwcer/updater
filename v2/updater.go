@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
-	"github.com/hwcer/cosgo/utils"
 	"github.com/hwcer/updater/v2/operator"
 	"time"
 )
@@ -12,7 +11,7 @@ import (
 type Updater struct {
 	ctx       context.Context
 	uid       string
-	time      *utils.DateTime
+	Time      time.Time
 	Error     error
 	changed   bool
 	emitter   emitter
@@ -48,7 +47,7 @@ func (u *Updater) Reset(ctx context.Context) {
 		ctx = context.Background()
 	}
 	u.ctx = context.WithValue(ctx, "", nil)
-	u.time = utils.Time.New(time.Now())
+	u.Time = time.Now()
 	for _, w := range u.handles {
 		w.reset()
 	}
@@ -66,6 +65,17 @@ func (u *Updater) Release() {
 	}
 }
 
+// Construct 构造函数 NEW之后立即调用
+func (u *Updater) Construct() (err error) {
+	u.Time = time.Now()
+	for _, w := range u.handles {
+		if err = w.construct(); err != nil {
+			return
+		}
+	}
+	return nil
+}
+
 // Destruct 是否所有缓存,并将改变写入数据库,返回错误时无法写入数据库,应该排除数据库后再次尝试关闭
 func (u *Updater) Destruct() (err error) {
 	for _, w := range u.handles {
@@ -78,9 +88,6 @@ func (u *Updater) Destruct() (err error) {
 
 func (u *Updater) Uid() string {
 	return u.uid
-}
-func (u *Updater) Time() *utils.DateTime {
-	return u.time
 }
 
 // Tolerance 开启宽容模式,道具不足时扣成0

@@ -24,11 +24,6 @@ type Item struct {
 	Attach string `bson:"attach"`
 }
 
-// Init 获取所有列表
-func (this *Item) Init(u *updater.Updater, fn updater.Receive) error {
-	fmt.Printf("====== item init\n")
-	return nil
-}
 func (this *Item) Getter(u *updater.Updater, keys []string, fn updater.Receive) error {
 	fmt.Printf("====== item Getter:%v\n", keys)
 	return nil

@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"github.com/hwcer/cosgo/utils"
 	"github.com/hwcer/updater/v2"
 )
 
@@ -15,13 +16,9 @@ func init() {
 
 type Daily struct{}
 
-func (this *Daily) Init(u *updater.Updater, symbol any) (map[int32]int64, error) {
-	fmt.Printf("Daily Init:%v \n", symbol)
-	return map[int32]int64{}, nil
-}
 func (this *Daily) Symbol(u *updater.Updater) any {
-	r, _ := u.Time().Sign(0)
-	fmt.Printf("Daily Symbol:%v \n", r)
+	r, _ := utils.Time.New(u.Time).Sign(0)
+	//fmt.Printf("Daily Symbol:%v \n", r)
 	return r
 }
 

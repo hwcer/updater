@@ -5,28 +5,58 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/values"
 	"github.com/hwcer/updater/v2"
+	"math/rand"
 	"testing"
 	"time"
 )
 
-const (
-	eventTest updater.EventType = 1
-)
-
 func TestNew(t *testing.T) {
-	player := NewPlayer(Userid)
-	player.On(eventTest, listenerTest)
-	player.Listen(updater.ProcessTypePreSave, plugsPreSaveTest)
-	doWork(player)
-	for i := 0; i < 10; i++ {
-		doEvent(player)
+	//LOGIN
+	err := Players.Load(Userid, func(player *Player) (err error) {
+		if player == nil {
+			err = fmt.Errorf("用户不存在:%v", Userid)
+		}
+		return
+	})
+	if err != nil {
+		fmt.Printf("登录失败:%v\n", err)
+		return
+	}
+
+	if err = service(Userid, doWork); err != nil {
+		fmt.Printf("服务器错误:%v\n", err)
+	}
+	for i := 0; i < 100; i++ {
+		if err = service(Userid, doTask); err != nil {
+			fmt.Printf("服务器错误:%v\n", err)
+		}
 	}
 }
 
-func doWork(player *Player) {
+// 模拟服务总入口
+func service(uid string, f func(*Player) error) error {
+	return Players.Get(uid, func(player *Player) (err error) {
+		if player != nil {
+			err = f(player)
+		} else {
+			err = fmt.Errorf("用户没有登录:%v", uid)
+		}
+		if err != nil {
+			return
+		}
+		if err = player.Save(); err == nil {
+			for _, c := range player.Submit() {
+				b, _ := json.Marshal(c)
+				fmt.Printf("save cache[%v]:%v\n", c.TYP.ToString(), string(b))
+			}
+		}
+		return
+	})
+}
+
+func doWork(player *Player) error {
 	st := time.Now()
-	player.Reset(nil)
-	defer player.Release()
+	player.Listen(updater.ProcessTypePreSave, ListenTest)
 	//role 信息 doc模型
 	player.Add(1102, 100)
 	player.Sub(1102, 20)
@@ -54,44 +84,20 @@ func doWork(player *Player) {
 	role := player.Handle("role").(*updater.Document)
 	role.Set("name", "test2")
 
-	if err := player.Save(); err != nil {
-		fmt.Printf("save error:%v\n", err)
-	} else {
-		for _, c := range player.Submit() {
-			b, _ := json.Marshal(c)
-			fmt.Printf("save cache[%v]:%v\n", c.TYP.ToString(), string(b))
-		}
-	}
 	fmt.Printf("GET 1102:%v\n", player.Val(1102))
 	fmt.Printf("GET Name:%v\n", player.Role.Name)
 	fmt.Printf("共计用时:%v\n", time.Since(st))
-}
-
-func doEvent(u *Player) {
-	u.Reset(nil)
-	defer func() {
-		u.Submit()
-		u.Release()
-	}()
-
-	v := u.Val(3001)
-	fmt.Printf("当前道具数量:%v\n", v)
-	if v > 0 {
-		u.Sub(3001, 1)
-	}
-	_ = u.Save()
-	u.Emit(eventTest, values.Values{"N": v})
-}
-
-func plugsPreSaveTest(u *updater.Updater) error {
-	fmt.Printf("收到监听PreSave\n")
 	return nil
 }
 
-func listenerTest(u *updater.Updater, args values.Values) bool {
-	fmt.Printf("收到事件:%v\n", args)
-	if args.GetInt64("N") <= 2 {
-		return false
-	}
-	return true
+func doTask(u *Player) error {
+	i := rand.Int31n(int32(len(TaskEventsDict)) - 1)
+	e := TaskEventsDict[i]
+	u.Emit(e, values.Values{"N": i})
+	return nil
+}
+
+func ListenTest(u *updater.Updater) error {
+	fmt.Printf("收到监听PreSave\n")
+	return nil
 }

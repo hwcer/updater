@@ -24,15 +24,8 @@ type Role struct {
 	Money int64  `bson:"money"`
 }
 
-func (this *Role) Init(u *updater.Updater, init bool) (any, error) {
-	r := &Role{}
-	if init {
-		//从数据库获取数据
-		r.Uid = u.Uid()
-		r.Name = "test"
-	}
-	fmt.Printf("Role Init:%+v \n", r)
-	return r, nil
+func (this *Role) Model(u *updater.Updater) any {
+	return &Role{}
 }
 
 func (this *Role) Getter(update *updater.Updater, model any, keys []string) error {

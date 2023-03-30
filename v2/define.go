@@ -22,7 +22,8 @@ type Handle interface {
 	reset()                       //运行时开始时
 	submit() []*operator.Operator //将执行结果发送给前端
 	release()                     //运行时释放缓存信息
-	destruct() error              //关闭
+	destruct() error              //析构方法
+	construct() error             //构造方法
 }
 
 var Config = struct {
