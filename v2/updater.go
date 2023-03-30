@@ -65,21 +65,21 @@ func (u *Updater) Release() {
 	}
 }
 
-// Construct 构造函数 NEW之后立即调用
-func (u *Updater) Construct() (err error) {
+// Init 构造函数 NEW之后立即调用
+func (u *Updater) Init() (err error) {
 	u.Time = time.Now()
 	for _, w := range u.handles {
-		if err = w.construct(); err != nil {
+		if err = w.init(); err != nil {
 			return
 		}
 	}
-	return u.process.emit(u, ProcessTypeNew)
+	return u.process.emit(u, ProcessTypeInit)
 }
 
-// Destruct 是否所有缓存,并将改变写入数据库,返回错误时无法写入数据库,应该排除数据库后再次尝试关闭
-func (u *Updater) Destruct() (err error) {
+// Flush 强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试关闭
+func (u *Updater) Flush() (err error) {
 	for _, w := range u.handles {
-		if err = w.destruct(); err != nil {
+		if err = w.flush(); err != nil {
 			return
 		}
 	}

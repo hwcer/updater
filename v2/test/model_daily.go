@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/utils"
 	"github.com/hwcer/updater/v2"
+	"github.com/pkg/errors"
 )
 
 var ITypeDaily = &iType{id: 20, unique: true}
@@ -30,5 +31,5 @@ func (this *Daily) Getter(u *updater.Updater, symbol any, keys []int32) (map[int
 
 func (this *Daily) Setter(u *updater.Updater, symbol any, update map[int32]int64) error {
 	fmt.Printf("====== Daily Setter Symbol:%v update:%v \n", symbol, update)
-	return nil
+	return errors.New("测试数据同步失败")
 }

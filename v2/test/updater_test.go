@@ -11,6 +11,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	_ = Players.Start()
 	userid := "userid"
 	//LOGIN
 	err := Players.Load(userid, func(player *Player) (err error) {
@@ -32,6 +33,10 @@ func TestNew(t *testing.T) {
 			fmt.Printf("服务器错误:%v\n", err)
 		}
 	}
+
+	if err = Players.Close(); err != nil {
+		fmt.Printf("关闭服务器错误:%v\n", err)
+	}
 }
 
 // 模拟服务总入口
@@ -45,11 +50,12 @@ func service(uid string, f func(*Player) error) error {
 		if err != nil {
 			return
 		}
-		if err = player.Save(); err == nil {
-			for _, c := range player.Submit() {
-				b, _ := json.Marshal(c)
-				fmt.Printf("save cache[%v]:%v\n", c.TYP.ToString(), string(b))
-			}
+		if err = player.Save(); err != nil {
+			return
+		}
+		for _, c := range player.Submit() {
+			b, _ := json.Marshal(c)
+			fmt.Printf("save cache[%v]:%v\n", c.TYP.ToString(), string(b))
 		}
 		return
 	})

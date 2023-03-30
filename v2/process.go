@@ -4,7 +4,7 @@ type ProcessType int8
 type ProcessHandle func(*Updater) error
 
 const (
-	ProcessTypeNew ProcessType = iota //完成初始化时
+	ProcessTypeInit ProcessType = iota //完成初始化时
 	ProcessTypePreData
 	ProcessTypePreVerify
 	ProcessTypePreSave

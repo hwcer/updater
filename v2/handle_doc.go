@@ -133,7 +133,7 @@ func (this *Document) release() {
 		this.dataset = nil
 	}
 }
-func (this *Document) construct() error {
+func (this *Document) init() error {
 	this.dataset = this.model.Model(this.Updater)
 	if this.statement.ram == RAMTypeAlways {
 		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
@@ -142,7 +142,7 @@ func (this *Document) construct() error {
 }
 
 // 关闭时执行,玩家下线
-func (this *Document) destruct() (err error) {
+func (this *Document) flush() (err error) {
 	return this.save()
 }
 

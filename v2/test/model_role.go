@@ -18,10 +18,11 @@ func init() {
 }
 
 type Role struct {
-	Uid   string `bson:"uid"`
-	Name  string `bson:"name"`
-	Level int32  `bson:"level"`
-	Money int64  `bson:"money"`
+	Uid    string `bson:"uid"`
+	Name   string `bson:"name"`
+	Level  int32  `bson:"level"`
+	Money  int64  `bson:"money"`
+	Online int64  `bson:"online"` //累计在线时间
 }
 
 func (this *Role) Model(u *updater.Updater) any {

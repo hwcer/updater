@@ -19,11 +19,11 @@ type Handle interface {
 	Verify() error      //验证数据
 	Select(keys ...any) //非内存模式时获取特定道具
 
+	init() error                  //构造方法
+	flush() error                 //析构方法
 	reset()                       //运行时开始时
 	submit() []*operator.Operator //将执行结果发送给前端
 	release()                     //运行时释放缓存信息
-	destruct() error              //析构方法
-	construct() error             //构造方法
 }
 
 var Config = struct {

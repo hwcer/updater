@@ -1,7 +1,6 @@
 package test
 
 import (
-	"context"
 	"github.com/hwcer/cosgo"
 	"github.com/hwcer/cosgo/logger"
 	"sync"
@@ -10,7 +9,6 @@ import (
 
 const (
 	playersHeartbeat  = 5    //心跳间隔(S)
-	playersOnlineSave = 300  //每N秒结算一次在线时间
 	playersDisconnect = 30   //N秒无心跳,假死,视为掉线
 	playersDestruct   = 3600 //掉线N秒进行销毁
 )
@@ -19,14 +17,31 @@ var Players = &players{dict: sync.Map{}}
 
 type players struct {
 	dict sync.Map
+	stop chan struct{}
 }
 
 func (this *players) Start() error {
-	cosgo.CGO(this.daemon)
+	this.stop = make(chan struct{})
+	cosgo.GO(this.daemon)
 	return nil
 }
-func (this *players) Close() error {
-	return nil
+func (this *players) Close() (err error) {
+	select {
+	case <-this.stop:
+		return nil
+	default:
+		close(this.stop)
+	}
+	//关闭所有用户
+	this.dict.Range(func(key, value any) bool {
+		//检查掉线情况
+		p := value.(*Player)
+		if err = this.destruct(p); err != nil {
+			return false
+		}
+		return true
+	})
+	return
 }
 
 // Get 获取玩家 ,注意返回NIL时,玩家未登录
@@ -58,7 +73,7 @@ func (this *players) Load(uid string, handle func(player *Player) error) (err er
 		np.mutex.Lock()
 		defer np.mutex.Unlock()
 		r = np
-	} else if err = p.Construct(); err == nil {
+	} else if err = p.Init(); err == nil {
 		r = p
 	}
 	if err != nil {
@@ -79,30 +94,33 @@ func (this *players) LoadWithUnlock(uid string) (r *Player) {
 	return
 }
 
-//// Online 在线人数
-//func (this *players) Online() int32 {
-//	return this.online
-//}
-//
-//// Login 用户上线.必须所内执行
-//func (this *players) Login(p *Updater, now int64, log *IGGLog) {
-//	if log != nil {
-//		p.Values.Set(ValuesIGGLog, log)
-//	}
-//	this.connect(p, now, false)
-//}
-
-// Logout 强制下线
+// Logout 强制下线,注意不能进用户锁
 func (this *players) Logout(p *Player) {
-	this.disconnect(p, false)
+	_ = this.destruct(p)
 }
 
-func (this *players) disconnect(p *Player, needLock bool) {
-	if needLock {
-		p.mutex.Lock()
-		defer p.mutex.Unlock()
+func (this *players) destruct(p *Player) (err error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if err = p.Flush(); err == nil {
+		this.dict.Delete(p.Uid())
 	}
-	this.dict.Delete(p.Uid())
+	return
+}
+
+func (this *players) disconnect(p *Player, t int64) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	//------------------------------------
+	p.Reset(nil)
+	p.Role.Online += t - p.connected
+	_ = p.Save()
+	p.Release()
+	//------------------------------------
+	p.connected = 0
+	p.KeepAlive(t)
+	//尝试回写数据
+	_ = p.Flush()
 }
 
 func (this *players) worker() {
@@ -111,31 +129,28 @@ func (this *players) worker() {
 			logger.Debug(e)
 		}
 	}()
-	//now := time.Now().Unix()
-	//logoutTime := now - playersDisconnect
-	//destroyTime := now - playersDestruct
+	now := time.Now().Unix()
+	logoutTime := now - playersDisconnect
+	destructTime := now - playersDestruct
 
 	this.dict.Range(func(key, value any) bool {
 		//检查掉线情况
-		//p := value.(*Player)
-		//if p.Online.timestamp == 0 && p.Online.heartbeat <= destroyTime {
-		//	this.destroyed(p, true)
-		//} else if p.Online.heartbeat < logoutTime {
-		//	this.disconnect(p, now, true)
-		//}
-		//else if p.Online.timestamp < saveTime {
-		//	this.refresh(p, now)
-		//}
+		p := value.(*Player)
+		if p.connected == 0 && p.heartbeat <= destructTime {
+			_ = this.destruct(p)
+		} else if p.heartbeat < logoutTime {
+			this.disconnect(p, now)
+		}
 		return true
 	})
 }
 
-func (this *players) daemon(ctx context.Context) {
+func (this *players) daemon() {
 	t := time.Second * playersHeartbeat
 	timer := time.NewTimer(t)
 	for {
 		select {
-		case <-ctx.Done():
+		case <-this.stop:
 			return
 		case <-timer.C:
 			this.worker()

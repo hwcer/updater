@@ -8,7 +8,7 @@ import (
 func NewPlayer(uid string) *Player {
 	player := &Player{}
 	player.Updater = updater.New(uid)
-	player.Updater.Listen(updater.ProcessTypeNew, player.init)
+	player.Updater.Listen(updater.ProcessTypeInit, player.init)
 	return player
 }
 

@@ -114,7 +114,7 @@ func (this *Hash) release() {
 		this.dataset = nil
 	}
 }
-func (this *Hash) construct() error {
+func (this *Hash) init() error {
 	this.symbol = this.model.Symbol(this.Updater)
 	if this.statement.ram == RAMTypeAlways {
 		this.dataset, this.Updater.Error = this.model.Getter(this.Updater, this.symbol, nil)
@@ -123,7 +123,7 @@ func (this *Hash) construct() error {
 }
 
 // 关闭时执行,玩家下线
-func (this *Hash) destruct() (err error) {
+func (this *Hash) flush() (err error) {
 	return this.save()
 }
 
@@ -205,7 +205,11 @@ func (this *Hash) Save() (err error) {
 		}
 	}
 	this.statement.done()
-	return this.save()
+	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+		logger.Warn("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
+		err = nil
+	}
+	return
 }
 
 func (this *Hash) Operator(t operator.Types, k any, v any) {

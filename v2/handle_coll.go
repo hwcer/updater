@@ -86,7 +86,7 @@ func (this *Collection) release() {
 		this.Dataset = nil
 	}
 }
-func (this *Collection) construct() error {
+func (this *Collection) init() error {
 	this.Dataset = dataset.New()
 	if this.statement.ram == RAMTypeAlways {
 		this.Updater.Error = this.model.Getter(this.Updater, nil, this.Receive)
@@ -95,7 +95,7 @@ func (this *Collection) construct() error {
 }
 
 // 关闭时执行,玩家下线
-func (this *Collection) destruct() (err error) {
+func (this *Collection) flush() (err error) {
 	return this.save()
 }
 
