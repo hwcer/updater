@@ -11,10 +11,11 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	userid := "userid"
 	//LOGIN
-	err := Players.Load(Userid, func(player *Player) (err error) {
+	err := Players.Load(userid, func(player *Player) (err error) {
 		if player == nil {
-			err = fmt.Errorf("用户不存在:%v", Userid)
+			err = fmt.Errorf("用户不存在:%v", userid)
 		}
 		return
 	})
@@ -23,11 +24,11 @@ func TestNew(t *testing.T) {
 		return
 	}
 
-	if err = service(Userid, doWork); err != nil {
+	if err = service(userid, doWork); err != nil {
 		fmt.Printf("服务器错误:%v\n", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err = service(Userid, doTask); err != nil {
+		if err = service(userid, doTask); err != nil {
 			fmt.Printf("服务器错误:%v\n", err)
 		}
 	}

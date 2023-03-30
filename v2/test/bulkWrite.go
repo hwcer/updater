@@ -2,6 +2,7 @@ package test
 
 import "fmt"
 
+// 模拟MONGODB操作
 type BulkWrite struct {
 }
 

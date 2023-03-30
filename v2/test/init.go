@@ -11,7 +11,6 @@ import (
 )
 
 const Split = "-"
-const Userid = "test"
 
 func init() {
 	updater.Config.IMax = func(iid int32) int64 {
