@@ -90,7 +90,9 @@ func doWork(player *Player) error {
 
 	role := player.Handle("role").(*updater.Document)
 	role.Set("name", "test2")
-
+	if err := player.Save(); err != nil {
+		return err //手动SAVE 强制立即生效
+	}
 	fmt.Printf("GET 1102:%v\n", player.Val(1102))
 	fmt.Printf("GET Name:%v\n", player.Role.Name)
 	fmt.Printf("共计用时:%v\n", time.Since(st))
