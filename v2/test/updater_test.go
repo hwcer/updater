@@ -16,6 +16,7 @@ const (
 func TestNew(t *testing.T) {
 	player := NewPlayer(Userid)
 	player.On(eventTest, listenerTest)
+	player.Listen(updater.ProcessTypePreSave, plugsPreSaveTest)
 	doWork(player)
 	for i := 0; i < 10; i++ {
 		doEvent(player)
@@ -80,6 +81,11 @@ func doEvent(u *Player) {
 	}
 	_ = u.Save()
 	u.Emit(eventTest, values.Values{"N": v})
+}
+
+func plugsPreSaveTest(u *updater.Updater) error {
+	fmt.Printf("收到监听PreSave\n")
+	return nil
 }
 
 func listenerTest(u *updater.Updater, args values.Values) bool {

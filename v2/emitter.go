@@ -4,10 +4,10 @@ import "github.com/hwcer/cosgo/values"
 
 type EventType int32
 
-var events = make(map[EventType][]listener)
-
 // listener 返回false时将移除,全局事件无法移除
 type listener func(*Updater, values.Values) bool
+
+//var globalEvents = make(map[EventType][]listener)
 
 type emitter struct {
 	events    map[EventType][]values.Values
@@ -15,9 +15,9 @@ type emitter struct {
 }
 
 // On 全局监控对象,在文件init()中注册避免并发
-func On(name EventType, fn listener) {
-	events[name] = append(events[name], fn)
-}
+//func On(name EventType, fn listener) {
+//	globalEvents[name] = append(globalEvents[name], fn)
+//}
 
 // On 添加即时任务类监控
 func (u *Updater) On(name EventType, handle listener) {
@@ -41,11 +41,11 @@ func (u *Updater) doEvents() {
 	}
 	for name, args := range u.emitter.events {
 		//全局事件
-		for _, handle := range events[name] {
-			for _, arg := range args {
-				handle(u, arg)
-			}
-		}
+		//for _, handle := range globalEvents[name] {
+		//	for _, arg := range args {
+		//		handle(u, arg)
+		//	}
+		//}
 		//即时事件
 		var next []listener
 		for _, handle := range u.emitter.listeners[name] {

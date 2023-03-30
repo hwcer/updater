@@ -77,7 +77,7 @@ func (this *Collection) reset() {
 	if this.Dataset == nil {
 		this.Dataset = dataset.New()
 		if this.statement.ram == RAMTypeAlways {
-			this.Error = this.model.Init(this.statement.Updater, this.Receive)
+			this.Updater.Error = this.model.Init(this.statement.Updater, this.Receive)
 		}
 	}
 }
@@ -127,16 +127,16 @@ func (this *Collection) Set(k any, v ...any) {
 		if update := dataset.ParseUpdate(v[0]); update != nil {
 			this.Operator(operator.TypeSet, k, update)
 		} else {
-			this.Error = ErrArgsIllegal(k, v)
+			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
 			this.Operator(operator.TypeSet, k, dataset.NewUpdate(field, v[1]))
 		} else {
-			this.Error = ErrArgsIllegal(k, v)
+			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	default:
-		this.Error = ErrArgsIllegal(k, v)
+		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
 }
 
@@ -154,8 +154,8 @@ func (this *Collection) Select(keys ...any) {
 }
 
 func (this *Collection) Data() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	if len(this.keys) == 0 {
 		return nil
@@ -167,8 +167,8 @@ func (this *Collection) Data() (err error) {
 }
 
 func (this *Collection) Verify() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	for _, act := range this.statement.operator {
 		if err = this.verify(act); err != nil {
@@ -183,8 +183,8 @@ func (this *Collection) Verify() (err error) {
 }
 
 func (this *Collection) Save() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	//同步到内存
 	for _, cache := range this.statement.operator {
@@ -206,18 +206,18 @@ func (this *Collection) Save() (err error) {
 }
 
 func (this *Collection) Operator(t operator.Types, k any, v any) {
-	if this.Error != nil {
+	if this.Updater.Error != nil {
 		return
 	}
 	op := operator.New(t, v)
 	op.Value = v
 	//del set 使用oid,iid,使用iid时,必须可以无限叠加,具有唯一OID
 	if t == operator.TypeDel || t == operator.TypeSet {
-		op.OID, op.IID, this.Error = this.Updater.ObjectId(k)
+		op.OID, op.IID, this.Updater.Error = this.Updater.ObjectId(k)
 	} else {
 		op.IID = ParseInt32(k)
 	}
-	if this.Error != nil {
+	if this.Updater.Error != nil {
 		return
 	}
 	if op.IID <= 0 {
@@ -226,7 +226,7 @@ func (this *Collection) Operator(t operator.Types, k any, v any) {
 	}
 	it := this.Updater.IType(op.IID)
 	if it == nil {
-		this.Error = ErrITypeNotExist(op.IID)
+		this.Updater.Error = ErrITypeNotExist(op.IID)
 		return
 	}
 	if it.Unique() {
@@ -285,7 +285,7 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 // operatorUnique 可以无限叠加的装备
 func (this *Collection) operatorUnique(op *operator.Operator) {
 	if op.OID == "" {
-		op.OID, this.Error = this.Updater.CreateId(op.IID)
+		op.OID, this.Updater.Error = this.Updater.CreateId(op.IID)
 	}
 }
 

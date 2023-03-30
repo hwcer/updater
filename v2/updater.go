@@ -12,22 +12,34 @@ import (
 type Updater struct {
 	ctx       context.Context
 	uid       string
-	dict      map[string]Handle
 	time      *utils.DateTime
-	plugs     map[plugsType][]plugsHandle
+	Error     error
 	changed   bool
 	emitter   emitter
+	process   updaterProcess
+	handles   map[string]Handle
 	tolerance bool //宽容模式下,扣除道具不足时允许扣成0,而不是报错
 }
 
 func New(uid string) (u *Updater) {
 	u = &Updater{uid: uid}
-	u.dict = make(map[string]Handle)
+	u.handles = make(map[string]Handle)
 	for _, model := range modelsRank {
-		u.dict[model.name] = handles[model.parser](u, model.model, model.ram)
+		u.handles[model.name] = handles[model.parser](u, model.model, model.ram)
 	}
-	u.Release()
 	return
+}
+
+func (u *Updater) Errorf(format any, args ...any) error {
+	switch v := format.(type) {
+	case string:
+		u.Error = fmt.Errorf(v, args...)
+	case error:
+		u.Error = v
+	default:
+		u.Error = fmt.Errorf("%v", v)
+	}
+	return u.Error
 }
 
 // Reset 重置
@@ -37,9 +49,7 @@ func (u *Updater) Reset(ctx context.Context) {
 	}
 	u.ctx = context.WithValue(ctx, "", nil)
 	u.time = utils.Time.New(time.Now())
-	//u.plugs = map[plugsType][]plugsHandle{}
-	//u.overflow = make(map[int32]int64)
-	for _, w := range u.dict {
+	for _, w := range u.handles {
 		w.reset()
 	}
 }
@@ -47,17 +57,18 @@ func (u *Updater) Reset(ctx context.Context) {
 // Release 释放
 func (u *Updater) Release() {
 	u.ctx = nil
-	u.plugs = nil
+	u.Error = nil
 	u.changed = false
 	u.tolerance = false
-	for _, w := range u.dict {
+	u.process.release()
+	for _, w := range u.handles {
 		w.release()
 	}
 }
 
 // Destruct 是否所有缓存,并将改变写入数据库,返回错误时无法写入数据库,应该排除数据库后再次尝试关闭
 func (u *Updater) Destruct() (err error) {
-	for _, w := range u.dict {
+	for _, w := range u.handles {
 		if err = w.destruct(); err != nil {
 			return
 		}
@@ -140,18 +151,16 @@ func (u *Updater) Select(keys ...any) {
 }
 
 func (u *Updater) Data() (err error) {
-	if u.uid == "" {
-		return ErrUidEmpty
+	if u.Error != nil {
+		return u.Error
 	}
 	defer func() {
-		if err == nil {
-			u.changed = false
-		}
+		u.changed = false
 	}()
-	if err = u.doPlugs(PlugsTypePreData); err != nil {
-		return err
+	if err = u.process.emit(u, ProcessTypePreData); err != nil {
+		return
 	}
-	for _, w := range u.handles() {
+	for _, w := range u.Handles() {
 		if err = w.Data(); err != nil {
 			return
 		}
@@ -160,42 +169,45 @@ func (u *Updater) Data() (err error) {
 }
 
 func (u *Updater) Save() (err error) {
-	if u.uid == "" {
-		return ErrUidEmpty
+	if u.Error != nil {
+		return u.Error
 	}
 	if u.changed {
 		if err = u.Data(); err != nil {
 			return
 		}
 	}
-	if err = u.doPlugs(PlugsTypePreVerify); err != nil {
-		return err
+	if err = u.process.emit(u, ProcessTypePreVerify); err != nil {
+		return
 	}
-	hs := u.handles()
+	hs := u.Handles()
 	for _, w := range hs {
 		if err = w.Verify(); err != nil {
 			return
 		}
 	}
-	if err = u.doPlugs(PlugsTypePreSave); err != nil {
-		return err
+	if err = u.process.emit(u, ProcessTypePreSave); err != nil {
+		return
 	}
 	for _, w := range hs {
 		if err = w.Save(); err != nil {
 			return
 		}
 	}
-	if err = u.doPlugs(PlugsTypePreSubmit); err != nil {
-		return err
+	if err = u.process.emit(u, ProcessTypePreSubmit); err != nil {
+		return
 	}
+	u.doEvents()
 	return
 }
 
 func (u *Updater) Submit() (r []*operator.Operator) {
-	for _, w := range u.handles() {
+	if u.Error != nil {
+		return
+	}
+	for _, w := range u.Handles() {
 		r = append(r, w.submit()...)
 	}
-	u.doEvents()
 	return r
 }
 
@@ -249,7 +261,7 @@ func (u *Updater) ObjectId(id any) (oid string, iid int32, err error) {
 
 // Handle 根据 name(string)
 func (u *Updater) Handle(name string) Handle {
-	return u.dict[name]
+	return u.handles[name]
 }
 
 // Handle 根据iid,oid获取模型不支持Hash,Document的字段查询
@@ -268,9 +280,9 @@ func (u *Updater) handle(k any) Handle {
 	return u.Handle(model.name)
 }
 
-func (u *Updater) handles() (r []Handle) {
+func (u *Updater) Handles() (r []Handle) {
 	for _, model := range modelsRank {
-		r = append(r, u.dict[model.name])
+		r = append(r, u.handles[model.name])
 	}
 	return
 }

@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"fmt"
 	"github.com/hwcer/updater/v2/operator"
 )
 
@@ -16,7 +15,6 @@ const (
 type statement struct {
 	ram      RAMType
 	cache    []*operator.Operator
-	Error    error
 	values   map[any]int64 //执行过程中的数量过程
 	handle   func(t operator.Types, k any, v any)
 	Updater  *Updater
@@ -40,15 +38,14 @@ func (stmt *statement) reset() {
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
 	stmt.cache = nil
-	stmt.Error = nil
 	stmt.values = nil
 	stmt.operator = nil
 	stmt.verified = false
 	//b.Fields.release()
 }
 
-func (stmt *statement) Errorf(format string, args ...any) {
-	stmt.Error = fmt.Errorf(format, args)
+func (stmt *statement) Errorf(format any, args ...any) error {
+	return stmt.Updater.Errorf(format, args...)
 }
 
 func (stmt *statement) Operator(c *operator.Operator, before ...bool) {

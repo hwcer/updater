@@ -103,7 +103,7 @@ func (this *Hash) reset() {
 	}
 	if this.dataset == nil {
 		if this.statement.ram == RAMTypeAlways {
-			this.dataset, this.Error = this.model.Init(this.statement.Updater, this.symbol)
+			this.dataset, this.Updater.Error = this.model.Init(this.statement.Updater, this.symbol)
 		} else {
 			this.dataset = hashData{}
 		}
@@ -145,7 +145,7 @@ func (this *Hash) Set(k any, v ...any) {
 	case 1:
 		this.Operator(operator.TypeSet, k, v[0])
 	default:
-		this.Error = ErrArgsIllegal(k, v)
+		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
 }
 
@@ -162,8 +162,8 @@ func (this *Hash) Select(keys ...any) {
 }
 
 func (this *Hash) Data() error {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	if len(this.keys) == 0 {
 		return nil
@@ -179,8 +179,8 @@ func (this *Hash) Data() error {
 }
 
 func (this *Hash) Verify() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
@@ -192,8 +192,8 @@ func (this *Hash) Verify() (err error) {
 }
 
 func (this *Hash) Save() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	for _, act := range this.statement.operator {
 		if act.TYP.IsValid() {

@@ -117,13 +117,13 @@ func (this *Document) reset() {
 	}
 	if this.dataset == nil {
 		if this.statement.ram == RAMTypeAlways {
-			this.dataset, this.Error = this.model.Init(this.statement.Updater, true)
+			this.dataset, this.Updater.Error = this.model.Init(this.statement.Updater, true)
 		} else {
-			this.dataset, this.Error = this.model.Init(this.statement.Updater, false)
+			this.dataset, this.Updater.Error = this.model.Init(this.statement.Updater, false)
 		}
 	}
 	if this.schema == nil {
-		this.schema, this.Error = schema.Parse(this.dataset)
+		this.schema, this.Updater.Error = schema.Parse(this.dataset)
 	}
 }
 
@@ -167,7 +167,7 @@ func (this *Document) Set(k any, v ...any) {
 	case 1:
 		this.Operator(operator.TypeSet, k, v[0])
 	default:
-		this.Error = ErrArgsIllegal(k, v)
+		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
 }
 
@@ -185,8 +185,8 @@ func (this *Document) Select(keys ...any) {
 }
 
 func (this *Document) Data() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	if len(this.keys) == 0 {
 		return nil
@@ -200,8 +200,8 @@ func (this *Document) Data() (err error) {
 }
 
 func (this *Document) Verify() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
@@ -213,8 +213,8 @@ func (this *Document) Verify() (err error) {
 }
 
 func (this *Document) Save() (err error) {
-	if this.Error != nil {
-		return this.Error
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	//同步到内存
 	for _, act := range this.statement.operator {
@@ -260,8 +260,8 @@ func (this *Document) Operator(t operator.Types, k any, v any) {
 	}
 	cache := operator.New(t, v)
 	cache.OID = this.schema.Table
-	cache.Key, cache.IID, this.Error = this.ObjectId(k)
-	if this.Error != nil {
+	cache.Key, cache.IID, this.Updater.Error = this.ObjectId(k)
+	if this.Updater.Error != nil {
 		return
 	}
 	if !this.has(cache.Key) {
