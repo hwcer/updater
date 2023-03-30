@@ -8,6 +8,7 @@ import (
 func NewPlayer(uid string) *Player {
 	player := &Player{}
 	player.Updater = updater.New(uid)
+	player.Updater.Listen(updater.ProcessTypeNew, player.init)
 	return player
 }
 
@@ -20,10 +21,11 @@ type Player struct {
 	heartbeat int64 //最后心跳时间
 }
 
-func (p *Player) construct() {
+func (p *Player) init(u *updater.Updater) error {
 	p.Role = p.Updater.Handle("role").(*updater.Document).Interface().(*Role)
 	p.Task = &TaskMgr{}
 	p.Task.Init(p.Updater)
+	return nil
 }
 
 func (p *Player) Lock() bool {

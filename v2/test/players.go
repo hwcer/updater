@@ -59,7 +59,6 @@ func (this *players) Load(uid string, handle func(player *Player) error) (err er
 		defer np.mutex.Unlock()
 		r = np
 	} else if err = p.Construct(); err == nil {
-		p.construct()
 		r = p
 	}
 	if err != nil {

@@ -28,7 +28,7 @@ func (this *Task) handle(u *updater.Updater, args values.Values) bool {
 	this.Val += 1
 	r := this.Val < this.Tar
 	if r {
-		fmt.Printf("[%v]当前任务进度%v/%v\n", this.id, this.Val, this.Tar)
+		//fmt.Printf("[%v]当前任务进度%v/%v\n", this.id, this.Val, this.Tar)
 	} else {
 		fmt.Printf("[%v]当前任务完成%v/%v\n", this.id, this.Val, this.Tar)
 	}

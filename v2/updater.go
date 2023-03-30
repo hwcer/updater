@@ -73,7 +73,7 @@ func (u *Updater) Construct() (err error) {
 			return
 		}
 	}
-	return nil
+	return u.process.emit(u, ProcessTypeNew)
 }
 
 // Destruct 是否所有缓存,并将改变写入数据库,返回错误时无法写入数据库,应该排除数据库后再次尝试关闭
