@@ -15,6 +15,7 @@ import (
 
 	Get(k string) any              //获取k的值
 	Set(k string, v any) error    //设置k值的为v
+	IType() int32                 //默认的IType
 */
 type documentModel interface {
 	Model(update *Updater) any                                    //获取对象
@@ -22,6 +23,9 @@ type documentModel interface {
 	Setter(update *Updater, model any, data map[string]any) error //保存数据接口,需要从data中取值
 }
 
+type documentIType interface {
+	IType() int32
+}
 type documentKeys map[string]bool
 type documentDirty map[string]any
 
@@ -40,6 +44,7 @@ func (this documentKeys) Merge(src documentKeys) {
 // Document 文档存储
 type Document struct {
 	*statement
+	it     int32
 	keys   documentKeys
 	dirty  documentDirty
 	model  documentModel //handle model
@@ -221,7 +226,7 @@ func (this *Document) Save() (err error) {
 	}
 	//同步到内存
 	for _, act := range this.statement.operator {
-		if act.TYP.IsValid() {
+		if act.Type.IsValid() {
 			if e := this.set(act.Key, act.Value); e != nil {
 				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,value:%v", this.schema.Table, act.Value)
 			} else {
@@ -262,8 +267,13 @@ func (this *Document) Operator(t operator.Types, k any, v any) {
 		return
 	}
 	cache := operator.New(t, v)
-	cache.OID = this.schema.Table
+	//cache.OID = this.schema.Table
 	cache.Key, cache.IID, this.Updater.Error = this.ObjectId(k)
+	if cache.IID == 0 {
+		if it, ok := this.dataset.(documentIType); ok {
+			cache.IID = it.IType()
+		}
+	}
 	if this.Updater.Error != nil {
 		return
 	}

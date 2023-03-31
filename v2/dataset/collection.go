@@ -50,7 +50,7 @@ func (this Collection) Count(iid int32) (r int64) {
 
 // Update 更新信息
 func (this Collection) Update(op *operator.Operator) (err error) {
-	switch op.TYP {
+	switch op.Type {
 	case operator.TypeDel:
 		delete(this, op.OID)
 	case operator.TypeNew:

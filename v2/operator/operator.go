@@ -1,18 +1,19 @@
 package operator
 
 func New(t Types, v any) *Operator {
-	return &Operator{TYP: t, Value: v}
+	return &Operator{Type: t, Value: v}
 }
 
 //type CacheHandle func(c *Cache, k, v any) any
 
 type Operator struct {
-	OID    string `json:"o,omitempty"` //object id
-	IID    int32  `json:"i,omitempty"` //item id
-	TYP    Types  `json:"t"`           //操作类型
-	Key    string `json:"k,omitempty"` //字段名
-	Value  any    `json:"v"`           //增量
-	Result any    `json:"r"`           //结果,类型和Value一样
+	OID  string `json:"o,omitempty"` //object id
+	IID  int32  `json:"i,omitempty"` //item id
+	Key  string `json:"k,omitempty"` //字段名
+	Type Types  `json:"t"`           //操作类型
+	//IType  int32  `json:"b,omitempty"`
+	Value  any `json:"v"` //增量
+	Result any `json:"r"` //结果,类型和Value一样
 	//effective bool //立即生效,仅在需要最终一致时使用,比如体力自动回复
 }
 

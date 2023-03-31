@@ -22,9 +22,9 @@ func init() {
 }
 
 func (this *Collection) Parse(act *operator.Operator) (err error) {
-	f, ok := collectionParseHandle[act.TYP]
+	f, ok := collectionParseHandle[act.Type]
 	if !ok {
-		return fmt.Errorf("collectionParseHandle not exist:%v", act.TYP)
+		return fmt.Errorf("collectionParseHandle not exist:%v", act.Type)
 	}
 	return f(this, act)
 }
@@ -39,7 +39,7 @@ func collectionHandleDel(coll *Collection, act *operator.Operator) error {
 }
 
 func collectionHandleNew(coll *Collection, cache *operator.Operator) error {
-	cache.TYP = operator.TypeNew
+	cache.Type = operator.TypeNew
 	if it := coll.Updater.IType(cache.IID); !it.Unique() {
 		return collectionHandleNewMultiple(coll, cache)
 	} else {
@@ -62,14 +62,14 @@ func collectionHandleSub(coll *Collection, cache *operator.Operator) (err error)
 	d := coll.val(cache.IID)
 	v := bson.ParseInt64(cache.Value)
 	if v > d {
-		if coll.Updater.tolerance {
+		if coll.Updater.tolerate {
 			v = d
 		} else {
 			return ErrItemNotEnough(cache.IID, v, d)
 		}
 	}
 	if d <= 0 {
-		cache.TYP = operator.TypeDrop
+		cache.Type = operator.TypeDrop
 	} else {
 		r := d - v
 		cache.Result = r
@@ -84,7 +84,7 @@ func collectionHandleSet(coll *Collection, cache *operator.Operator) (err error)
 		return collectionHandleNew(coll, cache)
 	}
 	cache.Result = cache.Value
-	cache.TYP = operator.TypeSet
+	cache.Type = operator.TypeSet
 	update, _ := cache.Value.(dataset.Update)
 	if v, ok := update[operator.ItemNameVAL]; ok {
 		coll.values[cache.IID] = ParseInt64(v)
@@ -99,7 +99,7 @@ func collectionHandleMax(coll *Collection, cache *operator.Operator) (err error)
 	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v > d {
 		err = collectionTransformSet(coll, cache)
 	} else {
-		cache.TYP = operator.TypeDrop
+		cache.Type = operator.TypeDrop
 	}
 	return
 }
@@ -108,7 +108,7 @@ func collectionHandleMin(coll *Collection, cache *operator.Operator) (err error)
 	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v < d {
 		err = collectionTransformSet(coll, cache)
 	} else {
-		cache.TYP = operator.TypeDrop
+		cache.Type = operator.TypeDrop
 	}
 	return
 }

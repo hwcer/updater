@@ -55,7 +55,7 @@ func service(uid string, f func(*Player) error) error {
 		}
 		for _, c := range player.Submit() {
 			b, _ := json.Marshal(c)
-			fmt.Printf("save cache[%v]:%v\n", c.TYP.ToString(), string(b))
+			fmt.Printf("save cache[%v]:%v\n", c.Type.ToString(), string(b))
 		}
 		return
 	})
@@ -87,6 +87,8 @@ func doWork(player *Player) error {
 	//添加装备 coll模型
 	player.Add(4001, 2)
 	player.Add(4001, 1)
+
+	player.Set("userid-4001-1", "attach", "霜之哀伤")
 
 	role := player.Handle("role").(*updater.Document)
 	role.Set("name", "test2")

@@ -17,7 +17,7 @@ func init() {
 }
 
 func (this *Hash) Parse(op *operator.Operator) error {
-	if f, ok := hashParseHandle[op.TYP]; ok {
+	if f, ok := hashParseHandle[op.Type]; ok {
 		return f(this, op)
 	}
 	return fmt.Errorf("map parser not exist:%v", op)
@@ -35,7 +35,7 @@ func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 	d := this.val(op.IID)
 	v := ParseInt64(op.Value)
 	if v > d {
-		if this.Updater.tolerance {
+		if this.Updater.tolerate {
 			v = d
 		} else {
 			err = ErrItemNotEnough(op.IID, v, d)
@@ -43,7 +43,7 @@ func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 		return
 	}
 	if d <= 0 {
-		op.TYP = operator.TypeDrop
+		op.Type = operator.TypeDrop
 	} else {
 		r := d - v
 		op.Result = r
@@ -53,7 +53,7 @@ func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 }
 
 func hashParseSet(this *Hash, op *operator.Operator) (err error) {
-	op.TYP = operator.TypeSet
+	op.Type = operator.TypeSet
 	v := ParseInt64(op.Value)
 	op.Result = v
 	this.values[op.IID] = v
@@ -81,7 +81,7 @@ func hashParseMin(this *Hash, op *operator.Operator) (err error) {
 	if d := this.val(op.IID); v < d {
 		err = hashParseSet(this, op)
 	} else {
-		op.TYP = operator.TypeDrop
+		op.Type = operator.TypeDrop
 	}
 	return
 }

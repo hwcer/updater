@@ -16,7 +16,7 @@ func init() {
 }
 
 func (this *Document) Parse(op *operator.Operator) error {
-	if f, ok := documentParseHandle[op.TYP]; ok {
+	if f, ok := documentParseHandle[op.Type]; ok {
 		return f(this, op)
 	}
 	return errors.New("hash_act_parser not exist")
@@ -34,7 +34,7 @@ func documentParseSub(this *Document, op *operator.Operator) (err error) {
 	d := this.val(op.Key)
 	v := ParseInt64(op.Value)
 	if v > d {
-		if this.Updater.tolerance {
+		if this.Updater.tolerate {
 			v = d
 		} else {
 			err = ErrItemNotEnough(op.IID, v, d)
@@ -42,7 +42,7 @@ func documentParseSub(this *Document, op *operator.Operator) (err error) {
 		return
 	}
 	if d <= 0 {
-		op.TYP = operator.TypeDrop
+		op.Type = operator.TypeDrop
 	} else {
 		r := d - v
 		op.Result = r
@@ -52,7 +52,7 @@ func documentParseSub(this *Document, op *operator.Operator) (err error) {
 }
 
 func documentParseSet(this *Document, op *operator.Operator) (err error) {
-	op.TYP = operator.TypeSet
+	op.Type = operator.TypeSet
 	op.Result = op.Value
 	if r, ok := TryParseInt64(op.Value); ok {
 		this.values[op.Key] = r
@@ -66,7 +66,7 @@ func documentParseMax(this *Document, op *operator.Operator) (err error) {
 		op.Result = v
 		this.values[op.Key] = v
 	} else {
-		op.TYP = operator.TypeDrop
+		op.Type = operator.TypeDrop
 	}
 	return
 }
@@ -77,7 +77,7 @@ func documentParseMin(this *Document, op *operator.Operator) (err error) {
 		op.Result = v
 		this.values[op.Key] = v
 	} else {
-		op.TYP = operator.TypeDrop
+		op.Type = operator.TypeDrop
 	}
 	return
 }

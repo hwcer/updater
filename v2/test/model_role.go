@@ -5,7 +5,9 @@ import (
 	"github.com/hwcer/updater/v2"
 )
 
-var ITypeRole = &iTypeRole{iType: iType{id: 11, unique: true}, fields: map[int32]string{}}
+const RoleIType = 11
+
+var ITypeRole = &iTypeRole{iType: iType{id: RoleIType, unique: true}, fields: map[int32]string{}}
 
 func init() {
 	ITypeRole.Register(1100, "uid")
@@ -23,6 +25,10 @@ type Role struct {
 	Level  int32  `bson:"level"`
 	Money  int64  `bson:"money"`
 	Online int64  `bson:"online"` //累计在线时间
+}
+
+func (this *Role) IType() int32 {
+	return RoleIType
 }
 
 func (this *Role) Model(u *updater.Updater) any {

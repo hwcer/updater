@@ -191,7 +191,7 @@ func (this *Collection) Save() (err error) {
 	}
 	//同步到内存
 	for _, cache := range this.statement.operator {
-		if cache.TYP.IsValid() {
+		if cache.Type.IsValid() {
 			if err = this.Dataset.Update(cache); err != nil {
 				logger.Warn("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, cache)
 				err = nil
@@ -254,7 +254,7 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 		return ErrITypeNotExist(cache.IID)
 	}
 	//溢出判定
-	if cache.TYP == operator.TypeAdd || cache.TYP == operator.TypeNew {
+	if cache.Type == operator.TypeAdd || cache.Type == operator.TypeNew {
 		val := ParseInt64(cache.Value)
 		num := this.Dataset.Count(cache.IID)
 		tot := val + num
@@ -279,7 +279,7 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 			}
 		}
 		if val == 0 {
-			cache.TYP = operator.TypeResolve
+			cache.Type = operator.TypeResolve
 		}
 	}
 	return
@@ -294,10 +294,10 @@ func (this *Collection) operatorUnique(op *operator.Operator) {
 
 // operatorMultiple 不可以叠加的道具不能SUB,只能DEL
 func (this *Collection) operatorMultiple(op *operator.Operator) {
-	switch op.TYP {
+	switch op.Type {
 	case operator.TypeSub:
 		this.Errorf("sub disabled:%v", op.IID)
 	case operator.TypeAdd:
-		op.TYP = operator.TypeNew
+		op.Type = operator.TypeNew
 	}
 }

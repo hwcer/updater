@@ -198,7 +198,7 @@ func (this *Hash) Save() (err error) {
 		return this.Updater.Error
 	}
 	for _, act := range this.statement.operator {
-		if act.TYP.IsValid() {
+		if act.Type.IsValid() {
 			v := act.Result.(int64)
 			this.dirty[act.IID] = v
 			this.dataset[act.IID] = v
@@ -225,7 +225,6 @@ func (this *Hash) Operator(t operator.Types, k any, v any) {
 		}
 	}
 	cache := operator.New(t, v)
-	cache.OID = this.name
 	cache.IID = id
 	if !this.has(id) {
 		this.keys[id] = true

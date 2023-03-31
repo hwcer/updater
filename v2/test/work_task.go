@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/values"
 	"github.com/hwcer/updater/v2"
+	"github.com/hwcer/updater/v2/operator"
 	"math/rand"
 )
 
@@ -26,11 +27,11 @@ type Task struct {
 func (this *Task) handle(u *updater.Updater, args values.Values) bool {
 	this.Val += 1
 	r := this.Val < this.Tar
-	if r {
-		//fmt.Printf("[%v]当前任务进度%v/%v\n", this.id, this.Val, this.Tar)
-	} else {
+	if !r {
 		fmt.Printf("[%v]当前任务完成%v/%v\n", this.id, this.Val, this.Tar)
 	}
+	//模拟同步信息给客户端
+	u.Operator(operator.TypeSet, this.id, this.Val, this.Val)
 	return r
 }
 
@@ -45,7 +46,8 @@ func (this *TaskMgr) Init(u *updater.Updater) {
 	//获取进行中的任务
 	l := int32(len(TaskEventsDict))
 	for i := int32(1); i < 100; i++ {
-		v := &Task{id: i, Tar: rand.Int31n(10) + 1}
+
+		v := &Task{id: 60000 + i, Tar: rand.Int31n(10) + 1}
 		e := TaskEventsDict[i%l] //随机一个事件作为任务监控对象
 		u.On(e, v.handle)
 		this.dict[v.id] = v

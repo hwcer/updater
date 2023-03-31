@@ -9,15 +9,16 @@ import (
 )
 
 type Updater struct {
-	ctx       context.Context
-	uid       string
-	Time      time.Time
-	Error     error
-	changed   bool
-	emitter   emitter
-	process   updaterProcess
-	handles   map[string]Handle
-	tolerance bool //宽容模式下,扣除道具不足时允许扣成0,而不是报错
+	ctx      context.Context
+	uid      string
+	Time     time.Time
+	Error    error
+	changed  bool
+	emitter  emitter
+	process  updaterProcess
+	handles  map[string]Handle
+	operator []*operator.Operator //临时操作,不涉及数据,直接返回给客户端,此类消息无视错误,直至成功
+	tolerate bool                 //宽容模式下,扣除道具不足时允许扣成0,而不是报错
 }
 
 func New(uid string) (u *Updater) {
@@ -58,7 +59,7 @@ func (u *Updater) Release() {
 	u.ctx = nil
 	u.Error = nil
 	u.changed = false
-	u.tolerance = false
+	u.tolerate = false
 	u.process.release()
 	for _, w := range u.handles {
 		w.release()
@@ -90,9 +91,9 @@ func (u *Updater) Uid() string {
 	return u.uid
 }
 
-// Tolerance 开启宽容模式,道具不足时扣成0
-func (u *Updater) Tolerance() {
-	u.tolerance = true
+// Tolerate 开启包容模式,道具不足时扣成0,仅生效一次
+func (u *Updater) Tolerate() {
+	u.tolerate = true
 }
 
 func (u *Updater) Context() context.Context {
@@ -212,6 +213,10 @@ func (u *Updater) Submit() (r []*operator.Operator) {
 	if u.Error != nil {
 		return
 	}
+	if len(u.operator) > 0 {
+		r = append(r, u.operator...)
+		u.operator = nil
+	}
 	for _, w := range u.Handles() {
 		r = append(r, w.submit()...)
 	}
@@ -288,8 +293,18 @@ func (u *Updater) handle(k any) Handle {
 }
 
 func (u *Updater) Handles() (r []Handle) {
+	r = make([]Handle, 0, len(modelsRank))
 	for _, model := range modelsRank {
 		r = append(r, u.handles[model.name])
 	}
 	return
+}
+
+// Operator 生成一次操作结果,返回给客户端,不会修改数据
+func (u *Updater) Operator(t operator.Types, i int32, v any, r any) *operator.Operator {
+	op := operator.New(t, v)
+	op.IID = i
+	op.Result = r
+	u.operator = append(u.operator, op)
+	return op
 }

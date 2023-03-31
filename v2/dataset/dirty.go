@@ -22,7 +22,7 @@ func (this Dirty) Update(op *operator.Operator) {
 		bw = &bulkWrite{}
 		this[op.OID] = bw
 	}
-	switch op.TYP {
+	switch op.Type {
 	case operator.TypeDel:
 		bw.Delete()
 	case operator.TypeNew:
