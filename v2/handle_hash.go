@@ -224,12 +224,15 @@ func (this *Hash) Operator(t operator.Types, k any, v any) {
 			return
 		}
 	}
-	cache := operator.New(t, v)
-	cache.IID = id
+	op := operator.New(t, v)
+	op.IID = id
 	if !this.has(id) {
 		this.keys[id] = true
 	}
-	this.statement.Operator(cache)
+	if mod, ok := this.model.(ModelListener); ok {
+		mod.Listener(this.Updater, op)
+	}
+	this.statement.Operator(op)
 	if this.verified {
 		_ = this.Verify()
 	}

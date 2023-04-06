@@ -35,10 +35,10 @@ var Config = struct {
 // IType 一个IType对于一种数据类型·
 // 多种数据类型 可以用一种数据模型(model,一张表结构)
 type IType interface {
-	Id() int32                                                    //IType 唯一标志
-	New(u *Updater, c *operator.Operator) (item any, err error)   //生成空对象和默认字段,新对象中必须对oid,uid,iid,val进行赋值
-	Unique() bool                                                 //unique=true 一个玩家角色只生成一条数据(可堆叠,oid=uid+iid),unique=false时oid=uid+iid+random
-	CreateId(adapter *Updater, iid int32) (oid string, err error) //使用IID创建OID,或者查找Field
+	Id() int32                                                   //IType 唯一标志
+	New(u *Updater, op *operator.Operator) (item any, err error) //生成空对象和默认字段,新对象中必须对oid,uid,iid,val进行赋值
+	Unique() bool                                                //unique=true 一个玩家角色只生成一条数据(可堆叠,oid=uid+iid),unique=false时oid=uid+iid+random
+	CreateId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID,或者查找Field
 }
 
 // ITypeResolve 自动分解,如果没有分解方式超出上限则使用系统默认方式（丢弃）处理
@@ -46,5 +46,15 @@ type IType interface {
 // 使用Resolve前，需要使用ITypeListener监听将可能分解成的道具ID使用adapter.Select预读数据
 // 使用Resolve时需要关联IMax指定道具上限
 type ITypeResolve interface {
-	Resolve(adapter *Updater, cache *operator.Operator) error
+	Resolve(u *Updater, op *operator.Operator) error
+}
+
+// ModelIType 获取默认IType,仅仅doc模型使用
+type ModelIType interface {
+	IType() int32
+}
+
+// ModelListener 监听数据变化
+type ModelListener interface {
+	Listener(u *Updater, op *operator.Operator)
 }

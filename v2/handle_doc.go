@@ -15,7 +15,6 @@ import (
 
 	Get(k string) any              //获取k的值
 	Set(k string, v any) error    //设置k值的为v
-	IType() int32                 //默认的IType
 */
 type documentModel interface {
 	Model(update *Updater) any                                    //获取对象
@@ -23,9 +22,6 @@ type documentModel interface {
 	Setter(update *Updater, model any, data map[string]any) error //保存数据接口,需要从data中取值
 }
 
-type documentIType interface {
-	IType() int32
-}
 type documentKeys map[string]bool
 type documentDirty map[string]any
 
@@ -266,21 +262,23 @@ func (this *Document) Operator(t operator.Types, k any, v any) {
 		logger.Debug("updater document del is disabled")
 		return
 	}
-	cache := operator.New(t, v)
-	//cache.OID = this.schema.Table
-	cache.Key, cache.IID, this.Updater.Error = this.ObjectId(k)
-	if cache.IID == 0 {
-		if it, ok := this.dataset.(documentIType); ok {
-			cache.IID = it.IType()
+	op := operator.New(t, v)
+	op.Key, op.IID, this.Updater.Error = this.ObjectId(k)
+	if op.IID == 0 {
+		if it, ok := this.model.(ModelIType); ok {
+			op.IID = it.IType()
 		}
 	}
 	if this.Updater.Error != nil {
 		return
 	}
-	if !this.has(cache.Key) {
-		this.keys[cache.Key] = true
+	if !this.has(op.Key) {
+		this.keys[op.Key] = true
 	}
-	this.statement.Operator(cache)
+	if mod, ok := this.model.(ModelListener); ok {
+		mod.Listener(this.Updater, op)
+	}
+	this.statement.Operator(op)
 	if this.verified {
 		_ = this.Verify()
 	}

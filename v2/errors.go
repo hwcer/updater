@@ -24,13 +24,8 @@ func ErrArgsIllegal(args ...any) *ErrMsg {
 	return NewError("args illegal", args...)
 }
 
-func ErrItemNotExist(iid int32) *ErrMsg {
-	return NewError("Item Not Exist", iid)
-}
-
-func ErrObjNotExist(oid string) *ErrMsg {
-	panic("oid Not Exist")
-	return NewError("oid Not Exist", oid)
+func ErrItemNotExist(id any) *ErrMsg {
+	return NewError("Item Not Exist", id)
 }
 
 func ErrItemNotEnough(args ...interface{}) *ErrMsg {

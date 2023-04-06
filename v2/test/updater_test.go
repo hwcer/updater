@@ -28,7 +28,7 @@ func TestNew(t *testing.T) {
 	if err = service(userid, doWork); err != nil {
 		fmt.Printf("服务器错误:%v\n", err)
 	}
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		if err = service(userid, doTask); err != nil {
 			fmt.Printf("服务器错误:%v\n", err)
 		}

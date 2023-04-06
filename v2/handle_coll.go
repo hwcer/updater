@@ -224,7 +224,7 @@ func (this *Collection) Operator(t operator.Types, k any, v any) {
 		return
 	}
 	if op.IID <= 0 {
-		this.Errorf("iid illegal:%v", op)
+		_ = this.Errorf("iid illegal:%v", op)
 		return
 	}
 	it := this.Updater.IType(op.IID)
@@ -236,6 +236,9 @@ func (this *Collection) Operator(t operator.Types, k any, v any) {
 		this.operatorUnique(op)
 	} else {
 		this.operatorMultiple(op)
+	}
+	if mod, ok := this.model.(ModelListener); ok {
+		mod.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
 	if this.verified {

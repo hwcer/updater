@@ -79,9 +79,9 @@ func collectionHandleSub(coll *Collection, cache *operator.Operator) (err error)
 }
 
 func collectionHandleSet(coll *Collection, cache *operator.Operator) (err error) {
-	d := coll.val(cache.IID)
-	if d <= 0 {
-		return collectionHandleNew(coll, cache)
+	if d := coll.val(cache.IID); d <= 0 {
+		return ErrItemNotExist(cache.OID)
+		//return collectionHandleNew(coll, cache)
 	}
 	cache.Result = cache.Value
 	cache.Type = operator.TypeSet

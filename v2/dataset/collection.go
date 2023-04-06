@@ -48,6 +48,13 @@ func (this Collection) Count(iid int32) (r int64) {
 	return
 }
 
+func (this Collection) create(v any) error {
+	if clone, ok := v.(Clone); ok {
+		v = clone.Clone()
+	}
+	return this.Create(v)
+}
+
 // Update 更新信息
 func (this Collection) Update(op *operator.Operator) (err error) {
 	switch op.Type {
@@ -56,7 +63,7 @@ func (this Collection) Update(op *operator.Operator) (err error) {
 	case operator.TypeNew:
 		if values, ok := op.Result.([]any); ok {
 			for _, v := range values {
-				err = this.Create(v)
+				err = this.create(v)
 			}
 		} else {
 			err = fmt.Errorf("OperatorTypeNew Error:%v", op.Value)

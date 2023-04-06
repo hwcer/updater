@@ -24,6 +24,11 @@ type Item struct {
 	Attach string `bson:"attach"`
 }
 
+func (this *Item) Clone() any {
+	r := *this
+	return &r
+}
+
 func (this *Item) Getter(u *updater.Updater, keys []string, fn updater.Receive) error {
 	fmt.Printf("====== item Getter:%v\n", keys)
 	return nil
