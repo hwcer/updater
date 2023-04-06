@@ -49,7 +49,7 @@ func (this Collection) Count(iid int32) (r int64) {
 }
 
 func (this Collection) create(v any) error {
-	if clone, ok := v.(Clone); ok {
+	if clone, ok := v.(ModelClone); ok {
 		v = clone.Clone()
 	}
 	return this.Create(v)

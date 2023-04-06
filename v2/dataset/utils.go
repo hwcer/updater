@@ -13,6 +13,10 @@ type ModelSet interface {
 	Set(k string, v any) error
 }
 
+type ModelClone interface {
+	Clone() any
+}
+
 func Format(s ...string) string {
 	return strings.Join(s, ".")
 }
