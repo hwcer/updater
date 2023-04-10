@@ -6,7 +6,7 @@ import (
 	"github.com/hwcer/updater/v2"
 )
 
-var ITypeDaily = &iType{id: 20, unique: true}
+var ITypeDaily = &iType{id: 20}
 
 func init() {
 	if err := updater.Register(updater.ParserTypeHash, updater.RAMTypeAlways, &Daily{}, ITypeDaily); err != nil {

@@ -2,8 +2,10 @@ package updater
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/updater/v2/dataset"
 	"github.com/hwcer/updater/v2/operator"
 	"time"
 )
@@ -150,6 +152,33 @@ func (u *Updater) Del(id any) {
 	}
 }
 
+// New 直接创建新对象
+func (u *Updater) New(i any) error {
+	doc := dataset.NewDocument(i)
+	iid := doc.IID()
+	if iid <= 0 {
+		return errors.New("iid empty")
+	}
+	if oid := doc.OID(); oid == "" {
+		return errors.New("oid empty")
+	}
+	handle := u.handle(iid)
+	if handle == nil {
+		return errors.New("handle unknown")
+	}
+	if handle.Parser() != ParserTypeCollection {
+		return fmt.Errorf("handle Parser must be %v", ParserTypeCollection)
+	}
+	hn, ok := handle.(HandleNew)
+	if !ok {
+		return fmt.Errorf("handle not method New")
+	}
+	op := operator.New(operator.TypeNew, doc.VAL())
+	op.IID = iid
+	op.Result = []any{i}
+	return hn.New(op)
+}
+
 func (u *Updater) Select(keys ...any) {
 	for _, k := range keys {
 		if w := u.handle(k); w != nil {
@@ -223,50 +252,20 @@ func (u *Updater) Submit() (r []*operator.Operator) {
 	return r
 }
 
-// IType 通过ikey获取IType
-func (u *Updater) IType(k any) (it IType) {
-	if iid, err := u.ParseId(k); err == nil {
-		id := Config.IType(iid)
+// IType 通过iid获取IType
+func (u *Updater) IType(iid int32) (it IType) {
+	if id := Config.IType(iid); id != 0 {
 		it = itypesDict[id]
 	}
 	return
 }
 
+// ParseId 通过OID 或者IID 获取iid
 func (u *Updater) ParseId(key any) (iid int32, err error) {
 	if v, ok := key.(string); ok {
 		iid, err = Config.ParseId(u, v)
 	} else {
 		iid = ParseInt32(key)
-	}
-	return
-}
-
-// CreateId 通过IID创建OID,不可堆叠道具，不可使用此接口
-func (u *Updater) CreateId(key any) (oid string, err error) {
-	if v, ok := key.(string); ok {
-		return v, nil
-	}
-	iid := ParseInt32(key)
-	itk := Config.IType(iid)
-	itv := itypesDict[itk]
-	if itv == nil {
-		return "", fmt.Errorf("IType unknown:%v", iid)
-	}
-	if !itv.Unique() {
-		return "", fmt.Errorf("item IType not unique:%v", iid)
-	}
-	return itv.CreateId(u, iid)
-}
-
-// ObjectId 根据id(iid,oid)同时获取iid,oid/key
-func (u *Updater) ObjectId(id any) (oid string, iid int32, err error) {
-	switch v := id.(type) {
-	case string:
-		oid = v
-		iid, err = u.ParseId(oid)
-	default:
-		iid = ParseInt32(id)
-		oid, err = u.CreateId(iid)
 	}
 	return
 }

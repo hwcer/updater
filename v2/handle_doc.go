@@ -18,6 +18,7 @@ import (
 */
 type documentModel interface {
 	Model(update *Updater) any                                    //获取对象
+	Field(iid int32) (string, error)                              //使用IID映射字段名
 	Getter(update *Updater, model any, keys []string) error       //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, model any, data map[string]any) error //保存数据接口,需要从data中取值
 }
@@ -55,6 +56,9 @@ func NewDocument(u *Updater, model any, ram RAMType) Handle {
 	r.model = model.(documentModel)
 	r.statement = NewStatement(u, ram, r.Operator)
 	return r
+}
+func (this *Document) Parser() Parser {
+	return ParserTypeDocument
 }
 
 // Has 查询key(DBName)是否已经初始化
@@ -150,7 +154,7 @@ func (this *Document) flush() (err error) {
 // Get k==nil 获取的是整个struct
 // 不建议使用GET获取特定字段值
 func (this *Document) Get(k any) (r any) {
-	if key, _, err := this.ObjectId(k); err == nil {
+	if key, err := this.ObjectId(k); err == nil {
 		r = this.get(key)
 	}
 	return
@@ -158,7 +162,7 @@ func (this *Document) Get(k any) (r any) {
 
 // Val 不建议使用Val获取特定字段值的int64值
 func (this *Document) Val(k any) (r int64) {
-	if key, _, err := this.ObjectId(k); err == nil {
+	if key, err := this.ObjectId(k); err == nil {
 		r = this.val(key)
 	}
 	return
@@ -180,7 +184,7 @@ func (this *Document) Select(keys ...any) {
 		return
 	}
 	for _, k := range keys {
-		if key, _, err := this.ObjectId(k); err == nil && !this.has(key) {
+		if key, err := this.ObjectId(k); err == nil && !this.has(key) {
 			this.keys[key] = true
 		} else {
 			logger.Warn(err)
@@ -238,13 +242,13 @@ func (this *Document) Save() (err error) {
 	return
 }
 
-func (this *Document) ObjectId(k any) (key string, iid int32, err error) {
+func (this *Document) ObjectId(k any) (key string, err error) {
 	switch v := k.(type) {
 	case string:
 		key = v
 	default:
-		iid = ParseInt32(k)
-		key, err = this.Updater.CreateId(v)
+		iid := ParseInt32(k)
+		key, err = this.model.Field(iid)
 	}
 	if err == nil {
 		field := this.schema.LookUpField(key)
@@ -263,12 +267,19 @@ func (this *Document) Operator(t operator.Types, k any, v any) {
 		return
 	}
 	op := operator.New(t, v)
-	op.Key, op.IID, this.Updater.Error = this.ObjectId(k)
-	if op.IID == 0 {
-		if it, ok := this.model.(ModelIType); ok {
-			op.IID = it.IType()
+	switch s := k.(type) {
+	case string:
+		op.Key = s
+	default:
+		if iid := ParseInt32(k); iid > 0 {
+			op.Key, this.Updater.Error = this.model.Field(iid)
 		}
 	}
+	if this.Updater.Error != nil {
+		return
+	}
+	op.OID = this.schema.Table
+
 	if this.Updater.Error != nil {
 		return
 	}

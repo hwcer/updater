@@ -38,13 +38,18 @@ func collectionHandleDel(coll *Collection, act *operator.Operator) error {
 	return nil
 }
 
-func collectionHandleNew(coll *Collection, cache *operator.Operator) error {
-	cache.Type = operator.TypeNew
-	if it := coll.Updater.IType(cache.IID); !it.Unique() {
-		return collectionHandleNewMultiple(coll, cache)
+func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
+	op.Type = operator.TypeNew
+	var v int64
+	if it := coll.IType(op.IID); !it.Multiple() {
+		v, err = collectionHandleNewUnique(coll, op)
 	} else {
-		return collectionHandleNewUnique(coll, cache)
+		v, err = collectionHandleNewMultiple(coll, op)
 	}
+	if err == nil {
+		coll.values[op.IID] = coll.val(op.IID) + v
+	}
+	return
 }
 
 func collectionHandleAdd(coll *Collection, cache *operator.Operator) (err error) {
@@ -113,34 +118,43 @@ func collectionHandleMin(coll *Collection, cache *operator.Operator) (err error)
 	return
 }
 
-func collectionHandleNewUnique(coll *Collection, cache *operator.Operator) error {
-	it := coll.Updater.IType(cache.IID)
+func collectionHandleNewUnique(coll *Collection, op *operator.Operator) (v int64, err error) {
+	it := coll.IType(op.IID)
 	if it == nil {
-		return ErrITypeNotExist(cache.IID)
+		return 0, ErrITypeNotExist(op.IID)
 	}
-	if d, err := it.New(coll.Updater, cache); err == nil {
-		cache.Result = []any{d}
-		coll.values[cache.IID] = ParseInt64(cache.Value)
-		return nil
-	} else {
-		return err
+	v = ParseInt64(op.Value)
+	if v == 0 {
+		op.Value, v = 1, 1
 	}
-}
-func collectionHandleNewMultiple(coll *Collection, cache *operator.Operator) error {
-	it := coll.Updater.IType(cache.IID)
-	if it == nil {
-		return ErrITypeNotExist(cache.IID)
+	if op.Result != nil {
+		return
 	}
-	v := ParseInt64(cache.Value)
+	var item any
 	var newItem []any
 	for i := int64(1); i <= v; i++ {
-		if d, err := it.New(coll.Updater, cache); err == nil {
-			newItem = append(newItem, d)
+		if item, err = it.New(coll.Updater, op); err == nil {
+			newItem = append(newItem, item)
+		} else {
+			return
 		}
 	}
-	if l := len(newItem); l > 0 {
-		coll.values[cache.IID] = coll.val(cache.IID) + int64(l)
+	op.Result = newItem
+	return
+}
+
+func collectionHandleNewMultiple(coll *Collection, op *operator.Operator) (v int64, err error) {
+	it := coll.IType(op.IID)
+	if it == nil {
+		return 0, ErrITypeNotExist(op.IID)
 	}
-	cache.Result = newItem
-	return nil
+	v = ParseInt64(op.Value)
+	if v == 0 {
+		op.Value, v = 1, 1
+	}
+	var item any
+	if item, err = it.New(coll.Updater, op); err == nil {
+		op.Result = []any{item}
+	}
+	return
 }

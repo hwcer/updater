@@ -1,6 +1,8 @@
 package updater
 
-import "github.com/hwcer/updater/v2/operator"
+import (
+	"github.com/hwcer/updater/v2/operator"
+)
 
 const ZeroInt64 = int64(0)
 
@@ -18,12 +20,17 @@ type Handle interface {
 	Save() error        //即时同步
 	Verify() error      //验证数据
 	Select(keys ...any) //非内存模式时获取特定道具
+	Parser() Parser     //解析模型
 
 	init() error                  //构造方法
 	flush() error                 //析构方法
 	reset()                       //运行时开始时
 	submit() []*operator.Operator //将执行结果发送给前端
 	release()                     //运行时释放缓存信息
+}
+
+type HandleNew interface {
+	New(op *operator.Operator) error
 }
 
 var Config = struct {
@@ -35,10 +42,14 @@ var Config = struct {
 // IType 一个IType对于一种数据类型·
 // 多种数据类型 可以用一种数据模型(model,一张表结构)
 type IType interface {
-	Id() int32                                                   //IType 唯一标志
-	New(u *Updater, op *operator.Operator) (item any, err error) //生成空对象和默认字段,新对象中必须对oid,uid,iid,val进行赋值
-	Unique() bool                                                //unique=true 一个玩家角色只生成一条数据(可堆叠,oid=uid+iid),unique=false时oid=uid+iid+random
-	CreateId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID,或者查找Field
+	Id() int32 //IType 唯一标志
+}
+
+type ITypeCollection interface {
+	IType
+	New(u *Updater, op *operator.Operator) (item any, err error) //根据Operator信息生成新对象
+	ObjectId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID
+	Multiple() bool                                              //道具是否可以堆叠
 }
 
 // ITypeResolve 自动分解,如果没有分解方式超出上限则使用系统默认方式（丢弃）处理
@@ -50,9 +61,9 @@ type ITypeResolve interface {
 }
 
 // ModelIType 获取默认IType,仅仅doc模型使用
-type ModelIType interface {
-	IType() int32
-}
+//type ModelIType interface {
+//	IType() int32
+//}
 
 // ModelListener 监听数据变化
 type ModelListener interface {

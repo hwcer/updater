@@ -1,13 +1,10 @@
 package test
 
 import (
-	"errors"
 	"fmt"
 	"github.com/hwcer/updater/v2"
-	"github.com/hwcer/updater/v2/operator"
 	"strconv"
 	"strings"
-	"sync/atomic"
 )
 
 const Split = "-"
@@ -38,32 +35,9 @@ func ParseId(_ *updater.Updater, oid string) (iid int32, err error) {
 }
 
 type iType struct {
-	id     int32
-	seed   int32
-	unique bool
+	id int32
 }
 
 func (this *iType) Id() int32 {
 	return this.id
-}
-
-func (this *iType) New(_ *updater.Updater, op *operator.Operator) (any, error) {
-	return nil, errors.New("没有重载New方法，理论上不应该调用此方法，请检查代码")
-}
-
-func (this *iType) Unique() bool {
-	return this.unique
-}
-
-// CreateId 创建道具唯一ID，注意要求可以使用itypes.go中ParseId函数解析
-func (this *iType) CreateId(a *updater.Updater, iid int32) (string, error) {
-	b := strings.Builder{}
-	b.WriteString(a.Uid())
-	b.WriteString(Split)
-	b.WriteString(strconv.Itoa(int(iid)))
-	if !this.Unique() {
-		b.WriteString(Split)
-		b.WriteString(strconv.Itoa(int(atomic.AddInt32(&this.seed, 1))))
-	}
-	return b.String(), nil
 }

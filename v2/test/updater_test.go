@@ -88,7 +88,9 @@ func doWork(player *Player) error {
 	player.Add(4001, 2)
 	player.Add(4001, 1)
 
-	player.Set("userid-4001-1", "attach", "霜之哀伤")
+	_ = player.New(&Item{OID: "userid-4001-100", UID: player.Uid(), IID: 4001, Val: 1, Attach: "定制版霜之哀伤"})
+
+	player.Set("userid-4001-1", "attach", "原版霜之哀伤")
 
 	role := player.Handle("role").(*updater.Document)
 	role.Set("name", "test2")

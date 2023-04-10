@@ -51,6 +51,10 @@ func NewHash(u *Updater, model any, ram RAMType) Handle {
 	return r
 }
 
+func (this *Hash) Parser() Parser {
+	return ParserTypeHash
+}
+
 // has 检查k是否已经缓存,或者下次会被缓存
 func (this *Hash) has(key int32) (r bool) {
 	if this.statement.ram == RAMTypeAlways || (this.keys != nil && this.keys[key]) {

@@ -5,12 +5,15 @@ import (
 	"github.com/hwcer/updater/v2"
 	"github.com/hwcer/updater/v2/dataset"
 	"github.com/hwcer/updater/v2/operator"
+	"strconv"
+	"strings"
+	"sync/atomic"
 )
 
-var ITypeItem = &iTypeItem{iType{id: 30, unique: true}}
+var ItemIType = NewItemIType(30, true)
 
 func init() {
-	if err := updater.Register(updater.ParserTypeCollection, updater.RAMTypeMaybe, &Item{}, ITypeItem, ITypeEquip); err != nil {
+	if err := updater.Register(updater.ParserTypeCollection, updater.RAMTypeMaybe, &Item{}, ItemIType, EquipIType); err != nil {
 		fmt.Printf("%v\n", err)
 	}
 }
@@ -70,6 +73,7 @@ func (this *Item) Clone() any {
 }
 
 // ----------------- 作为MODEL方法--------------------
+
 func (this *Item) Getter(u *updater.Updater, keys []string, fn updater.Receive) error {
 	fmt.Printf("====== item Getter:%v\n", keys)
 	return nil
@@ -83,14 +87,37 @@ func (this *Item) BulkWrite(u *updater.Updater) dataset.BulkWrite {
 	return &BulkWrite{}
 }
 
-type iTypeItem struct {
-	iType
+func NewItemIType(id int32, multiple bool) *itemIType {
+	return &itemIType{iType: iType{id: id}, multiple: multiple}
 }
 
-func (this *iTypeItem) New(u *updater.Updater, op *operator.Operator) (any, error) {
+type itemIType struct {
+	iType
+	seed     int32
+	multiple bool
+}
+
+func (this *itemIType) New(u *updater.Updater, op *operator.Operator) (any, error) {
 	v := updater.ParseInt64(op.Value)
 	r := &Item{UID: u.Uid(), IID: op.IID, Val: v}
-	r.OID, _ = this.CreateId(u, r.IID)
+	r.OID, _ = this.ObjectId(u, r.IID)
 	fmt.Printf("New Item:%+v\n", r)
 	return r, nil
+}
+
+func (this *itemIType) Multiple() bool {
+	return this.multiple
+}
+
+// ObjectId 创建道具唯一ID，注意要求可以使用itypes.go中ParseId函数解析
+func (this *itemIType) ObjectId(a *updater.Updater, iid int32) (string, error) {
+	b := strings.Builder{}
+	b.WriteString(a.Uid())
+	b.WriteString(Split)
+	b.WriteString(strconv.Itoa(int(iid)))
+	if !this.Multiple() {
+		b.WriteString(Split)
+		b.WriteString(strconv.Itoa(int(atomic.AddInt32(&this.seed, 1))))
+	}
+	return b.String(), nil
 }

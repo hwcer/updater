@@ -7,7 +7,7 @@ import (
 
 const RoleIType = 11
 
-var ITypeRole = &iTypeRole{iType: iType{id: RoleIType, unique: true}, fields: map[int32]string{}}
+var ITypeRole = &iTypeRole{iType: iType{id: RoleIType}, fields: map[int32]string{}}
 
 func init() {
 	ITypeRole.Register(1100, "uid")
@@ -27,8 +27,11 @@ type Role struct {
 	Online int64  `bson:"online"` //累计在线时间
 }
 
-func (this *Role) IType() int32 {
-	return RoleIType
+func (this *Role) Field(iid int32) (string, error) {
+	if v, ok := ITypeRole.fields[iid]; ok {
+		return v, nil
+	}
+	return "", fmt.Errorf("iid对应的字段不存在:%v", iid)
 }
 
 func (this *Role) Model(u *updater.Updater) any {
@@ -50,12 +53,12 @@ type iTypeRole struct {
 	fields map[int32]string
 }
 
-func (this *iTypeRole) CreateId(_ *updater.Updater, iid int32) (string, error) {
-	if oid, ok := this.fields[iid]; ok {
-		return oid, nil
-	}
-	return "", fmt.Errorf("未知的IID:%v", iid)
-}
+//func (this *iTypeRole) CreateId(_ *updater.Updater, iid int32) (string, error) {
+//	if oid, ok := this.fields[iid]; ok {
+//		return oid, nil
+//	}
+//	return "", fmt.Errorf("未知的IID:%v", iid)
+//}
 
 func (this *iTypeRole) Register(iid int32, key string) {
 	this.fields[iid] = key

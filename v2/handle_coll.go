@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/updater/v2/dataset"
 	"github.com/hwcer/updater/v2/operator"
@@ -19,7 +20,7 @@ type Collection struct {
 	keys    documentKeys
 	model   collectionModel
 	dirty   dataset.Dirty
-	Dataset dataset.Collection
+	dataset dataset.Collection
 }
 
 func NewCollection(u *Updater, model any, ram RAMType) Handle {
@@ -27,6 +28,16 @@ func NewCollection(u *Updater, model any, ram RAMType) Handle {
 	r.model = model.(collectionModel)
 	r.statement = NewStatement(u, ram, r.Operator)
 	return r
+}
+func (this *Collection) Parser() Parser {
+	return ParserTypeCollection
+}
+
+func (this *Collection) IType(iid int32) (it ITypeCollection) {
+	if i := this.Updater.IType(iid); i != nil {
+		it, _ = i.(ITypeCollection)
+	}
+	return
 }
 
 // Has 查询key(DBName)是否已经初始化
@@ -37,21 +48,21 @@ func (this *Collection) has(key string) (r bool) {
 	if this.dirty != nil && this.dirty.Has(key) {
 		return true
 	}
-	if this.Dataset != nil && this.Dataset.Has(key) {
+	if this.dataset != nil && this.dataset.Has(key) {
 		return true
 	}
 	return false
 }
 
 func (this *Collection) get(k string) (r *dataset.Document) {
-	return this.Dataset.Get(k)
+	return this.dataset.Get(k)
 }
 
 func (this *Collection) val(iid int32) (r int64) {
 	if v, ok := this.values[iid]; ok {
 		return v
 	}
-	r = this.Dataset.Count(iid)
+	r = this.dataset.Count(iid)
 	this.values[iid] = r
 	return
 }
@@ -73,8 +84,8 @@ func (this *Collection) reset() {
 	if this.dirty == nil {
 		this.dirty = dataset.NewDirty()
 	}
-	if this.Dataset == nil {
-		this.Dataset = dataset.New()
+	if this.dataset == nil {
+		this.dataset = dataset.New()
 	}
 }
 
@@ -83,11 +94,11 @@ func (this *Collection) release() {
 	this.statement.release()
 	if this.statement.ram == RAMTypeNone {
 		this.dirty = nil
-		this.Dataset = nil
+		this.dataset = nil
 	}
 }
 func (this *Collection) init() error {
-	this.Dataset = dataset.New()
+	this.dataset = dataset.New()
 	if this.statement.ram == RAMTypeAlways {
 		this.Updater.Error = this.model.Getter(this.Updater, nil, this.Receive)
 	}
@@ -101,7 +112,7 @@ func (this *Collection) flush() (err error) {
 
 // Get 返回item,不可叠加道具只能使用oid获取
 func (this *Collection) Get(key any) (r any) {
-	if oid, err := this.Updater.CreateId(key); err == nil {
+	if oid, err := this.ObjectId(key); err == nil {
 		if i := this.get(oid); i != nil {
 			r = i.Interface()
 		}
@@ -111,9 +122,9 @@ func (this *Collection) Get(key any) (r any) {
 	return
 }
 
-// Val 直接获取 item中的val值
+// Val 直接获取 item中的val值,不可叠加道具只能使用oid获取
 func (this *Collection) Val(key any) (r int64) {
-	if oid, err := this.Updater.CreateId(key); err == nil {
+	if oid, err := this.ObjectId(key); err == nil {
 		if i := this.get(oid); i != nil {
 			r = i.VAL()
 		}
@@ -143,12 +154,44 @@ func (this *Collection) Set(k any, v ...any) {
 	}
 }
 
+func (this *Collection) New(op *operator.Operator) (err error) {
+	if op.OID == "" && op.IID <= 0 {
+		return this.Updater.Errorf("operator oid and iid empty:%v", op)
+	}
+	if op.IID <= 0 {
+		op.IID, this.Updater.Error = Config.ParseId(this.Updater, op.OID)
+	}
+	if this.Updater.Error != nil {
+		return this.Updater.Error
+	}
+	it := this.IType(op.IID)
+	if it == nil {
+		return this.Updater.Errorf(ErrITypeNotExist(op.IID))
+	}
+	if !it.Multiple() {
+		this.operatorUnique(op)
+	} else {
+		this.operatorMultiple(op)
+	}
+	if this.Updater.Error != nil {
+		return this.Updater.Error
+	}
+	if mod, ok := this.model.(ModelListener); ok {
+		mod.Listener(this.Updater, op)
+	}
+	this.statement.Operator(op)
+	if this.verified {
+		err = this.Verify()
+	}
+	return
+}
+
 func (this *Collection) Select(keys ...any) {
 	if this.ram == RAMTypeAlways {
 		return
 	}
 	for _, k := range keys {
-		if oid, err := this.Updater.CreateId(k); err == nil && !this.has(oid) {
+		if oid, err := this.ObjectId(k); err == nil && !this.has(oid) {
 			this.keys[oid] = true
 		} else {
 			logger.Debug(err)
@@ -192,7 +235,7 @@ func (this *Collection) Save() (err error) {
 	//同步到内存
 	for _, cache := range this.statement.operator {
 		if cache.Type.IsValid() {
-			if err = this.Dataset.Update(cache); err != nil {
+			if err = this.dataset.Update(cache); err != nil {
 				logger.Warn("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, cache)
 				err = nil
 			} else {
@@ -214,41 +257,32 @@ func (this *Collection) Operator(t operator.Types, k any, v any) {
 	}
 	op := operator.New(t, v)
 	op.Value = v
-	//del set 使用oid,iid,使用iid时,必须可以无限叠加,具有唯一OID
-	if t == operator.TypeDel || t == operator.TypeSet {
-		op.OID, op.IID, this.Updater.Error = this.Updater.ObjectId(k)
-	} else {
+	switch d := k.(type) {
+	case string:
+		op.OID = d
+	default:
 		op.IID = ParseInt32(k)
 	}
-	if this.Updater.Error != nil {
-		return
-	}
-	if op.IID <= 0 {
-		_ = this.Errorf("iid illegal:%v", op)
-		return
-	}
-	it := this.Updater.IType(op.IID)
-	if it == nil {
-		this.Updater.Error = ErrITypeNotExist(op.IID)
-		return
-	}
-	if it.Unique() {
-		this.operatorUnique(op)
-	} else {
-		this.operatorMultiple(op)
-	}
-	if mod, ok := this.model.(ModelListener); ok {
-		mod.Listener(this.Updater, op)
-	}
-	this.statement.Operator(op)
-	if this.verified {
-		_ = this.Verify()
-	}
+
+	//del set 使用oid,iid,使用iid时,必须可以无限叠加,具有唯一OID
+	//if t == operator.TypeDel || t == operator.TypeSet {
+	//	op.OID, this.Updater.Error = this.ObjectId(k)
+	//} else {
+	//	op.IID = ParseInt32(k)
+	//}
+	//if this.Updater.Error != nil {
+	//	return
+	//}
+	//if op.IID <= 0 {
+	//	_ = this.Errorf("iid illegal:%v", op)
+	//	return
+	//}
+	_ = this.New(op)
 }
 
 // Receive 接收业务逻辑层数据
 func (this *Collection) Receive(id string, data any) {
-	this.Dataset.Set(id, data)
+	this.dataset.Set(id, data)
 }
 
 func (this *Collection) verify(cache *operator.Operator) (err error) {
@@ -257,12 +291,11 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 		return ErrITypeNotExist(cache.IID)
 	}
 	//溢出判定
-	if cache.Type == operator.TypeAdd || cache.Type == operator.TypeNew {
+	if cache.Type == operator.TypeAdd {
 		val := ParseInt64(cache.Value)
-		num := this.Dataset.Count(cache.IID)
+		num := this.dataset.Count(cache.IID)
 		tot := val + num
 		imax := Config.IMax(cache.IID)
-
 		if imax > 0 && tot > imax {
 			overflow := tot - imax
 			if overflow > val {
@@ -288,19 +321,46 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 	return
 }
 
-// operatorUnique 可以无限叠加的装备
-func (this *Collection) operatorUnique(op *operator.Operator) {
+// operatorUnique 可以无限叠加的道具
+func (this *Collection) operatorMultiple(op *operator.Operator) {
 	if op.OID == "" {
-		op.OID, this.Updater.Error = this.Updater.CreateId(op.IID)
+		op.OID, this.Updater.Error = this.ObjectId(op.IID)
+	}
+	if op.Type == operator.TypeNew {
+		op.Type = operator.TypeAdd
 	}
 }
 
 // operatorMultiple 不可以叠加的道具不能SUB,只能DEL
-func (this *Collection) operatorMultiple(op *operator.Operator) {
+func (this *Collection) operatorUnique(op *operator.Operator) {
 	switch op.Type {
 	case operator.TypeSub:
-		this.Errorf("sub disabled:%v", op.IID)
+		_ = this.Errorf("sub disabled:%v", op.IID)
 	case operator.TypeAdd:
 		op.Type = operator.TypeNew
+	case operator.TypeNew:
+
+	default:
+		if op.OID == "" {
+			_ = this.Errorf("operator unique item oid empty:%+v", op) //SET DEL
+		}
 	}
+}
+
+func (this *Collection) ObjectId(key any) (oid string, err error) {
+	if v, ok := key.(string); ok {
+		return v, nil
+	}
+	iid := ParseInt32(key)
+	if iid <= 0 {
+		return "", fmt.Errorf("iid empty:%v", iid)
+	}
+	it := this.IType(iid)
+	if it == nil {
+		return "", fmt.Errorf("IType unknown:%v", iid)
+	}
+	if !it.Multiple() {
+		return "", fmt.Errorf("IType Multiple:%v", iid)
+	}
+	return it.ObjectId(this.Updater, iid)
 }

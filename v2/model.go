@@ -50,6 +50,9 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 	mod.name = sch.Table
 	modelsRank = append(modelsRank, mod)
 	for _, it := range itypes {
+		if parser == ParserTypeCollection {
+			it = it.(ITypeCollection)
+		}
 		id := it.Id()
 		if _, ok := modelsDict[id]; ok {
 			return fmt.Errorf("model IType(%v)已经存在:%v", it, mod.name)
