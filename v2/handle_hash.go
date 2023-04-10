@@ -149,7 +149,7 @@ func (this *Hash) Val(k any) (r int64) {
 func (this *Hash) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
-		this.Operator(operator.TypeSet, k, v[0])
+		this.Operator(operator.Types_Set, k, v[0])
 	default:
 		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
@@ -222,7 +222,7 @@ func (this *Hash) Operator(t operator.Types, k any, v any) {
 		this.Errorf("updater Hash Operator key must int32:%v", k)
 		return
 	}
-	if t != operator.TypeDel {
+	if t != operator.Types_Del {
 		if _, ok := TryParseInt64(v); !ok {
 			this.Errorf("updater Hash Operator val must int64:%v", v)
 			return

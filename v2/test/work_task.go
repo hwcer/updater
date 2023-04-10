@@ -31,7 +31,7 @@ func (this *Task) handle(u *updater.Updater, args values.Values) bool {
 		fmt.Printf("[%v]当前任务完成%v/%v\n", this.id, this.Val, this.Tar)
 	}
 	//模拟同步信息给客户端
-	u.Operator(operator.TypeSet, this.id, this.Val, this.Val)
+	u.Operator(operator.Types_Set, this.id, this.Val, this.Val)
 	return r
 }
 

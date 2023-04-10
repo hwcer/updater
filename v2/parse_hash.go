@@ -8,12 +8,12 @@ import (
 var hashParseHandle = make(map[operator.Types]func(*Hash, *operator.Operator) error)
 
 func init() {
-	hashParseHandle[operator.TypeDel] = hashParseDel
-	hashParseHandle[operator.TypeAdd] = hashParseAdd
-	hashParseHandle[operator.TypeSub] = hashParseSub
-	hashParseHandle[operator.TypeMax] = hashParseMax
-	hashParseHandle[operator.TypeMin] = hashParseMin
-	hashParseHandle[operator.TypeSet] = hashParseSet
+	hashParseHandle[operator.Types_Del] = hashParseDel
+	hashParseHandle[operator.Types_Add] = hashParseAdd
+	hashParseHandle[operator.Types_Sub] = hashParseSub
+	hashParseHandle[operator.Types_Max] = hashParseMax
+	hashParseHandle[operator.Types_Min] = hashParseMin
+	hashParseHandle[operator.Types_Set] = hashParseSet
 }
 
 func (this *Hash) Parse(op *operator.Operator) error {
@@ -43,7 +43,7 @@ func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 		return
 	}
 	if d <= 0 {
-		op.Type = operator.TypeDrop
+		op.Type = operator.Types_Drop
 	} else {
 		r := d - v
 		op.Result = r
@@ -53,7 +53,7 @@ func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 }
 
 func hashParseSet(this *Hash, op *operator.Operator) (err error) {
-	op.Type = operator.TypeSet
+	op.Type = operator.Types_Set
 	v := ParseInt64(op.Value)
 	op.Result = v
 	this.values[op.IID] = v
@@ -71,7 +71,7 @@ func hashParseMax(this *Hash, op *operator.Operator) (err error) {
 	if d := this.val(op.IID); v > d {
 		err = hashParseSet(this, op)
 	} else {
-		op.Result = operator.TypeDrop
+		op.Result = operator.Types_Drop
 	}
 	return
 }
@@ -81,7 +81,7 @@ func hashParseMin(this *Hash, op *operator.Operator) (err error) {
 	if d := this.val(op.IID); v < d {
 		err = hashParseSet(this, op)
 	} else {
-		op.Type = operator.TypeDrop
+		op.Type = operator.Types_Drop
 	}
 	return
 }

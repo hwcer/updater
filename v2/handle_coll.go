@@ -139,13 +139,13 @@ func (this *Collection) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
 		if update := dataset.ParseUpdate(v[0]); update != nil {
-			this.Operator(operator.TypeSet, k, update)
+			this.Operator(operator.Types_Set, k, update)
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
-			this.Operator(operator.TypeSet, k, dataset.NewUpdate(field, v[1]))
+			this.Operator(operator.Types_Set, k, dataset.NewUpdate(field, v[1]))
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
@@ -291,7 +291,7 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 		return ErrITypeNotExist(cache.IID)
 	}
 	//溢出判定
-	if cache.Type == operator.TypeAdd {
+	if cache.Type == operator.Types_Add {
 		val := ParseInt64(cache.Value)
 		num := this.dataset.Count(cache.IID)
 		tot := val + num
@@ -315,7 +315,7 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 			}
 		}
 		if val == 0 {
-			cache.Type = operator.TypeResolve
+			cache.Type = operator.Types_Resolve
 		}
 	}
 	return
@@ -326,19 +326,19 @@ func (this *Collection) operatorMultiple(op *operator.Operator) {
 	if op.OID == "" {
 		op.OID, this.Updater.Error = this.ObjectId(op.IID)
 	}
-	if op.Type == operator.TypeNew {
-		op.Type = operator.TypeAdd
+	if op.Type == operator.Types_New {
+		op.Type = operator.Types_Add
 	}
 }
 
 // operatorMultiple 不可以叠加的道具不能SUB,只能DEL
 func (this *Collection) operatorUnique(op *operator.Operator) {
 	switch op.Type {
-	case operator.TypeSub:
+	case operator.Types_Sub:
 		_ = this.Errorf("sub disabled:%v", op.IID)
-	case operator.TypeAdd:
-		op.Type = operator.TypeNew
-	case operator.TypeNew:
+	case operator.Types_Add:
+		op.Type = operator.Types_New
+	case operator.Types_New:
 
 	default:
 		if op.OID == "" {

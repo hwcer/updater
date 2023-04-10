@@ -173,7 +173,7 @@ func (this *Document) Val(k any) (r int64) {
 func (this *Document) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
-		this.Operator(operator.TypeSet, k, v[0])
+		this.Operator(operator.Types_Set, k, v[0])
 	default:
 		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
@@ -262,7 +262,7 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 }
 
 func (this *Document) Operator(t operator.Types, k any, v any) {
-	if t == operator.TypeDel {
+	if t == operator.Types_Del {
 		logger.Debug("updater document del is disabled")
 		return
 	}

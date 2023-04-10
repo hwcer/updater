@@ -173,7 +173,7 @@ func (u *Updater) New(i any) error {
 	if !ok {
 		return fmt.Errorf("handle not method New")
 	}
-	op := operator.New(operator.TypeNew, doc.VAL())
+	op := operator.New(operator.Types_New, doc.VAL())
 	op.IID = iid
 	op.Result = []any{i}
 	return hn.New(op)

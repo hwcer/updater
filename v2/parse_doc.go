@@ -8,11 +8,11 @@ import (
 var documentParseHandle = make(map[operator.Types]func(*Document, *operator.Operator) error)
 
 func init() {
-	documentParseHandle[operator.TypeAdd] = documentParseAdd
-	documentParseHandle[operator.TypeSet] = documentParseSet
-	documentParseHandle[operator.TypeSub] = documentParseSub
-	documentParseHandle[operator.TypeMax] = documentParseMax
-	documentParseHandle[operator.TypeMin] = documentParseMin
+	documentParseHandle[operator.Types_Add] = documentParseAdd
+	documentParseHandle[operator.Types_Set] = documentParseSet
+	documentParseHandle[operator.Types_Sub] = documentParseSub
+	documentParseHandle[operator.Types_Max] = documentParseMax
+	documentParseHandle[operator.Types_Min] = documentParseMin
 }
 
 func (this *Document) Parse(op *operator.Operator) error {
@@ -42,7 +42,7 @@ func documentParseSub(this *Document, op *operator.Operator) (err error) {
 		return
 	}
 	if d <= 0 {
-		op.Type = operator.TypeDrop
+		op.Type = operator.Types_Drop
 	} else {
 		r := d - v
 		op.Result = r
@@ -52,7 +52,7 @@ func documentParseSub(this *Document, op *operator.Operator) (err error) {
 }
 
 func documentParseSet(this *Document, op *operator.Operator) (err error) {
-	op.Type = operator.TypeSet
+	op.Type = operator.Types_Set
 	op.Result = op.Value
 	if r, ok := TryParseInt64(op.Value); ok {
 		this.values[op.Key] = r
@@ -66,7 +66,7 @@ func documentParseMax(this *Document, op *operator.Operator) (err error) {
 		op.Result = v
 		this.values[op.Key] = v
 	} else {
-		op.Type = operator.TypeDrop
+		op.Type = operator.Types_Drop
 	}
 	return
 }
@@ -77,7 +77,7 @@ func documentParseMin(this *Document, op *operator.Operator) (err error) {
 		op.Result = v
 		this.values[op.Key] = v
 	} else {
-		op.Type = operator.TypeDrop
+		op.Type = operator.Types_Drop
 	}
 	return
 }

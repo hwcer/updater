@@ -58,9 +58,9 @@ func (this Collection) create(v any) error {
 // Update 更新信息
 func (this Collection) Update(op *operator.Operator) (err error) {
 	switch op.Type {
-	case operator.TypeDel:
+	case operator.Types_Del:
 		delete(this, op.OID)
-	case operator.TypeNew:
+	case operator.Types_New:
 		if values, ok := op.Result.([]any); ok {
 			for _, v := range values {
 				err = this.create(v)
@@ -68,10 +68,10 @@ func (this Collection) Update(op *operator.Operator) (err error) {
 		} else {
 			err = fmt.Errorf("OperatorTypeNew Error:%v", op.Value)
 		}
-	case operator.TypeSet:
+	case operator.Types_Set:
 		update, _ := op.Result.(Update)
 		err = this.update(op.OID, update)
-	case operator.TypeAdd, operator.TypeSub:
+	case operator.Types_Add, operator.Types_Sub:
 		update := NewUpdate(operator.ItemNameVAL, op.Result)
 		err = this.update(op.OID, update)
 	}

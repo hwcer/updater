@@ -11,14 +11,14 @@ import (
 var collectionParseHandle = make(map[operator.Types]func(*Collection, *operator.Operator) error)
 
 func init() {
-	collectionParseHandle[operator.TypeNew] = collectionHandleNew
-	collectionParseHandle[operator.TypeAdd] = collectionHandleAdd
-	collectionParseHandle[operator.TypeSub] = collectionHandleSub
-	collectionParseHandle[operator.TypeSet] = collectionHandleSet
-	collectionParseHandle[operator.TypeDel] = collectionHandleDel
-	collectionParseHandle[operator.TypeMax] = collectionHandleMax
-	collectionParseHandle[operator.TypeMin] = collectionHandleMin
-	collectionParseHandle[operator.TypeResolve] = collectionHandleResolve
+	collectionParseHandle[operator.Types_New] = collectionHandleNew
+	collectionParseHandle[operator.Types_Add] = collectionHandleAdd
+	collectionParseHandle[operator.Types_Sub] = collectionHandleSub
+	collectionParseHandle[operator.Types_Set] = collectionHandleSet
+	collectionParseHandle[operator.Types_Del] = collectionHandleDel
+	collectionParseHandle[operator.Types_Max] = collectionHandleMax
+	collectionParseHandle[operator.Types_Min] = collectionHandleMin
+	collectionParseHandle[operator.Types_Resolve] = collectionHandleResolve
 }
 
 func (this *Collection) Parse(act *operator.Operator) (err error) {
@@ -39,7 +39,7 @@ func collectionHandleDel(coll *Collection, act *operator.Operator) error {
 }
 
 func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
-	op.Type = operator.TypeNew
+	op.Type = operator.Types_New
 	var v int64
 	if it := coll.IType(op.IID); !it.Multiple() {
 		v, err = collectionHandleNewUnique(coll, op)
@@ -74,7 +74,7 @@ func collectionHandleSub(coll *Collection, cache *operator.Operator) (err error)
 		}
 	}
 	if d <= 0 {
-		cache.Type = operator.TypeDrop
+		cache.Type = operator.Types_Drop
 	} else {
 		r := d - v
 		cache.Result = r
@@ -89,7 +89,7 @@ func collectionHandleSet(coll *Collection, cache *operator.Operator) (err error)
 		//return collectionHandleNew(coll, cache)
 	}
 	cache.Result = cache.Value
-	cache.Type = operator.TypeSet
+	cache.Type = operator.Types_Set
 	update, _ := cache.Value.(dataset.Update)
 	if v, ok := update[operator.ItemNameVAL]; ok {
 		coll.values[cache.IID] = ParseInt64(v)
@@ -104,7 +104,7 @@ func collectionHandleMax(coll *Collection, cache *operator.Operator) (err error)
 	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v > d {
 		err = collectionTransformSet(coll, cache)
 	} else {
-		cache.Type = operator.TypeDrop
+		cache.Type = operator.Types_Drop
 	}
 	return
 }
@@ -113,7 +113,7 @@ func collectionHandleMin(coll *Collection, cache *operator.Operator) (err error)
 	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v < d {
 		err = collectionTransformSet(coll, cache)
 	} else {
-		cache.Type = operator.TypeDrop
+		cache.Type = operator.Types_Drop
 	}
 	return
 }

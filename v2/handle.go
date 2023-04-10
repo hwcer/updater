@@ -75,32 +75,32 @@ func (this *statement) Add(k int32, v int32) {
 	if k <= 0 || v <= 0 {
 		return
 	}
-	this.handle(operator.TypeAdd, k, v)
+	this.handle(operator.Types_Add, k, v)
 }
 
 func (this *statement) Sub(k int32, v int32) {
 	if k <= 0 || v <= 0 {
 		return
 	}
-	this.handle(operator.TypeSub, k, v)
+	this.handle(operator.Types_Sub, k, v)
 }
 
 func (this *statement) Max(k int32, v int32) {
 	if k <= 0 {
 		return
 	}
-	this.handle(operator.TypeMax, k, v)
+	this.handle(operator.Types_Max, k, v)
 }
 
 func (this *statement) Min(k int32, v int32) {
 	if k <= 0 {
 		return
 	}
-	this.handle(operator.TypeMin, k, v)
+	this.handle(operator.Types_Min, k, v)
 }
 
 func (this *statement) Del(k any) {
-	this.handle(operator.TypeDel, k, nil)
+	this.handle(operator.Types_Del, k, nil)
 }
 
 // Set set结果
