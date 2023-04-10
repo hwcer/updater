@@ -1,0 +1,28 @@
+syntax = "proto3";
+option go_package = "./;operator";
+
+import "google/protobuf/any.proto";
+
+enum Types {
+  TypeNone           = 0;  //无意义
+  TypeAdd            = 1 ; //添加
+  TypeSub            = 2 ; //扣除
+  TypeSet            = 3 ; //set
+  TypeDel            = 4;  //del
+  TypeNew            = 5;  //新对象
+  TypeResolve        = 6 ; //自动分解
+  TypeOverflow       = 7;  //道具已满使用其他方式(邮件)转发
+  TypeMax            = 8;  //最大值写入，最终转换成set或者drop
+  TypeMin            = 9;  //最小值写入，最终转换成set或者drop
+  TypeDrop           = 99; //抛弃不执行任何操作
+}
+
+
+message Operator{
+  string OID = 1;
+  int32 IID = 2;
+  string Key = 3;
+  Types Type = 4;
+  google.protobuf.Any Value =5;
+  google.protobuf.Any Result = 6;
+}
