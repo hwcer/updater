@@ -8,7 +8,7 @@ import (
 var hashParseHandle = make(map[operator.Types]func(*Hash, *operator.Operator) error)
 
 func init() {
-	hashParseHandle[operator.Types_Del] = hashParseDel
+	//hashParseHandle[operator.Types_Del] = hashParseDel
 	hashParseHandle[operator.Types_Add] = hashParseAdd
 	hashParseHandle[operator.Types_Sub] = hashParseSub
 	hashParseHandle[operator.Types_Max] = hashParseMax
@@ -20,12 +20,11 @@ func (this *Hash) Parse(op *operator.Operator) error {
 	if f, ok := hashParseHandle[op.Type]; ok {
 		return f(this, op)
 	}
-	return fmt.Errorf("map parser not exist:%v", op)
+	return fmt.Errorf("hash operator type not exist:%v", op.Type.ToString())
 }
 
 func hashParseAdd(this *Hash, op *operator.Operator) (err error) {
-	v := ParseInt64(op.Value)
-	r := this.val(op.IID) + v
+	r := this.val(op.IID) + op.Value
 	op.Result = r
 	this.values[op.IID] = r
 	return
@@ -33,42 +32,33 @@ func hashParseAdd(this *Hash, op *operator.Operator) (err error) {
 
 func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 	d := this.val(op.IID)
-	v := ParseInt64(op.Value)
-	if v > d {
-		if this.Updater.tolerate {
-			v = d
-		} else {
-			err = ErrItemNotEnough(op.IID, v, d)
-		}
-		return
+	if op.Value > d && !this.Updater.tolerate {
+		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
-	if d <= 0 {
-		op.Type = operator.Types_Drop
-	} else {
-		r := d - v
-		op.Result = r
-		this.values[op.Key] = r
+	r := d - op.Value
+	if r < 0 {
+		r = 0
 	}
+	op.Result = r
+	this.values[op.Key] = r
 	return
 }
 
 func hashParseSet(this *Hash, op *operator.Operator) (err error) {
 	op.Type = operator.Types_Set
-	v := ParseInt64(op.Value)
-	op.Result = v
-	this.values[op.IID] = v
+	this.values[op.IID] = ParseInt64(op.Result)
 	return
 }
 
-func hashParseDel(this *Hash, cache *operator.Operator) (err error) {
-	cache.Result = ZeroInt64
-	this.values[cache.IID] = ZeroInt64
-	return
-}
+//func hashParseDel(this *Hash, op *operator.Operator) (err error) {
+//	op.Result = ZeroInt64
+//	this.values[op.IID] = ZeroInt64
+//	return
+//}
 
 func hashParseMax(this *Hash, op *operator.Operator) (err error) {
-	v := ParseInt64(op.Value)
-	if d := this.val(op.IID); v > d {
+	if op.Value > this.val(op.IID) {
+		op.Result = op.Value
 		err = hashParseSet(this, op)
 	} else {
 		op.Result = operator.Types_Drop
@@ -77,8 +67,8 @@ func hashParseMax(this *Hash, op *operator.Operator) (err error) {
 }
 
 func hashParseMin(this *Hash, op *operator.Operator) (err error) {
-	v := ParseInt64(op.Value)
-	if d := this.val(op.IID); v < d {
+	if op.Value > this.val(op.IID) {
+		op.Result = op.Value
 		err = hashParseSet(this, op)
 	} else {
 		op.Type = operator.Types_Drop

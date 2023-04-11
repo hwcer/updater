@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"fmt"
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/v2/operator"
@@ -149,7 +150,7 @@ func (this *Hash) Val(k any) (r int64) {
 func (this *Hash) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
-		this.Operator(operator.Types_Set, k, v[0])
+		this.Operator(operator.Types_Set, k, 0, ParseInt64(v[0]))
 	default:
 		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
@@ -201,11 +202,14 @@ func (this *Hash) Save() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
-	for _, act := range this.statement.operator {
-		if act.Type.IsValid() {
-			v := act.Result.(int64)
-			this.dirty[act.IID] = v
-			this.dataset[act.IID] = v
+	for _, op := range this.statement.operator {
+		if op.Type.IsValid() {
+			if v, ok := op.Result.(int64); ok {
+				this.dirty[op.IID] = v
+				this.dataset[op.IID] = v
+			} else {
+				fmt.Printf("hash save error:%+v\n", op)
+			}
 		}
 	}
 	this.statement.done()
@@ -216,24 +220,24 @@ func (this *Hash) Save() (err error) {
 	return
 }
 
-func (this *Hash) Operator(t operator.Types, k any, v any) {
+func (this *Hash) Operator(t operator.Types, k any, v int64, r any) {
 	id, ok := TryParseInt32(k)
 	if !ok {
-		this.Errorf("updater Hash Operator key must int32:%v", k)
+		_ = this.Errorf("updater Hash Operator key must int32:%v", k)
 		return
 	}
 	if t != operator.Types_Del {
 		if _, ok := TryParseInt64(v); !ok {
-			this.Errorf("updater Hash Operator val must int64:%v", v)
+			_ = this.Errorf("updater Hash Operator val must int64:%v", v)
 			return
 		}
 	}
-	op := operator.New(t, v)
+	op := operator.New(t, v, r)
 	op.IID = id
 	if !this.has(id) {
 		this.keys[id] = true
 	}
-	if mod, ok := this.model.(ModelListener); ok {
+	if mod, ok := this.model.(Listener); ok {
 		mod.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)

@@ -12,17 +12,19 @@ const (
 	RAMTypeAlways                //内存运行
 )
 
+type operatorHandle func(t operator.Types, k any, v int64, r any)
+
 type statement struct {
 	ram      RAMType
 	cache    []*operator.Operator
 	values   map[any]int64 //执行过程中的数量过程
-	handle   func(t operator.Types, k any, v any)
+	handle   operatorHandle
 	Updater  *Updater
 	operator []*operator.Operator //操作
 	verified bool                 //是否已经检查过
 }
 
-func NewStatement(u *Updater, ram RAMType, handle func(t operator.Types, k any, v any)) *statement {
+func NewStatement(u *Updater, ram RAMType, handle operatorHandle) *statement {
 	return &statement{ram: ram, handle: handle, Updater: u}
 }
 
@@ -75,32 +77,32 @@ func (this *statement) Add(k int32, v int32) {
 	if k <= 0 || v <= 0 {
 		return
 	}
-	this.handle(operator.Types_Add, k, v)
+	this.handle(operator.Types_Add, k, int64(v), nil)
 }
 
 func (this *statement) Sub(k int32, v int32) {
 	if k <= 0 || v <= 0 {
 		return
 	}
-	this.handle(operator.Types_Sub, k, v)
+	this.handle(operator.Types_Sub, k, int64(v), nil)
 }
 
-func (this *statement) Max(k int32, v int32) {
+func (this *statement) Max(k int32, v int64) {
 	if k <= 0 {
 		return
 	}
-	this.handle(operator.Types_Max, k, v)
+	this.handle(operator.Types_Max, k, v, nil)
 }
 
-func (this *statement) Min(k int32, v int32) {
+func (this *statement) Min(k int32, v int64) {
 	if k <= 0 {
 		return
 	}
-	this.handle(operator.Types_Min, k, v)
+	this.handle(operator.Types_Min, k, v, nil)
 }
 
 func (this *statement) Del(k any) {
-	this.handle(operator.Types_Del, k, nil)
+	this.handle(operator.Types_Del, k, 0, nil)
 }
 
 // Set set结果

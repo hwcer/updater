@@ -20,8 +20,8 @@ var TaskEventsDict = []updater.EventType{TaskEvent11, TaskEvent12, TaskEvent13, 
 
 type Task struct {
 	id  int32
-	Val int32 //当前进度
-	Tar int32 //任务需要达成目标
+	Val int64 //当前进度
+	Tar int64 //任务需要达成目标
 }
 
 func (this *Task) handle(u *updater.Updater, args values.Values) bool {
@@ -47,7 +47,7 @@ func (this *TaskMgr) Init(u *updater.Updater) {
 	l := int32(len(TaskEventsDict))
 	for i := int32(1); i < 100; i++ {
 
-		v := &Task{id: 60000 + i, Tar: rand.Int31n(10) + 1}
+		v := &Task{id: 60000 + i, Tar: rand.Int63n(10) + 1}
 		e := TaskEventsDict[i%l] //随机一个事件作为任务监控对象
 		u.On(e, v.handle)
 		this.dict[v.id] = v

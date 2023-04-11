@@ -1,8 +1,6 @@
 syntax = "proto3";
 option go_package = "./;operator";
 
-import "google/protobuf/any.proto";
-
 enum Types {
   None           = 0;  //无意义
   Add            = 1 ; //添加
@@ -19,10 +17,10 @@ enum Types {
 
 
 message Operator{
-  string OID = 1                  [json_name="o, omitempty"];
+  string OID = 1                  [json_name="o, omitempty"][extend t];
   int32 IID = 2                   [json_name="i, omitempty"];
   string Key = 3                  [json_name="k, omitempty"];
   Types Type = 4                  [json_name="t, omitempty"];
-  google.protobuf.Any Value =5    [json_name="v, omitempty"];
-  google.protobuf.Any Result = 6  [json_name="r, omitempty"];
+  int64 Value =5                  [json_name="v, omitempty"];
+  bytes Result = 6                [json_name="r, omitempty"];
 }

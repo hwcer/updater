@@ -173,7 +173,7 @@ func (this *Document) Val(k any) (r int64) {
 func (this *Document) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
-		this.Operator(operator.Types_Set, k, v[0])
+		this.Operator(operator.Types_Set, k, 0, v[0])
 	default:
 		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
@@ -225,12 +225,12 @@ func (this *Document) Save() (err error) {
 		return this.Updater.Error
 	}
 	//同步到内存
-	for _, act := range this.statement.operator {
-		if act.Type.IsValid() {
-			if e := this.set(act.Key, act.Value); e != nil {
-				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,value:%v", this.schema.Table, act.Value)
+	for _, op := range this.statement.operator {
+		if op.Type.IsValid() {
+			if e := this.set(op.Key, op.Result); e != nil {
+				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.schema.Table, op.Key, op.Result)
 			} else {
-				this.dirty[act.Key] = act.Value
+				this.dirty[op.Key] = op.Result
 			}
 		}
 	}
@@ -261,12 +261,12 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 	return
 }
 
-func (this *Document) Operator(t operator.Types, k any, v any) {
+func (this *Document) Operator(t operator.Types, k any, v int64, r any) {
 	if t == operator.Types_Del {
 		logger.Debug("updater document del is disabled")
 		return
 	}
-	op := operator.New(t, v)
+	op := operator.New(t, v, r)
 	switch s := k.(type) {
 	case string:
 		op.Key = s
@@ -286,8 +286,8 @@ func (this *Document) Operator(t operator.Types, k any, v any) {
 	if !this.has(op.Key) {
 		this.keys[op.Key] = true
 	}
-	if mod, ok := this.model.(ModelListener); ok {
-		mod.Listener(this.Updater, op)
+	if listen, ok := this.model.(Listener); ok {
+		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
 	if this.verified {

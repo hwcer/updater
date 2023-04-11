@@ -2,12 +2,10 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/bson"
 	"github.com/hwcer/updater/v2/dataset"
 	"github.com/hwcer/updater/v2/operator"
 )
 
-// 无限叠加的道具
 var collectionParseHandle = make(map[operator.Types]func(*Collection, *operator.Operator) error)
 
 func init() {
@@ -21,12 +19,12 @@ func init() {
 	collectionParseHandle[operator.Types_Resolve] = collectionHandleResolve
 }
 
-func (this *Collection) Parse(act *operator.Operator) (err error) {
-	f, ok := collectionParseHandle[act.Type]
-	if !ok {
-		return fmt.Errorf("collectionParseHandle not exist:%v", act.Type)
+func (this *Collection) Parse(op *operator.Operator) (err error) {
+	if f, ok := collectionParseHandle[op.Type]; ok {
+		return f(this, op)
 	}
-	return f(this, act)
+	return fmt.Errorf("collection operator type not exist:%v", op.Type.ToString())
+
 }
 
 // hmapHandleResolve 仅仅标记不做任何处理
@@ -40,121 +38,111 @@ func collectionHandleDel(coll *Collection, act *operator.Operator) error {
 
 func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 	op.Type = operator.Types_New
-	var v int64
 	if it := coll.IType(op.IID); !it.Multiple() {
-		v, err = collectionHandleNewUnique(coll, op)
+		err = collectionHandleNewUnique(coll, op)
 	} else {
-		v, err = collectionHandleNewMultiple(coll, op)
+		err = collectionHandleNewMultiple(coll, op)
 	}
 	if err == nil {
-		coll.values[op.IID] = coll.val(op.IID) + v
+		coll.values[op.IID] = coll.val(op.IID) + op.Value
 	}
 	return
 }
 
-func collectionHandleAdd(coll *Collection, cache *operator.Operator) (err error) {
-	d := coll.val(cache.IID)
+func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
+	d := coll.val(op.IID)
 	if d <= 0 {
-		return collectionHandleNew(coll, cache)
+		return collectionHandleNew(coll, op)
 	}
-	r := ParseInt64(cache.Value) + d
-	cache.Result = r
-	coll.values[cache.IID] = r
+	r := op.Value + d
+	op.Result = r
+	coll.values[op.IID] = r
 	return
 }
 
-func collectionHandleSub(coll *Collection, cache *operator.Operator) (err error) {
-	d := coll.val(cache.IID)
-	v := bson.ParseInt64(cache.Value)
-	if v > d {
-		if coll.Updater.tolerate {
-			v = d
-		} else {
-			return ErrItemNotEnough(cache.IID, v, d)
+func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
+	d := coll.val(op.IID)
+	if op.Value > d && !coll.Updater.tolerate {
+		return ErrItemNotEnough(op.IID, op.Value, d)
+	}
+	r := d - op.Value
+	if r < 0 {
+		r = 0
+	}
+	op.Result = r
+	coll.values[op.IID] = r
+	return
+}
+
+func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
+	if d := coll.val(op.IID); d <= 0 {
+		return ErrItemNotExist(op.OID)
+	}
+	op.Type = operator.Types_Set
+	if update, ok := op.Result.(dataset.Update); ok {
+		if v, ok := update[operator.ItemNameVAL]; ok {
+			coll.values[op.IID] = ParseInt64(v)
 		}
 	}
-	if d <= 0 {
-		cache.Type = operator.Types_Drop
+	return
+}
+func collectionTransformSet(coll *Collection, op *operator.Operator) error {
+	op.Result = dataset.NewUpdate(operator.ItemNameVAL, op.Value)
+	return collectionHandleSet(coll, op)
+}
+func collectionHandleMax(coll *Collection, op *operator.Operator) (err error) {
+	if op.Value > coll.val(op.IID) {
+		err = collectionTransformSet(coll, op)
 	} else {
-		r := d - v
-		cache.Result = r
-		coll.values[cache.IID] = r
+		op.Type = operator.Types_Drop
 	}
 	return
 }
 
-func collectionHandleSet(coll *Collection, cache *operator.Operator) (err error) {
-	if d := coll.val(cache.IID); d <= 0 {
-		return ErrItemNotExist(cache.OID)
-		//return collectionHandleNew(coll, cache)
-	}
-	cache.Result = cache.Value
-	cache.Type = operator.Types_Set
-	update, _ := cache.Value.(dataset.Update)
-	if v, ok := update[operator.ItemNameVAL]; ok {
-		coll.values[cache.IID] = ParseInt64(v)
-	}
-	return
-}
-func collectionTransformSet(coll *Collection, cache *operator.Operator) error {
-	cache.Value = dataset.NewUpdate(operator.ItemNameVAL, cache.Value)
-	return collectionHandleSet(coll, cache)
-}
-func collectionHandleMax(coll *Collection, cache *operator.Operator) (err error) {
-	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v > d {
-		err = collectionTransformSet(coll, cache)
+func collectionHandleMin(coll *Collection, op *operator.Operator) (err error) {
+	if op.Value < coll.val(op.IID) {
+		err = collectionTransformSet(coll, op)
 	} else {
-		cache.Type = operator.Types_Drop
+		op.Type = operator.Types_Drop
 	}
 	return
 }
 
-func collectionHandleMin(coll *Collection, cache *operator.Operator) (err error) {
-	if d, v := coll.val(cache.IID), ParseInt64(cache.Value); v < d {
-		err = collectionTransformSet(coll, cache)
-	} else {
-		cache.Type = operator.Types_Drop
-	}
-	return
-}
-
-func collectionHandleNewUnique(coll *Collection, op *operator.Operator) (v int64, err error) {
+func collectionHandleNewUnique(coll *Collection, op *operator.Operator) error {
 	it := coll.IType(op.IID)
 	if it == nil {
-		return 0, ErrITypeNotExist(op.IID)
+		return ErrITypeNotExist(op.IID)
 	}
-	v = ParseInt64(op.Value)
-	if v == 0 {
-		op.Value, v = 1, 1
+	if op.Value == 0 {
+		op.Value = 1
 	}
 	if op.Result != nil {
-		return
+		return nil
 	}
-	var item any
 	var newItem []any
-	for i := int64(1); i <= v; i++ {
-		if item, err = it.New(coll.Updater, op); err == nil {
+	for i := int64(1); i <= op.Value; i++ {
+		if item, err := it.New(coll.Updater, op); err == nil {
 			newItem = append(newItem, item)
 		} else {
-			return
+			return err
 		}
 	}
 	op.Result = newItem
-	return
+	return nil
 }
 
-func collectionHandleNewMultiple(coll *Collection, op *operator.Operator) (v int64, err error) {
+func collectionHandleNewMultiple(coll *Collection, op *operator.Operator) error {
 	it := coll.IType(op.IID)
 	if it == nil {
-		return 0, ErrITypeNotExist(op.IID)
+		return ErrITypeNotExist(op.IID)
 	}
-	v = ParseInt64(op.Value)
-	if v == 0 {
-		op.Value, v = 1, 1
+	if op.Value == 0 {
+		op.Value = 1
 	}
-	var item any
-	if item, err = it.New(coll.Updater, op); err == nil {
+	if item, err := it.New(coll.Updater, op); err == nil {
 		op.Result = []any{item}
+	} else {
+		return err
 	}
-	return
+	return nil
 }

@@ -12,8 +12,8 @@ type Handle interface {
 	Val(k any) int64      //获取val值
 	Add(k int32, v int32) //自增v
 	Sub(k int32, v int32) //扣除v
-	Max(k int32, v int32) //如果大于原来的值就写入
-	Min(k int32, v int32) //如果小于于原来的值就写入
+	Max(k int32, v int64) //如果大于原来的值就写入
+	Min(k int32, v int64) //如果小于于原来的值就写入
 	Set(k any, v ...any)  //设置v值
 
 	Data() error        //非内存模式获取数据库中的数据
@@ -65,7 +65,7 @@ type ITypeResolve interface {
 //	IType() int32
 //}
 
-// ModelListener 监听数据变化
-type ModelListener interface {
+// Listener 监听数据变化
+type Listener interface {
 	Listener(u *Updater, op *operator.Operator)
 }

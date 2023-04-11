@@ -28,11 +28,11 @@ func TestNew(t *testing.T) {
 	if err = service(userid, doWork); err != nil {
 		fmt.Printf("服务器错误:%v\n", err)
 	}
-	for i := 0; i < 10; i++ {
-		if err = service(userid, doTask); err != nil {
-			fmt.Printf("服务器错误:%v\n", err)
-		}
-	}
+	//for i := 0; i < 10; i++ {
+	//	if err = service(userid, doTask); err != nil {
+	//		fmt.Printf("服务器错误:%v\n", err)
+	//	}
+	//}
 
 	if err = Players.Close(); err != nil {
 		fmt.Printf("关闭服务器错误:%v\n", err)
@@ -74,7 +74,7 @@ func doWork(player *Player) error {
 	player.Max(2001, 100)
 	player.Sub(2001, 20)
 	player.Set(2002, 2000)
-	player.Del(2002)
+	//player.Del(2002)
 	//player.Sub(2002, 1) //Item Not Enough
 	//常规道具 coll模型
 	player.Add(3001, 100)

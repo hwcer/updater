@@ -127,13 +127,13 @@ func (u *Updater) Sub(iid int32, num int32) {
 	}
 }
 
-func (u *Updater) Max(iid int32, num int32) {
+func (u *Updater) Max(iid int32, num int64) {
 	if w := u.handle(iid); w != nil {
 		w.Max(iid, num)
 	}
 }
 
-func (u *Updater) Min(iid int32, num int32) {
+func (u *Updater) Min(iid int32, num int64) {
 	if w := u.handle(iid); w != nil {
 		w.Min(iid, num)
 	}
@@ -173,9 +173,8 @@ func (u *Updater) New(i any) error {
 	if !ok {
 		return fmt.Errorf("handle not method New")
 	}
-	op := operator.New(operator.Types_New, doc.VAL())
+	op := operator.New(operator.Types_New, doc.VAL(), []any{i})
 	op.IID = iid
-	op.Result = []any{i}
 	return hn.New(op)
 }
 
@@ -300,10 +299,9 @@ func (u *Updater) Handles() (r []Handle) {
 }
 
 // Operator 生成一次操作结果,返回给客户端,不会修改数据
-func (u *Updater) Operator(t operator.Types, i int32, v any, r any) *operator.Operator {
-	op := operator.New(t, v)
+func (u *Updater) Operator(t operator.Types, i int32, v int64, r any) *operator.Operator {
+	op := operator.New(t, v, r)
 	op.IID = i
-	op.Result = r
 	u.operator = append(u.operator, op)
 	return op
 }

@@ -139,13 +139,13 @@ func (this *Collection) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
 		if update := dataset.ParseUpdate(v[0]); update != nil {
-			this.Operator(operator.Types_Set, k, update)
+			this.Operator(operator.Types_Set, k, 0, update)
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
-			this.Operator(operator.Types_Set, k, dataset.NewUpdate(field, v[1]))
+			this.Operator(operator.Types_Set, k, 0, dataset.NewUpdate(field, v[1]))
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
@@ -176,8 +176,8 @@ func (this *Collection) New(op *operator.Operator) (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
-	if mod, ok := this.model.(ModelListener); ok {
-		mod.Listener(this.Updater, op)
+	if listen, ok := this.model.(Listener); ok {
+		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
 	if this.verified {
@@ -233,13 +233,13 @@ func (this *Collection) Save() (err error) {
 		return this.Updater.Error
 	}
 	//同步到内存
-	for _, cache := range this.statement.operator {
-		if cache.Type.IsValid() {
-			if err = this.dataset.Update(cache); err != nil {
-				logger.Warn("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, cache)
+	for _, op := range this.statement.operator {
+		if op.Type.IsValid() {
+			if err = this.dataset.Update(op); err != nil {
+				logger.Warn("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, op)
 				err = nil
 			} else {
-				this.dirty.Update(cache)
+				this.dirty.Update(op)
 			}
 		}
 	}
@@ -251,12 +251,11 @@ func (this *Collection) Save() (err error) {
 	return
 }
 
-func (this *Collection) Operator(t operator.Types, k any, v any) {
+func (this *Collection) Operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
 	}
-	op := operator.New(t, v)
-	op.Value = v
+	op := operator.New(t, v, r)
 	switch d := k.(type) {
 	case string:
 		op.OID = d

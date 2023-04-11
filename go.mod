@@ -11,6 +11,7 @@ require (
 	github.com/hwcer/cosgo v0.0.0
 	github.com/hwcer/cosmo v0.0.0
 	go.mongodb.org/mongo-driver v1.11.1
+	google.golang.org/protobuf v1.28.1
 )
 
 require (
