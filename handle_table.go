@@ -2,9 +2,9 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo"
 	"github.com/hwcer/cosmo/utils"
+	"github.com/hwcer/logger"
 	"go.mongodb.org/mongo-driver/bson"
 )
 

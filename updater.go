@@ -1,8 +1,8 @@
 package updater
 
 import (
-	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/utils"
+	"github.com/hwcer/logger"
 	"time"
 )
 
@@ -239,13 +239,13 @@ func (u *Updater) getModuleType(id interface{}) Handle {
 	}
 	it := Config.IType(iid)
 	if it == nil {
-		logger.Warn("Updater.getModuleType IType not exists: %v", iid)
+		logger.Alert("Updater.getModuleType IType not exists: %v", iid)
 		return nil
 	}
 
 	handle, ok := u.dict[it.Model()]
 	if !ok {
-		logger.Warn("Updater.getModuleType handles not exists: %v", it.Model)
+		logger.Alert("Updater.getModuleType handles not exists: %v", it.Model)
 	}
 	return handle
 }

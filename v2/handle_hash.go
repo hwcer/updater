@@ -2,8 +2,8 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/v2/operator"
 )
 
@@ -214,7 +214,7 @@ func (this *Hash) Save() (err error) {
 	}
 	this.statement.done()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		logger.Warn("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
+		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
 	}
 	return

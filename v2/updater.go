@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/v2/dataset"
 	"github.com/hwcer/updater/v2/operator"
 	"time"
@@ -278,13 +278,13 @@ func (u *Updater) Handle(name string) Handle {
 func (u *Updater) handle(k any) Handle {
 	iid, err := u.ParseId(k)
 	if err != nil {
-		logger.Warn("%v", err)
+		logger.Alert("%v", err)
 		return nil
 	}
 	itk := Config.IType(iid)
 	model, ok := modelsDict[itk]
 	if !ok {
-		logger.Warn("Updater.handle not exists: %v", k)
+		logger.Alert("Updater.handle not exists: %v", k)
 		return nil
 	}
 	return u.Handle(model.name)

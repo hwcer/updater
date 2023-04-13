@@ -2,8 +2,8 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosmo/update"
+	"github.com/hwcer/logger"
 )
 
 //type HashModelObjectID interface {
@@ -69,7 +69,7 @@ func (this *Hash) Get(k interface{}) (interface{}, bool) {
 }
 
 func (this *Hash) Del(k interface{}) {
-	logger.Warn("del is invalid:%v", this.model.Name)
+	logger.Alert("del is invalid:%v", this.model.Name)
 	return
 }
 func (this *Hash) Keys(keys ...int32) {
@@ -77,7 +77,7 @@ func (this *Hash) Keys(keys ...int32) {
 		if _, oid, _, err := this.ParseId(k); err == nil {
 			this.Select(oid)
 		} else {
-			logger.Warn(err)
+			logger.Alert(err)
 		}
 	}
 }
@@ -85,7 +85,7 @@ func (this *Hash) Keys(keys ...int32) {
 func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
 	iid, key, it, err := this.ParseId(k)
 	if err != nil {
-		logger.Warn(err)
+		logger.Alert(err)
 		return false
 	}
 	this.Select(key)

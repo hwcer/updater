@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/v2/dataset"
 	"github.com/hwcer/updater/v2/operator"
 )
@@ -236,7 +236,7 @@ func (this *Collection) Save() (err error) {
 	for _, op := range this.statement.operator {
 		if op.Type.IsValid() {
 			if err = this.dataset.Update(op); err != nil {
-				logger.Warn("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, op)
+				logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, op)
 				err = nil
 			} else {
 				this.dirty.Update(op)
@@ -245,7 +245,7 @@ func (this *Collection) Save() (err error) {
 	}
 	this.statement.done()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		logger.Warn("同步数据失败,等待下次同步:%v", err)
+		logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
 	return

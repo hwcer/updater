@@ -1,8 +1,8 @@
 package test
 
 import (
-	"github.com/hwcer/cosgo"
-	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/cosgo/scc"
+	"github.com/hwcer/logger"
 	"sync"
 	"time"
 )
@@ -22,7 +22,7 @@ type players struct {
 
 func (this *players) Start() error {
 	this.stop = make(chan struct{})
-	cosgo.GO(this.daemon)
+	scc.GO(this.daemon)
 	return nil
 }
 func (this *players) Close() (err error) {

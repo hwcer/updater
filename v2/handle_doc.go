@@ -2,8 +2,8 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/v2/dataset"
 	"github.com/hwcer/updater/v2/operator"
 )
@@ -187,7 +187,7 @@ func (this *Document) Select(keys ...any) {
 		if key, err := this.ObjectId(k); err == nil && !this.has(key) {
 			this.keys[key] = true
 		} else {
-			logger.Warn(err)
+			logger.Alert(err)
 		}
 	}
 }
@@ -236,7 +236,7 @@ func (this *Document) Save() (err error) {
 	}
 	this.statement.done()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		logger.Warn("数据库[%v]同步数据错误,等待下次同步:%v", this.schema.Table, err)
+		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.schema.Table, err)
 		err = nil
 	}
 	return
