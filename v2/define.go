@@ -48,8 +48,8 @@ type IType interface {
 type ITypeCollection interface {
 	IType
 	New(u *Updater, op *operator.Operator) (item any, err error) //根据Operator信息生成新对象
-	ObjectId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID
-	Multiple() bool                                              //道具是否可以堆叠
+	ObjectId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID,仅限于可以叠加道具,不可以叠加道具返回空,使用NEW来创建
+	//Multiple() bool                                              //道具是否可以堆叠
 }
 
 // ITypeResolve 自动分解,如果没有分解方式超出上限则使用系统默认方式（丢弃）处理

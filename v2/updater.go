@@ -159,7 +159,8 @@ func (u *Updater) New(i any) error {
 	if iid <= 0 {
 		return errors.New("iid empty")
 	}
-	if oid := doc.OID(); oid == "" {
+	oid := doc.OID()
+	if oid == "" {
 		return errors.New("oid empty")
 	}
 	handle := u.handle(iid)
@@ -174,6 +175,7 @@ func (u *Updater) New(i any) error {
 		return fmt.Errorf("handle not method New")
 	}
 	op := operator.New(operator.Types_New, doc.VAL(), []any{i})
+	op.OID = oid
 	op.IID = iid
 	return hn.New(op)
 }

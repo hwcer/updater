@@ -19,7 +19,12 @@ func (this Collection) Has(id string) bool {
 func (this Collection) Get(id string) *Document {
 	return this[id]
 }
-
+func (this Collection) Val(id string) (r int64) {
+	if d, ok := this[id]; ok {
+		r = d.VAL()
+	}
+	return
+}
 func (this Collection) Set(id string, data any) {
 	this[id] = NewDocument(data)
 }
