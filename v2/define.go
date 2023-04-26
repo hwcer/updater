@@ -1,8 +1,11 @@
 package updater
 
 import (
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/operator"
 )
+
+var Logger logger.Interface = logger.Default()
 
 const ZeroInt64 = int64(0)
 
@@ -16,21 +19,21 @@ type Handle interface {
 	Min(k int32, v int64) //如果小于于原来的值就写入
 	Set(k any, v ...any)  //设置v值
 
-	Data() error        //非内存模式获取数据库中的数据
-	Save() error        //即时同步
-	Verify() error      //验证数据
-	Select(keys ...any) //非内存模式时获取特定道具
-	Parser() Parser     //解析模型
+	Data() error                                    //非内存模式获取数据库中的数据
+	Verify() error                                  //验证数据
+	Submit() ([]*operator.Operator, error)          //即时同步,提交所有操作
+	Select(keys ...any)                             //非内存模式时获取特定道具
+	Parser() Parser                                 //解析模型
+	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator
 
-	init() error                  //构造方法
-	flush() error                 //析构方法
-	reset()                       //运行时开始时
-	submit() []*operator.Operator //将执行结果发送给前端
-	release()                     //运行时释放缓存信息
+	init() error    //构造方法
+	reset()         //运行时开始时
+	release()       //运行时释放缓存信息,并返回所有操作过程
+	destroy() error //同步所有数据到数据库,手动同步,或者销毁时执行
 }
 
 type HandleNew interface {
-	New(op *operator.Operator) error
+	New(op *operator.Operator, before ...bool) error
 }
 
 var Config = struct {
@@ -57,7 +60,7 @@ type ITypeCollection interface {
 // 使用Resolve前，需要使用ITypeListener监听将可能分解成的道具ID使用adapter.Select预读数据
 // 使用Resolve时需要关联IMax指定道具上限
 type ITypeResolve interface {
-	Resolve(u *Updater, op *operator.Operator) error
+	Resolve(u *Updater, iid int32, val int64) error
 }
 
 // ModelIType 获取默认IType,仅仅doc模型使用
@@ -65,7 +68,7 @@ type ITypeResolve interface {
 //	IType() int32
 //}
 
-// Listener 监听数据变化
-type Listener interface {
+// ModelListener 监听数据变化
+type ModelListener interface {
 	Listener(u *Updater, op *operator.Operator)
 }

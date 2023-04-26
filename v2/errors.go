@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 type ErrMsg struct {

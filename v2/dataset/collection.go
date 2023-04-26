@@ -2,7 +2,7 @@ package dataset
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 func New() Collection {

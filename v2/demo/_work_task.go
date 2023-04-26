@@ -1,9 +1,9 @@
-package test
+package demo
 
 import (
 	"fmt"
 	"github.com/hwcer/cosgo/values"
-	"github.com/hwcer/updater/v2"
+	"github.com/hwcer/updater"
 	"github.com/hwcer/updater/v2/operator"
 	"math/rand"
 )

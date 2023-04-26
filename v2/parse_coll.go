@@ -2,8 +2,8 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/v2/dataset"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/operator"
 )
 
 var collectionParseHandle = make(map[operator.Types]func(*Collection, *operator.Operator) error)
@@ -75,14 +75,14 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID, err = coll.ObjectId(op.IID); err != nil {
 		return
 	}
-	v, ok := coll.val(op.OID)
-	if v < op.Value && !coll.Updater.tolerate {
-		return ErrItemNotEnough(op.IID, op.Value, v)
+	d, ok := coll.val(op.OID)
+	if op.Value > d && coll.Updater.strict {
+		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	if !ok {
 		op.Type = operator.Types_Drop
 	} else {
-		r := v - op.Value
+		r := d - op.Value
 		if r < 0 {
 			r = 0
 		}

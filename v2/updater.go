@@ -1,34 +1,32 @@
 package updater
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"github.com/hwcer/logger"
-	"github.com/hwcer/updater/v2/dataset"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/operator"
 	"time"
 )
 
 type Updater struct {
-	ctx      context.Context
 	uid      string
 	Time     time.Time
 	Error    error
+	Plugs    Plugs
+	Emitter  emitter
+	strict   bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	changed  bool
-	emitter  emitter
-	process  updaterProcess
 	handles  map[string]Handle
 	operator []*operator.Operator //临时操作,不涉及数据,直接返回给客户端,此类消息无视错误,直至成功
-	tolerate bool                 //宽容模式下,扣除道具不足时允许扣成0,而不是报错
 }
 
-func New(uid string) (u *Updater) {
+func New(uid string) (u *Updater, err error) {
 	u = &Updater{uid: uid}
 	u.handles = make(map[string]Handle)
 	for _, model := range modelsRank {
 		u.handles[model.name] = handles[model.parser](u, model.model, model.ram)
 	}
+	err = u.init()
 	return
 }
 
@@ -44,62 +42,52 @@ func (u *Updater) Errorf(format any, args ...any) error {
 	return u.Error
 }
 
-// Reset 重置
-func (u *Updater) Reset(ctx context.Context) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	u.ctx = context.WithValue(ctx, "", nil)
+// Reset 重置,每次请求开始时调用
+func (u *Updater) Reset() {
 	u.Time = time.Now()
+	u.strict = true
 	for _, w := range u.handles {
 		w.reset()
 	}
 }
 
-// Release 释放
+// Release 释放并返回所有已执行的操作,每次请求结束时调用
+// 无论有无错误,都应该执行Release
+// Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
-	u.ctx = nil
-	u.Error = nil
+	_ = u.emit(PlugsTypeRelease)
 	u.changed = false
-	u.tolerate = false
-	u.process.release()
-	for _, w := range u.handles {
-		w.release()
+	u.operator = nil
+	return
+}
+func (u *Updater) emit(t PlugsType) (err error) {
+	if err = u.Plugs.emit(u, t); err != nil {
+		return
 	}
+	if err = u.Emitter.emit(u, t); err != nil {
+		return
+	}
+	return
 }
 
 // Init 构造函数 NEW之后立即调用
-func (u *Updater) Init() (err error) {
+func (u *Updater) init() (err error) {
 	u.Time = time.Now()
 	for _, w := range u.handles {
 		if err = w.init(); err != nil {
 			return
 		}
 	}
-	return u.process.emit(u, ProcessTypeInit)
-}
-
-// Flush 强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试关闭
-func (u *Updater) Flush() (err error) {
-	for _, w := range u.handles {
-		if err = w.flush(); err != nil {
-			return
-		}
-	}
-	return
+	return u.emit(PlugsTypeInit)
 }
 
 func (u *Updater) Uid() string {
 	return u.uid
 }
 
-// Tolerate 开启包容模式,道具不足时扣成0,仅生效一次
-func (u *Updater) Tolerate() {
-	u.tolerate = true
-}
-
-func (u *Updater) Context() context.Context {
-	return u.ctx
+// Strict 开启或者关闭严格模式,关闭严格模式道具不足时扣成0,仅当前请求生效
+func (u *Updater) Strict(v bool) {
+	u.strict = v
 }
 
 func (u *Updater) Get(id any) (r any) {
@@ -153,7 +141,7 @@ func (u *Updater) Del(id any) {
 }
 
 // New 直接创建新对象
-func (u *Updater) New(i any) error {
+func (u *Updater) New(i any, before ...bool) error {
 	doc := dataset.NewDocument(i)
 	iid := doc.IID()
 	if iid <= 0 {
@@ -177,7 +165,7 @@ func (u *Updater) New(i any) error {
 	op := operator.New(operator.Types_New, doc.VAL(), []any{i})
 	op.OID = oid
 	op.IID = iid
-	return hn.New(op)
+	return hn.New(op, before...)
 }
 
 func (u *Updater) Select(keys ...any) {
@@ -195,7 +183,7 @@ func (u *Updater) Data() (err error) {
 	defer func() {
 		u.changed = false
 	}()
-	if err = u.process.emit(u, ProcessTypePreData); err != nil {
+	if err = u.emit(PlugsTypeData); err != nil {
 		return
 	}
 	for _, w := range u.Handles() {
@@ -206,51 +194,37 @@ func (u *Updater) Data() (err error) {
 	return
 }
 
-func (u *Updater) Save() (err error) {
+func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if u.Error != nil {
-		return u.Error
+		return nil, u.Error
 	}
+	r = append(r, u.operator...)
 	if u.changed {
 		if err = u.Data(); err != nil {
 			return
 		}
 	}
-	if err = u.process.emit(u, ProcessTypePreVerify); err != nil {
+	hs := u.Handles()
+	if err = u.emit(PlugsTypeVerify); err != nil {
 		return
 	}
-	hs := u.Handles()
 	for _, w := range hs {
 		if err = w.Verify(); err != nil {
 			return
 		}
 	}
-	if err = u.process.emit(u, ProcessTypePreSave); err != nil {
+	if err = u.emit(PlugsTypeSubmit); err != nil {
 		return
 	}
+	var opts []*operator.Operator
 	for _, w := range hs {
-		if err = w.Save(); err != nil {
+		if opts, err = w.Submit(); err != nil {
 			return
+		} else if len(opts) > 0 {
+			r = append(r, opts...)
 		}
 	}
-	if err = u.process.emit(u, ProcessTypePreSubmit); err != nil {
-		return
-	}
-	u.doEvents()
 	return
-}
-
-func (u *Updater) Submit() (r []*operator.Operator) {
-	if u.Error != nil {
-		return
-	}
-	if len(u.operator) > 0 {
-		r = append(r, u.operator...)
-		u.operator = nil
-	}
-	for _, w := range u.Handles() {
-		r = append(r, w.submit()...)
-	}
-	return r
 }
 
 // IType 通过iid获取IType
@@ -280,13 +254,13 @@ func (u *Updater) Handle(name string) Handle {
 func (u *Updater) handle(k any) Handle {
 	iid, err := u.ParseId(k)
 	if err != nil {
-		logger.Alert("%v", err)
+		Logger.Alert("%v", err)
 		return nil
 	}
 	itk := Config.IType(iid)
 	model, ok := modelsDict[itk]
 	if !ok {
-		logger.Alert("Updater.handle not exists: %v", k)
+		Logger.Alert("Updater.handle not exists,iid:%v IType:%v", k, itk)
 		return nil
 	}
 	return u.Handle(model.name)
@@ -299,11 +273,42 @@ func (u *Updater) Handles() (r []Handle) {
 	}
 	return
 }
+func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
+	iid := op.IID
+	if iid <= 0 {
+		return errors.New("operator iid empty")
+	}
+	handle := u.handle(iid)
+	if handle == nil {
+		return errors.New("handle unknown")
+	}
+	if op.Type == operator.Types_Set && handle.Parser() == ParserTypeCollection {
+		if _, ok := op.Result.(dataset.Update); !ok {
+			return errors.New("operator set result type must be dataset.Update")
+		}
+	}
+	handle.Operator(op, before...)
+	return nil
+}
 
-// Operator 生成一次操作结果,返回给客户端,不会修改数据
-func (u *Updater) Operator(t operator.Types, i int32, v int64, r any) *operator.Operator {
+// Message  生成一次操作结果,返回给客户端,不会修改数据
+func (u *Updater) Message(t operator.Types, i int32, v int64, r any) *operator.Operator {
 	op := operator.New(t, v, r)
 	op.IID = i
 	u.operator = append(u.operator, op)
 	return op
+}
+
+// Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
+// 仅缓存模式下需要且必要执行
+func (u *Updater) Destroy() (err error) {
+	if err = u.emit(PlugsTypeDestroy); err != nil {
+		return
+	}
+	for _, w := range u.handles {
+		if err = w.destroy(); err != nil {
+			return
+		}
+	}
+	return
 }

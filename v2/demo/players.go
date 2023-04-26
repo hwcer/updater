@@ -1,8 +1,9 @@
-package test
+package demo
 
 import (
 	"github.com/hwcer/cosgo/scc"
 	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/demo/model"
 	"sync"
 	"time"
 )
@@ -50,7 +51,7 @@ func (this *players) Get(uid string, handle func(player *Player) error) error {
 	if v, ok := this.dict.Load(uid); ok {
 		r = v.(*Player)
 		if ok = r.Lock(); ok {
-			r.Reset(nil)
+			r.Reset()
 			defer func() {
 				r.Release()
 				r.Unlock()
@@ -65,7 +66,7 @@ func (this *players) Get(uid string, handle func(player *Player) error) error {
 // Load 仅仅登录时使用
 func (this *players) Load(uid string, handle func(player *Player) error) (err error) {
 	var r *Player
-	p := NewPlayer(uid)
+	p := &Player{Role: &model.Role{}}
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	if i, loaded := this.dict.LoadOrStore(uid, p); loaded {
@@ -73,13 +74,16 @@ func (this *players) Load(uid string, handle func(player *Player) error) (err er
 		np.mutex.Lock()
 		defer np.mutex.Unlock()
 		r = np
-	} else if err = p.Init(); err == nil {
+	} else {
 		r = p
 	}
-	if err != nil {
-		return
+	//未初始化
+	if r.Updater == nil {
+		if err = r.init(uid); err != nil {
+			return
+		}
 	}
-	r.Reset(nil)
+	r.Reset()
 	defer r.Release()
 	//处理登录信息
 	return handle(r)
@@ -102,7 +106,7 @@ func (this *players) Logout(p *Player) {
 func (this *players) destruct(p *Player) (err error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	if err = p.Flush(); err == nil {
+	if err = p.Destroy(); err == nil {
 		this.dict.Delete(p.Uid())
 	}
 	return
@@ -112,15 +116,14 @@ func (this *players) disconnect(p *Player, t int64) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	//------------------------------------
-	p.Reset(nil)
-	p.Role.Online += t - p.connected
-	_ = p.Save()
+	p.Reset()
+	_, _ = p.Submit()
 	p.Release()
 	//------------------------------------
 	p.connected = 0
 	p.KeepAlive(t)
 	//尝试回写数据
-	_ = p.Flush()
+	_ = p.Destroy()
 }
 
 func (this *players) worker() {

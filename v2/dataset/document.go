@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 func NewDocument(i any) *Document {
@@ -70,6 +70,7 @@ func (this *Document) Update(data Update) (err error) {
 				return
 			}
 		}
+		return
 	}
 	sch, err := schema.Parse(this.item)
 	if err != nil {
@@ -81,7 +82,7 @@ func (this *Document) Update(data Update) (err error) {
 			return
 		}
 	}
-	return nil
+	return
 }
 
 func (this *Document) Interface() any {

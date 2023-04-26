@@ -1,7 +1,7 @@
 package updater
 
 import (
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 type RAMType int8
@@ -43,7 +43,7 @@ func (stmt *statement) release() {
 	stmt.values = nil
 	stmt.operator = nil
 	stmt.verified = false
-	//b.Fields.release()
+	return
 }
 
 func (stmt *statement) Errorf(format any, args ...any) error {
@@ -62,9 +62,9 @@ func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
 //	return b.Fields.Has(key)
 //}
 
-func (stmt *statement) submit() []*operator.Operator {
-	return stmt.cache
-}
+//func (stmt *statement) submit() []*operator.Operator {
+//	return stmt.cache
+//}
 
 // Select 字段名(HASH)或者OID(table)
 //func (b *statement) Select(keys ...string) {

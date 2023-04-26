@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 var documentParseHandle = make(map[operator.Types]func(*Document, *operator.Operator) error)
@@ -31,7 +31,7 @@ func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 
 func documentParseSub(this *Document, op *operator.Operator) (err error) {
 	d := this.val(op.Key)
-	if op.Value > d && !this.Updater.tolerate {
+	if op.Value > d && this.Updater.strict {
 		return ErrItemNotEnough(op.Key, op.Value, d)
 	}
 	r := d - op.Value

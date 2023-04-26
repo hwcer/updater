@@ -2,9 +2,8 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/logger"
-	"github.com/hwcer/updater/v2/dataset"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/operator"
 )
 
 type Receive func(oid string, doc any)
@@ -17,7 +16,7 @@ type collectionModel interface {
 
 type Collection struct {
 	*statement
-	keys    documentKeys
+	keys    documentDirty
 	model   collectionModel
 	dirty   dataset.Dirty
 	dataset dataset.Collection
@@ -26,7 +25,7 @@ type Collection struct {
 func NewCollection(u *Updater, model any, ram RAMType) Handle {
 	r := &Collection{}
 	r.model = model.(collectionModel)
-	r.statement = NewStatement(u, ram, r.Operator)
+	r.statement = NewStatement(u, ram, r.operator)
 	return r
 }
 func (this *Collection) Parser() Parser {
@@ -41,14 +40,14 @@ func (this *Collection) IType(iid int32) (it ITypeCollection) {
 }
 
 // Has 查询key(DBName)是否已经初始化
-func (this *Collection) has(key string) (r bool) {
-	if this.statement.ram == RAMTypeAlways || (this.keys != nil && this.keys[key]) {
+func (this *Collection) has(key string) bool {
+	if this.ram == RAMTypeAlways {
 		return true
 	}
-	if this.dirty != nil && this.dirty.Has(key) {
+	if this.keys != nil && this.keys.Has(key) {
 		return true
 	}
-	if this.dataset != nil && this.dataset.Has(key) {
+	if this.dirty.Has(key) || this.dataset.Has(key) {
 		return true
 	}
 	return false
@@ -82,13 +81,15 @@ func (this *Collection) save() (err error) {
 }
 
 func (this *Collection) reset() {
-	this.keys = documentKeys{}
 	this.statement.reset()
 	if this.dirty == nil {
 		this.dirty = dataset.NewDirty()
 	}
 	if this.dataset == nil {
 		this.dataset = dataset.New()
+	}
+	if this.keys == nil && this.ram != RAMTypeAlways {
+		this.keys = documentDirty{}
 	}
 }
 
@@ -109,7 +110,7 @@ func (this *Collection) init() error {
 }
 
 // 关闭时执行,玩家下线
-func (this *Collection) flush() (err error) {
+func (this *Collection) destroy() (err error) {
 	return this.save()
 }
 
@@ -120,7 +121,7 @@ func (this *Collection) Get(key any) (r any) {
 			r = i.Interface()
 		}
 	} else {
-		logger.Debug(err)
+		Logger.Debug(err)
 	}
 	return
 }
@@ -142,13 +143,13 @@ func (this *Collection) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
 		if update := dataset.ParseUpdate(v[0]); update != nil {
-			this.Operator(operator.Types_Set, k, 0, update)
+			this.operator(operator.Types_Set, k, 0, update)
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
-			this.Operator(operator.Types_Set, k, 0, dataset.NewUpdate(field, v[1]))
+			this.operator(operator.Types_Set, k, 0, dataset.NewUpdate(field, v[1]))
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
@@ -157,14 +158,14 @@ func (this *Collection) Set(k any, v ...any) {
 	}
 }
 
-func (this *Collection) New(op *operator.Operator) (err error) {
+func (this *Collection) New(op *operator.Operator, before ...bool) (err error) {
 	if op.Type != operator.Types_New {
 		return this.Updater.Errorf("operator type must be New:%+v", op)
 	}
-	if listen, ok := this.model.(Listener); ok {
+	if listen, ok := this.model.(ModelListener); ok {
 		listen.Listener(this.Updater, op)
 	}
-	this.statement.Operator(op)
+	this.statement.Operator(op, before...)
 	if this.verified {
 		err = this.Verify()
 	}
@@ -179,7 +180,7 @@ func (this *Collection) Select(keys ...any) {
 		if oid, err := this.ObjectId(k); err == nil && !this.has(oid) {
 			this.keys[oid] = true
 		} else {
-			logger.Debug(err)
+			Logger.Debug(err)
 		}
 	}
 }
@@ -213,9 +214,9 @@ func (this *Collection) Verify() (err error) {
 	return
 }
 
-func (this *Collection) Save() (err error) {
+func (this *Collection) Submit() (r []*operator.Operator, err error) {
 	if this.Updater.Error != nil {
-		return this.Updater.Error
+		return nil, this.Updater.Error
 	}
 	//同步到内存
 	for _, op := range this.statement.operator {
@@ -223,20 +224,21 @@ func (this *Collection) Save() (err error) {
 			if err = this.dataset.Update(op); err == nil {
 				this.dirty.Update(op)
 			} else {
-				logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v\n", err, op)
+				Logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v", err, op)
 				err = nil
 			}
 		}
 	}
 	this.statement.done()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		logger.Alert("同步数据失败,等待下次同步:%v", err)
+		Logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
+	r = this.statement.cache
 	return
 }
 
-func (this *Collection) Operator(t operator.Types, k any, v int64, r any) {
+func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
 	}
@@ -253,7 +255,7 @@ func (this *Collection) Operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
 	}
-	if listen, ok := this.model.(Listener); ok {
+	if listen, ok := this.model.(ModelListener); ok {
 		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
@@ -286,7 +288,7 @@ func (this *Collection) verify(cache *operator.Operator) (err error) {
 			val -= overflow
 			cache.Value = val
 			if resolve, ok := it.(ITypeResolve); ok {
-				if err = resolve.Resolve(this.Updater, cache); err != nil {
+				if err = resolve.Resolve(this.Updater, cache.IID, overflow); err != nil {
 					return
 				} else {
 					overflow = 0

@@ -14,37 +14,54 @@ type emitter struct {
 
 // On 添加即时任务类监控
 func (u *Updater) On(name EventType, handle listener) {
-	if u.emitter.listeners == nil {
-		u.emitter.listeners = map[EventType][]listener{}
-	}
-	u.emitter.listeners[name] = append(u.emitter.listeners[name], handle)
+	u.Emitter.On(name, handle)
 }
 
 // Emit Updater.Save之后统一触发
-func (u *Updater) Emit(name EventType, args values.Values) {
-	if u.emitter.events == nil {
-		u.emitter.events = map[EventType][]values.Values{}
-	}
-	u.emitter.events[name] = append(u.emitter.events[name], args)
+func (u *Updater) Emit(name EventType, v values.Values) {
+	u.Emitter.Emit(name, v)
 }
 
-func (u *Updater) doEvents() {
-	if len(u.emitter.events) == 0 {
+func (e *emitter) On(name EventType, handle listener) {
+	if e.listeners == nil {
+		e.listeners = map[EventType][]listener{}
+	}
+	e.listeners[name] = append(e.listeners[name], handle)
+}
+
+func (e *emitter) Emit(name EventType, v values.Values) {
+	if e.events == nil {
+		e.events = map[EventType][]values.Values{}
+	}
+	e.events[name] = append(e.events[name], v)
+}
+
+func (e *emitter) emit(u *Updater, t PlugsType) (err error) {
+	if t == PlugsTypeRelease {
+		defer func() {
+			e.events = nil
+		}()
+	}
+	if t != PlugsTypeSubmit || len(e.events) == 0 || len(e.listeners) == 0 {
 		return
 	}
-	for name, args := range u.emitter.events {
-		//即时事件
-		next := make([]listener, 0, len(u.emitter.listeners[name]))
-		for _, handle := range u.emitter.listeners[name] {
-			for _, arg := range args {
-				if handle(u, arg) {
-					next = append(next, handle)
-				} else {
-					break
-				}
+	for name, args := range e.events {
+		next := make([]listener, 0, len(e.listeners[name]))
+		for _, handle := range e.listeners[name] {
+			if e.doTask(u, handle, args) {
+				next = append(next, handle)
 			}
 		}
-		u.emitter.listeners[name] = next
+		e.listeners[name] = next
 	}
-	u.emitter.events = nil
+	return
+}
+
+func (e *emitter) doTask(u *Updater, handle listener, args []values.Values) bool {
+	for _, arg := range args {
+		if !handle(u, arg) {
+			return false
+		}
+	}
+	return true
 }

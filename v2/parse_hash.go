@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 var hashParseHandle = make(map[operator.Types]func(*Hash, *operator.Operator) error)
@@ -32,7 +32,7 @@ func hashParseAdd(this *Hash, op *operator.Operator) (err error) {
 
 func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 	d := this.val(op.IID)
-	if op.Value > d && !this.Updater.tolerate {
+	if op.Value > d && this.Updater.strict {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	r := d - op.Value

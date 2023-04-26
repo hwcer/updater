@@ -1,7 +1,7 @@
 package dataset
 
 import (
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 func NewDirty() Dirty {

@@ -3,8 +3,7 @@ package updater
 import (
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
-	"github.com/hwcer/logger"
-	"github.com/hwcer/updater/v2/operator"
+	"github.com/hwcer/updater/operator"
 )
 
 type hashModel interface {
@@ -22,7 +21,15 @@ func (this hashKeys) Keys() (r []int32) {
 	}
 	return
 }
+func (this hashKeys) Has(k int32) (r bool) {
+	_, r = this[k]
+	return
+}
 
+func (this hashData) Has(k int32) (r bool) {
+	_, r = this[k]
+	return
+}
 func (data hashData) Merge(src hashData) {
 	for k, v := range src {
 		data[k] = v
@@ -43,11 +50,11 @@ type Hash struct {
 func NewHash(u *Updater, model any, ram RAMType) Handle {
 	r := &Hash{}
 	r.model = model.(hashModel)
-	r.statement = NewStatement(u, ram, r.Operator)
+	r.statement = NewStatement(u, ram, r.operator)
 	if sch, err := schema.Parse(model); err == nil {
 		r.name = sch.Table
 	} else {
-		logger.Fatal(err)
+		Logger.Fatal(err)
 	}
 	return r
 }
@@ -58,18 +65,14 @@ func (this *Hash) Parser() Parser {
 
 // has 检查k是否已经缓存,或者下次会被缓存
 func (this *Hash) has(key int32) (r bool) {
-	if this.statement.ram == RAMTypeAlways || (this.keys != nil && this.keys[key]) {
+	if this.ram == RAMTypeAlways {
 		return true
 	}
-	if this.dirty != nil {
-		if _, r = this.dirty[key]; r {
-			return
-		}
+	if this.keys != nil && this.keys.Has(key) {
+		return true
 	}
-	if this.dataset != nil {
-		if _, r = this.dataset[key]; r {
-			return
-		}
+	if this.dirty.Has(key) || this.dataset.Has(key) {
+		return true
 	}
 	return
 }
@@ -95,9 +98,11 @@ func (this *Hash) save() (err error) {
 
 // reset 运行时开始时
 func (this *Hash) reset() {
-	this.keys = hashKeys{}
 	this.statement.reset()
 	if s := this.model.Symbol(this.Updater); s != this.symbol {
+		if err := this.save(); err != nil {
+			Logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dirty, err)
+		}
 		this.symbol = s
 		this.dirty = nil
 		this.dataset = nil
@@ -107,6 +112,9 @@ func (this *Hash) reset() {
 	}
 	if this.dataset == nil {
 		this.dataset = hashData{}
+	}
+	if this.keys == nil && this.ram != RAMTypeAlways {
+		this.keys = hashKeys{}
 	}
 }
 
@@ -128,7 +136,7 @@ func (this *Hash) init() error {
 }
 
 // 关闭时执行,玩家下线
-func (this *Hash) flush() (err error) {
+func (this *Hash) destroy() (err error) {
 	return this.save()
 }
 
@@ -150,7 +158,7 @@ func (this *Hash) Val(k any) (r int64) {
 func (this *Hash) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
-		this.Operator(operator.Types_Set, k, 0, ParseInt64(v[0]))
+		this.operator(operator.Types_Set, k, 0, ParseInt64(v[0]))
 	default:
 		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
@@ -198,9 +206,9 @@ func (this *Hash) Verify() (err error) {
 	return
 }
 
-func (this *Hash) Save() (err error) {
+func (this *Hash) Submit() (r []*operator.Operator, err error) {
 	if this.Updater.Error != nil {
-		return this.Updater.Error
+		return nil, this.Updater.Error
 	}
 	for _, op := range this.statement.operator {
 		if op.Type.IsValid() {
@@ -214,13 +222,14 @@ func (this *Hash) Save() (err error) {
 	}
 	this.statement.done()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
+		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
 	}
+	r = this.statement.cache
 	return
 }
 
-func (this *Hash) Operator(t operator.Types, k any, v int64, r any) {
+func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 	id, ok := TryParseInt32(k)
 	if !ok {
 		_ = this.Errorf("updater Hash Operator key must int32:%v", k)
@@ -237,7 +246,7 @@ func (this *Hash) Operator(t operator.Types, k any, v int64, r any) {
 	if !this.has(id) {
 		this.keys[id] = true
 	}
-	if mod, ok := this.model.(Listener); ok {
+	if mod, ok := this.model.(ModelListener); ok {
 		mod.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
