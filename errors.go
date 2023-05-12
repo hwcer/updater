@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/updater/operator"
 )
 
 type ErrMsg struct {
@@ -19,36 +20,24 @@ func (e *ErrMsg) Error() string {
 func NewError(msg interface{}, args ...interface{}) *ErrMsg {
 	return &ErrMsg{msg: msg, args: args}
 }
-
-func ErrItemNotExist(iid int32) *ErrMsg {
-	return NewError("Item Not Exist", iid)
+func ErrArgsIllegal(args ...any) *ErrMsg {
+	return NewError("args illegal", args...)
 }
 
-func ErrObjNotExist(oid string) *ErrMsg {
-	panic("oid Not Exist")
-	return NewError("oid Not Exist", oid)
+func ErrItemNotExist(id any) *ErrMsg {
+	return NewError("Item Not Exist", id)
 }
 
 func ErrItemNotEnough(args ...interface{}) *ErrMsg {
 	return NewError("Item Not Enough", args...)
 }
-
+func ErrIidEmpty(op *operator.Operator) *ErrMsg {
+	return NewError("iid empty:%+v", op)
+}
 func ErrITypeNotExist(iid int32) *ErrMsg {
 	return NewError("IType Not Exist", iid)
 }
-func ErrCreateIdUnknown(name string) *ErrMsg {
-	return NewError("IType ObjectID Unknown", name)
-}
-
-func ErrDataNotExist(oid string) *ErrMsg {
-	return NewError("data Not Exist", oid)
-}
-
-func ErrActValIllegal(act *Cache) *ErrMsg {
-	return NewError("act val illegal", act.Val)
-}
 
 var (
-	ErrFieldNotExist = NewError("field not exist")
-	//ErrActValIllegal = NewError("act val illegal")
+	ErrUnableUseIIDOperation = NewError("unable to use iid operation")
 )

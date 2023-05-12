@@ -1,67 +1,74 @@
 package updater
 
-import "github.com/hwcer/cosmo"
-
-var db *cosmo.DB
-
-func SetDB(v *cosmo.DB) {
-	db = v
-}
-
-/*
-UGet 统一返回[]bson.M
-*/
-type ActType uint8
-
-const (
-	ActTypeAdd      ActType = 1  //添加
-	ActTypeSub              = 2  //扣除
-	ActTypeSet              = 3  //set
-	ActTypeDel              = 4  //del
-	ActTypeNew              = 5  //新对象
-	ActTypeResolve          = 6  //自动分解
-	ActTypeOverflow         = 7  //道具已满使用其他方式(邮件)转发
-	ActTypeMax              = 8  //最大值写入，最终转换成set或者drop
-	ActTypeMin              = 9  //最小值写入，最终转换成set或者drop
-	ActTypeDrop             = 99 //抛弃不执行任何操作
+import (
+	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/operator"
 )
 
-var (
-	ItemNameOID = "_id"
-	ItemNameIID = "id"
-	ItemNameVAL = "val"
-	ItemNameUID = "uid"
-)
+var Logger logger.Interface = logger.Default()
 
-type Cache struct {
-	OID   string      `json:"_id"`
-	IID   int32       `json:"id"`
-	Key   string      `json:"k"`
-	Val   interface{} `json:"v"`
-	Ret   interface{} `json:"r"`
-	AType ActType     `json:"t"`
-	IType IType       `json:"-"`
-}
+const ZeroInt64 = int64(0)
 
 type Handle interface {
-	Add(iid int32, num int32)
-	Sub(iid int32, num int32)
-	Max(iid int32, num int32) //如果大于原来的值就写入
-	Min(iid int32, num int32) //如果小于于原来的值就写入
-	Set(id interface{}, val interface{})
-	Val(id interface{}) int64
-	Get(id interface{}) (r interface{}, ok bool)
-	Del(id interface{})
-	Keys(id ...int32)
-	Data() error
-	Save() ([]*Cache, error)
-	Select(fields ...string)
-	Verify() error
-	release()
+	Del(k any)            //删除道具
+	Get(k any) any        //获取值
+	Val(k any) int64      //获取val值
+	Add(k int32, v int32) //自增v
+	Sub(k int32, v int32) //扣除v
+	Max(k int32, v int64) //如果大于原来的值就写入
+	Min(k int32, v int64) //如果小于于原来的值就写入
+	Set(k any, v ...any)  //设置v值
+
+	Data() error                                    //非内存模式获取数据库中的数据
+	Verify() error                                  //验证数据
+	Submit() ([]*operator.Operator, error)          //即时同步,提交所有操作
+	Select(keys ...any)                             //非内存模式时获取特定道具
+	Parser() Parser                                 //解析模型
+	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator
+
+	init() error    //构造方法
+	reset()         //运行时开始时
+	release()       //运行时释放缓存信息,并返回所有操作过程
+	destroy() error //同步所有数据到数据库,手动同步,或者销毁时执行
+}
+
+type HandleNew interface {
+	New(op *operator.Operator, before ...bool) error
 }
 
 var Config = struct {
-	IMax    func(iid int32) int64
-	IType   func(iid int32) IType                   //通过道具ID查找数据模型
-	ParseId func(oid string) (iid int32, err error) //解析OID获得IID
+	IMax    func(iid int32) int64                                     //通过道具iid查找上限
+	IType   func(iid int32) int32                                     //通过道具iid查找IType ID
+	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
 }{}
+
+// IType 一个IType对于一种数据类型·
+// 多种数据类型 可以用一种数据模型(model,一张表结构)
+type IType interface {
+	Id() int32 //IType 唯一标志
+}
+
+type ITypeCollection interface {
+	IType
+	New(u *Updater, op *operator.Operator) (item any, err error) //根据Operator信息生成新对象
+	ObjectId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID,仅限于可以叠加道具,不可以叠加道具返回空,使用NEW来创建
+	//Multiple() bool                                              //道具是否可以堆叠
+}
+
+// ITypeResolve 自动分解,如果没有分解方式超出上限则使用系统默认方式（丢弃）处理
+// Verify执行的一部分(Data之后Save之前)
+// 使用Resolve前，需要使用ITypeListener监听将可能分解成的道具ID使用adapter.Select预读数据
+// 使用Resolve时需要关联IMax指定道具上限
+type ITypeResolve interface {
+	Resolve(u *Updater, iid int32, val int64) error
+}
+
+// ModelIType 获取默认IType,仅仅doc模型使用
+//type ModelIType interface {
+//	IType() int32
+//}
+
+// ModelListener 监听数据变化
+type ModelListener interface {
+	Listener(u *Updater, op *operator.Operator)
+}

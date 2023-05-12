@@ -1,48 +1,43 @@
 package updater
 
-import "go.mongodb.org/mongo-driver/bson"
-
-func ParseInt(i interface{}) (v int64, ok bool) {
+func TryParseInt64(i any) (v int64, ok bool) {
 	ok = true
-	switch i.(type) {
+	switch d := i.(type) {
 	case int:
-		v = int64(i.(int))
+		v = int64(d)
+	case uint:
+		v = int64(d)
 	case int32:
-		v = int64(i.(int32))
+		v = int64(d)
+	case uint32:
+		v = int64(d)
 	case int64:
-		v = i.(int64)
+		v = d
+	case uint64:
+		v = int64(d)
 	case float32:
-		v = int64(i.(float32))
+		v = int64(d)
 	case float64:
-		v = int64(i.(float64))
+		v = int64(d)
 	default:
 		ok = false
 	}
 	return
 }
 
-func ParseInt32(i interface{}) (r int32, ok bool) {
-	var v int64
-	if v, ok = ParseInt(i); ok {
-		r = int32(v)
+func TryParseInt32(i any) (v int32, ok bool) {
+	var d int64
+	if d, ok = TryParseInt64(i); ok {
+		v = int32(d)
 	}
 	return
 }
-//TODO
-func ParseMap(k string, i interface{}) (r map[string]interface{}) {
-	if k!="*"{
-		r = make(map[string]interface{})
-		r[k] = i
-		return r
-	}
-	switch i.(type) {
-	case map[string]interface{}:
-		r, _ = i.(map[string]interface{})
-	case bson.M:
-		r, _ = i.(bson.M)
-	default:
-		r = make(map[string]interface{})
-		r[ItemNameVAL] = i
-	}
+
+func ParseInt64(i any) (v int64) {
+	v, _ = TryParseInt64(i)
 	return
+}
+
+func ParseInt32(i any) (r int32) {
+	return int32(ParseInt64(i))
 }

@@ -1,263 +1,313 @@
 package updater
 
 import (
-	"github.com/hwcer/cosgo/utils"
-	"github.com/hwcer/logger"
+	"errors"
+	"fmt"
+	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/operator"
 	"time"
 )
 
 type Updater struct {
 	uid      string
-	dict     map[string]Handle
-	time     *utils.DateTime
-	cache    []*Cache
-	strict   bool //严格模式下使用sub会检查数量
+	Time     time.Time
+	Error    error
+	Plugs    Plugs
+	Emitter  emitter
+	strict   bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	changed  bool
-	events   map[EventsType][]EventsHandle
-	overflow map[int32]int64 //道具溢出,需要使用邮件等其他方式处理
-	Flags    flags
-	Monitor  func(*Updater, *Cache) //所有操作Cache时都会调用此方法
+	handles  map[string]Handle
+	operator []*operator.Operator //临时操作,不涉及数据,直接返回给客户端,此类消息无视错误,直至成功
 }
 
-func New(uid string) (u *Updater) {
+func New(uid string) (u *Updater, err error) {
 	u = &Updater{uid: uid}
-	u.dict = make(map[string]Handle, len(modelsDict))
+	u.handles = make(map[string]Handle)
 	for _, model := range modelsRank {
-		if model.Parse == ParseTypeHash {
-			u.dict[model.Name] = NewHash(model, u)
-		} else if model.Parse == ParseTypeTable {
-			u.dict[model.Name] = NewTable(model, u)
-		}
+		u.handles[model.name] = handles[model.parser](u, model.model, model.ram)
 	}
-	u.Release()
+	err = u.init()
 	return
 }
 
-// Reset 重置
-func (u *Updater) Reset() *Updater {
-	u.time = utils.Time.New(time.Now())
-	u.events = make(map[EventsType][]EventsHandle)
-	u.Flags = flags{}
-	return u
+func (u *Updater) Errorf(format any, args ...any) error {
+	switch v := format.(type) {
+	case string:
+		u.Error = fmt.Errorf(v, args...)
+	case error:
+		u.Error = v
+	default:
+		u.Error = fmt.Errorf("%v", v)
+	}
+	return u.Error
 }
 
-// Release 释放
-func (u *Updater) Release() {
-	u.cache = nil
-	u.changed = false
-	u.overflow = make(map[int32]int64)
+// Reset 重置,每次请求开始时调用
+func (u *Updater) Reset() {
+	u.Time = time.Now()
 	u.strict = true
-	u.events = nil
-	u.Flags = nil
-	for _, w := range u.dict {
-		w.release()
+	for _, w := range u.handles {
+		w.reset()
 	}
 }
 
-func (u *Updater) emit(t EventsType) (err error) {
-	for _, f := range u.events[t] {
-		if err = f(u); err != nil {
+// Release 释放并返回所有已执行的操作,每次请求结束时调用
+// 无论有无错误,都应该执行Release
+// Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
+func (u *Updater) Release() {
+	_ = u.emit(PlugsTypeRelease)
+	u.changed = false
+	u.operator = nil
+	return
+}
+func (u *Updater) emit(t PlugsType) (err error) {
+	if err = u.Plugs.emit(u, t); err != nil {
+		return
+	}
+	if err = u.Emitter.emit(u, t); err != nil {
+		return
+	}
+	return
+}
+
+// Init 构造函数 NEW之后立即调用
+func (u *Updater) init() (err error) {
+	u.Time = time.Now()
+	for _, w := range u.handles {
+		if err = w.init(); err != nil {
 			return
 		}
 	}
-	return
-}
-
-func (u *Updater) On(t EventsType, f EventsHandle) {
-	u.events[t] = append(u.events[t], f)
+	return u.emit(PlugsTypeInit)
 }
 
 func (u *Updater) Uid() string {
 	return u.uid
 }
 
-// Time 获取Updater启动时间
-func (u *Updater) Time() time.Time {
-	return u.time.Now()
-}
-func (u *Updater) Unix() int64 {
-	return u.time.Unix()
+// Strict 开启或者关闭严格模式,关闭严格模式道具不足时扣成0,仅当前请求生效
+func (u *Updater) Strict(v bool) {
+	u.strict = v
 }
 
-// Strict true:检查sub, false: 不检查
-func (u *Updater) Strict(b bool) {
-	u.strict = b
-}
-
-func (u *Updater) Get(id interface{}) (r interface{}, ok bool) {
-	if w := u.getModuleType(id); w != nil {
-		r, ok = w.Get(id)
+func (u *Updater) Get(id any) (r any) {
+	if w := u.handle(id); w != nil {
+		r = w.Get(id)
 	}
 	return
 }
 
-func (u *Updater) Set(id interface{}, v interface{}) {
-	if w := u.getModuleType(id); w != nil {
-		w.Set(id, v)
+func (u *Updater) Set(id any, v ...any) {
+	if w := u.handle(id); w != nil {
+		w.Set(id, v...)
 	}
 }
 
 func (u *Updater) Add(iid int32, num int32) {
-	if iid == 0 || num <= 0 {
-		return
-	}
-	if w := u.getModuleType(iid); w != nil {
+	if w := u.handle(iid); w != nil {
 		w.Add(iid, num)
 	}
 }
 
 func (u *Updater) Sub(iid int32, num int32) {
-	if iid == 0 || num <= 0 {
-		return
-	}
-	if w := u.getModuleType(iid); w != nil {
+	if w := u.handle(iid); w != nil {
 		w.Sub(iid, num)
 	}
 }
 
-func (u *Updater) Max(iid int32, num int32) {
-	if iid == 0 {
-		return
-	}
-	if w := u.getModuleType(iid); w != nil {
+func (u *Updater) Max(iid int32, num int64) {
+	if w := u.handle(iid); w != nil {
 		w.Max(iid, num)
 	}
 }
 
-func (u *Updater) Min(iid int32, num int32) {
-	if iid == 0 {
-		return
-	}
-	if w := u.getModuleType(iid); w != nil {
+func (u *Updater) Min(iid int32, num int64) {
+	if w := u.handle(iid); w != nil {
 		w.Min(iid, num)
 	}
 }
 
-func (u *Updater) Del(id interface{}) {
-	if w := u.getModuleType(id); w != nil {
-		w.Del(id)
-	}
-}
-
-func (u *Updater) Val(id interface{}) (r int64) {
-	if w := u.getModuleType(id); w != nil {
+func (u *Updater) Val(id any) (r int64) {
+	if w := u.handle(id); w != nil {
 		r = w.Val(id)
 	}
 	return
 }
 
-// Keys 通过iid或者oid添加需要获取的道具信息
-func (u *Updater) Keys(ids ...int32) {
-	for _, id := range ids {
-		if w := u.getModuleType(id); w != nil {
-			w.Keys(id)
-		}
+func (u *Updater) Del(id any) {
+	if w := u.handle(id); w != nil {
+		w.Del(id)
 	}
 }
 
-func (u *Updater) Fields(fields ...string) {
-	for _, field := range fields {
-		if w := u.getModuleType(field); w != nil {
-			w.Select(field)
+// New 直接创建新对象
+func (u *Updater) New(i any, before ...bool) error {
+	doc := dataset.NewDocument(i)
+	iid := doc.IID()
+	if iid <= 0 {
+		return errors.New("iid empty")
+	}
+	oid := doc.OID()
+	if oid == "" {
+		return errors.New("oid empty")
+	}
+	handle := u.handle(iid)
+	if handle == nil {
+		return errors.New("handle unknown")
+	}
+	if handle.Parser() != ParserTypeCollection {
+		return fmt.Errorf("handle Parser must be %v", ParserTypeCollection)
+	}
+	hn, ok := handle.(HandleNew)
+	if !ok {
+		return fmt.Errorf("handle not method New")
+	}
+	op := operator.New(operator.Types_New, doc.VAL(), []any{i})
+	op.OID = oid
+	op.IID = iid
+	return hn.New(op, before...)
+}
+
+func (u *Updater) Select(keys ...any) {
+	for _, k := range keys {
+		if w := u.handle(k); w != nil {
+			w.Select(keys...)
 		}
 	}
 }
 
 func (u *Updater) Data() (err error) {
-	if u.uid == "" {
+	if u.Error != nil {
+		return u.Error
+	}
+	defer func() {
+		u.changed = false
+	}()
+	if err = u.emit(PlugsTypeData); err != nil {
 		return
 	}
-	if err = u.emit(EventsTypeBeforeData); err != nil {
-		return err
-	}
-	for _, w := range u.handles() {
+	for _, w := range u.Handles() {
 		if err = w.Data(); err != nil {
 			return
 		}
 	}
-	u.changed = false
-	if err = u.emit(EventsTypeFinishData); err != nil {
-		return err
-	}
 	return
 }
 
-func (u *Updater) Save() (err error) {
-	if u.uid == "" {
-		return
+func (u *Updater) Submit() (r []*operator.Operator, err error) {
+	if u.Error != nil {
+		return nil, u.Error
 	}
+	r = append(r, u.operator...)
 	if u.changed {
 		if err = u.Data(); err != nil {
 			return
 		}
 	}
-	if err = u.emit(EventsTypeBeforeVerify); err != nil {
-		return err
+	hs := u.Handles()
+	if err = u.emit(PlugsTypeVerify); err != nil {
+		return
 	}
-	ws := u.handles()
-	for _, w := range ws {
+	for _, w := range hs {
 		if err = w.Verify(); err != nil {
 			return
 		}
 	}
-
-	if err = u.emit(EventsTypeFinishVerify); err != nil {
-		return err
+	if err = u.emit(PlugsTypeSubmit); err != nil {
+		return
 	}
-	if err = u.emit(EventsTypeBeforeSave); err != nil {
-		return err
-	}
-	var cache []*Cache
-	for _, w := range ws {
-		if cache, err = w.Save(); err != nil {
+	var opts []*operator.Operator
+	for _, w := range hs {
+		if opts, err = w.Submit(); err != nil {
 			return
-		} else {
-			u.cache = append(u.cache, cache...)
+		} else if len(opts) > 0 {
+			r = append(r, opts...)
 		}
-	}
-	if err = u.emit(EventsTypeFinishSave); err != nil {
-		return err
 	}
 	return
 }
 
-func (u *Updater) Cache() (ret []*Cache) {
-	return u.cache
+// IType 通过iid获取IType
+func (u *Updater) IType(iid int32) (it IType) {
+	if id := Config.IType(iid); id != 0 {
+		it = itypesDict[id]
+	}
+	return
 }
 
-func (u *Updater) getModuleType(id interface{}) Handle {
-	var iid int32
-	switch id.(type) {
-	case string:
-		iid, _ = Config.ParseId(id.(string))
-	default:
-		iid, _ = ParseInt32(id)
+// ParseId 通过OID 或者IID 获取iid
+func (u *Updater) ParseId(key any) (iid int32, err error) {
+	if v, ok := key.(string); ok {
+		iid, err = Config.ParseId(u, v)
+	} else {
+		iid = ParseInt32(key)
 	}
-	if iid <= 0 {
-		//logger.Warn("Updater.getModuleType id illegal: %v", id)
-		return nil
-	}
-	it := Config.IType(iid)
-	if it == nil {
-		logger.Alert("Updater.getModuleType IType not exists: %v", iid)
-		return nil
-	}
-
-	handle, ok := u.dict[it.Model()]
-	if !ok {
-		logger.Alert("Updater.getModuleType handles not exists: %v", it.Model)
-	}
-	return handle
+	return
 }
 
+// Handle 根据 name(string)
 func (u *Updater) Handle(name string) Handle {
-	return u.dict[name]
+	return u.handles[name]
 }
 
-func (u *Updater) handles() (r []Handle) {
+// Handle 根据iid,oid获取模型不支持Hash,Document的字段查询
+func (u *Updater) handle(k any) Handle {
+	iid, err := u.ParseId(k)
+	if err != nil {
+		Logger.Alert("%v", err)
+		return nil
+	}
+	itk := Config.IType(iid)
+	model, ok := modelsDict[itk]
+	if !ok {
+		Logger.Alert("Updater.handle not exists,iid:%v IType:%v", k, itk)
+		return nil
+	}
+	return u.Handle(model.name)
+}
+
+func (u *Updater) Handles() (r []Handle) {
+	r = make([]Handle, 0, len(modelsRank))
 	for _, model := range modelsRank {
-		if w, ok := u.dict[model.Name]; ok {
-			r = append(r, w)
+		r = append(r, u.handles[model.name])
+	}
+	return
+}
+func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
+	iid := op.IID
+	if iid <= 0 {
+		return errors.New("operator iid empty")
+	}
+	handle := u.handle(iid)
+	if handle == nil {
+		return errors.New("handle unknown")
+	}
+	if op.Type == operator.Types_Set && handle.Parser() == ParserTypeCollection {
+		if _, ok := op.Result.(dataset.Update); !ok {
+			return errors.New("operator set result type must be dataset.Update")
+		}
+	}
+	handle.Operator(op, before...)
+	return nil
+}
+
+// Message  生成一次操作结果,返回给客户端,不会修改数据
+func (u *Updater) Message(t operator.Types, i int32, v int64, r any) *operator.Operator {
+	op := operator.New(t, v, r)
+	op.IID = i
+	u.operator = append(u.operator, op)
+	return op
+}
+
+// Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
+// 仅缓存模式下需要且必要执行
+func (u *Updater) Destroy() (err error) {
+	if err = u.emit(PlugsTypeDestroy); err != nil {
+		return
+	}
+	for _, w := range u.handles {
+		if err = w.destroy(); err != nil {
+			return
 		}
 	}
 	return

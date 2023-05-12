@@ -1,78 +1,77 @@
 package updater
 
 import (
-	"errors"
+	"fmt"
+	"github.com/hwcer/updater/operator"
 )
 
-var hashParseHandle = make(map[ActType]func(*Hash, *Cache) error)
+var hashParseHandle = make(map[operator.Types]func(*Hash, *operator.Operator) error)
 
 func init() {
-	hashParseHandle[ActTypeAdd] = hashHandleAdd
-	hashParseHandle[ActTypeSet] = hashHandleSet
-	hashParseHandle[ActTypeSub] = hashHandleSub
-	hashParseHandle[ActTypeMax] = hashHandleMax
-	hashParseHandle[ActTypeMin] = hashHandleMin
+	//hashParseHandle[operator.Types_Del] = hashParseDel
+	hashParseHandle[operator.Types_Add] = hashParseAdd
+	hashParseHandle[operator.Types_Sub] = hashParseSub
+	hashParseHandle[operator.Types_Max] = hashParseMax
+	hashParseHandle[operator.Types_Min] = hashParseMin
+	hashParseHandle[operator.Types_Set] = hashParseSet
 }
 
-func parseHash(h *Hash, act *Cache) error {
-	if h.updater.strict && act.AType == ActTypeSub {
-		av, _ := ParseInt(act.Val)
-		dv := h.Val(act.Key)
-		if av > dv {
-			return ErrItemNotEnough(act.IID, av, dv)
-		}
+func (this *Hash) Parse(op *operator.Operator) error {
+	if f, ok := hashParseHandle[op.Type]; ok {
+		return f(this, op)
 	}
-	if f, ok := hashParseHandle[act.AType]; ok {
-		return f(h, act)
-	}
-	return errors.New("hash_act_parser not exist")
+	return fmt.Errorf("hash operator type not exist:%v", op.Type.ToString())
 }
 
-func hashHandleAdd(h *Hash, act *Cache) (err error) {
-	v, _ := ParseInt(act.Val)
-	act.Ret, err = h.data.Add(act.Key, v)
-	h.update.Inc(act.Key, v)
+func hashParseAdd(this *Hash, op *operator.Operator) (err error) {
+	r := this.val(op.IID) + op.Value
+	op.Result = r
+	this.values[op.IID] = r
 	return
 }
 
-func hashHandleSub(h *Hash, act *Cache) (err error) {
-	v, _ := ParseInt(act.Val)
-	act.Ret, err = h.data.Add(act.Key, -v)
-	h.update.Inc(act.Key, -v)
+func hashParseSub(this *Hash, op *operator.Operator) (err error) {
+	d := this.val(op.IID)
+	if op.Value > d && this.Updater.strict {
+		return ErrItemNotEnough(op.IID, op.Value, d)
+	}
+	r := d - op.Value
+	if r < 0 {
+		r = 0
+	}
+	op.Result = r
+	this.values[op.Key] = r
 	return
-
 }
 
-func hashHandleMax(h *Hash, act *Cache) (err error) {
-	v, _ := ParseInt(act.Val)
-	d, ok := h.data.GetInt(act.Key)
-	if ok && v > d {
-		act.AType = ActTypeSet
-		err = hashHandleSet(h, act)
+func hashParseSet(this *Hash, op *operator.Operator) (err error) {
+	op.Type = operator.Types_Set
+	this.values[op.IID] = ParseInt64(op.Result)
+	return
+}
+
+//func hashParseDel(this *Hash, op *operator.Operator) (err error) {
+//	op.Result = ZeroInt64
+//	this.values[op.IID] = ZeroInt64
+//	return
+//}
+
+func hashParseMax(this *Hash, op *operator.Operator) (err error) {
+	if op.Value > this.val(op.IID) {
+		op.Result = op.Value
+		err = hashParseSet(this, op)
 	} else {
-		act.AType = ActTypeDrop
+		op.Result = operator.Types_Drop
 	}
 	return
 }
 
-func hashHandleMin(h *Hash, act *Cache) (err error) {
-	v, _ := ParseInt(act.Val)
-	d, ok := h.data.GetInt(act.Key)
-	if ok && v < d {
-		act.AType = ActTypeSet
-		err = hashHandleSet(h, act)
+func hashParseMin(this *Hash, op *operator.Operator) (err error) {
+	if op.Value > this.val(op.IID) {
+		op.Result = op.Value
+		err = hashParseSet(this, op)
 	} else {
-		act.AType = ActTypeDrop
+		op.Type = operator.Types_Drop
 	}
-	return
-}
-
-func hashHandleSet(h *Hash, act *Cache) (err error) {
-	act.Ret = act.Val
-	var r interface{}
-	if r,err = h.data.Set(act.Key, act.Val); err != nil {
-		return
-	}
-	h.update.Set(act.Key, r)
 	return
 }

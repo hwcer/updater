@@ -2,193 +2,255 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosmo/update"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/updater/operator"
 )
 
-//type HashModelObjectID interface {
-//	ObjectID(u *Updater) (string, error)
-//}
+type hashModel interface {
+	Symbol(u *Updater) any                                                //获取信息标识符号,如果和当前不一样将会重置数据
+	Getter(u *Updater, symbol any, keys []int32) (map[int32]int64, error) //获取数据接口,返回 []byte(bson.raw) , bson.Document
+	Setter(u *Updater, symbol any, update map[int32]int64) error          //保存数据接口
+}
 
+type hashData map[int32]int64
+type hashKeys map[int32]bool
+
+func (this hashKeys) Keys() (r []int32) {
+	for k, _ := range this {
+		r = append(r, k)
+	}
+	return
+}
+func (this hashKeys) Has(k int32) (r bool) {
+	_, r = this[k]
+	return
+}
+
+func (this hashData) Has(k int32) (r bool) {
+	_, r = this[k]
+	return
+}
+func (data hashData) Merge(src hashData) {
+	for k, v := range src {
+		data[k] = v
+	}
+}
+
+// Hash HashMAP储存
 type Hash struct {
-	*base
-	data   *Data
-	update update.Update
+	*statement
+	name    string //model database name
+	keys    hashKeys
+	model   hashModel
+	symbol  any      //标记时效性
+	dirty   hashData //需要写入数据的数据
+	dataset hashData //数据集
 }
 
-func NewHash(model *Model, updater *Updater) *Hash {
-	_ = model.Model.(ModelHash)
-	b := NewBase(model, updater)
-	return &Hash{base: b}
+func NewHash(u *Updater, model any, ram RAMType) Handle {
+	r := &Hash{}
+	r.model = model.(hashModel)
+	r.statement = NewStatement(u, ram, r.operator)
+	if sch, err := schema.Parse(model); err == nil {
+		r.name = sch.Table
+	} else {
+		Logger.Fatal(err)
+	}
+	return r
 }
 
+func (this *Hash) Parser() Parser {
+	return ParserTypeHash
+}
+
+// has 检查k是否已经缓存,或者下次会被缓存
+func (this *Hash) has(key int32) (r bool) {
+	if this.ram == RAMTypeAlways {
+		return true
+	}
+	if this.keys != nil && this.keys.Has(key) {
+		return true
+	}
+	if this.dirty.Has(key) || this.dataset.Has(key) {
+		return true
+	}
+	return
+}
+
+func (this *Hash) val(iid int32) (r int64) {
+	if v, ok := this.values[iid]; ok {
+		return v
+	}
+	r = this.dataset[iid]
+	this.values[iid] = r
+	return r
+}
+
+func (this *Hash) save() (err error) {
+	if len(this.dirty) == 0 {
+		return
+	}
+	if err = this.model.Setter(this.statement.Updater, this.symbol, this.dirty); err == nil {
+		this.dirty = nil
+	}
+	return
+}
+
+// reset 运行时开始时
+func (this *Hash) reset() {
+	this.statement.reset()
+	if s := this.model.Symbol(this.Updater); s != this.symbol {
+		if err := this.save(); err != nil {
+			Logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dirty, err)
+		}
+		this.symbol = s
+		this.dirty = nil
+		this.dataset = nil
+	}
+	if this.dirty == nil {
+		this.dirty = hashData{}
+	}
+	if this.dataset == nil {
+		this.dataset = hashData{}
+	}
+	if this.keys == nil && this.ram != RAMTypeAlways {
+		this.keys = hashKeys{}
+	}
+}
+
+// release 运行时释放
 func (this *Hash) release() {
-	this.data = nil
-	this.update = nil
-	this.base.release()
-}
-
-func (this *Hash) Add(k int32, v int32) {
-	if k == 0 || v <= 0 {
-		return
+	this.keys = nil
+	this.statement.release()
+	if this.statement.ram == RAMTypeNone {
+		this.dirty = nil
+		this.dataset = nil
 	}
-	this.act(ActTypeAdd, k, v)
 }
-
-func (this *Hash) Sub(k int32, v int32) {
-	if k == 0 || v <= 0 {
-		return
+func (this *Hash) init() error {
+	this.symbol = this.model.Symbol(this.Updater)
+	if this.statement.ram == RAMTypeAlways {
+		this.dataset, this.Updater.Error = this.model.Getter(this.Updater, this.symbol, nil)
 	}
-	this.act(ActTypeSub, k, v)
+	return this.Updater.Error
 }
 
-func (this *Hash) Max(k int32, v int32) {
-	this.act(ActTypeMax, k, v)
+// 关闭时执行,玩家下线
+func (this *Hash) destroy() (err error) {
+	return this.save()
 }
 
-func (this *Hash) Min(k int32, v int32) {
-	this.act(ActTypeMin, k, v)
+func (this *Hash) Get(k any) (r any) {
+	if id, _ := k.(int32); id > 0 {
+		r = this.val(id)
+	}
+	return
 }
-
-func (this *Hash) Set(k interface{}, v interface{}) {
-	this.act(ActTypeSet, k, v)
-}
-
-func (this *Hash) Val(k interface{}) (r int64) {
-	if v, ok := this.Get(k); ok {
-		r, _ = ParseInt(v)
+func (this *Hash) Val(k any) (r int64) {
+	if id, _ := k.(int32); id > 0 {
+		r = this.val(id)
 	}
 	return
 }
 
-func (this *Hash) Get(k interface{}) (interface{}, bool) {
-	if _, field, _, err := this.ParseId(k); err == nil {
-		return this.data.Get(field)
+// Set 设置
+// Set(k int32,v int64)
+func (this *Hash) Set(k any, v ...any) {
+	switch len(v) {
+	case 1:
+		this.operator(operator.Types_Set, k, 0, ParseInt64(v[0]))
+	default:
+		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
-	return nil, false
 }
 
-func (this *Hash) Del(k interface{}) {
-	logger.Alert("del is invalid:%v", this.model.Name)
-	return
-}
-func (this *Hash) Keys(keys ...int32) {
+// Select 指定需要更新的字段
+func (this *Hash) Select(keys ...any) {
+	if this.statement.ram == RAMTypeAlways {
+		return
+	}
 	for _, k := range keys {
-		if _, oid, _, err := this.ParseId(k); err == nil {
-			this.Select(oid)
-		} else {
-			logger.Alert(err)
+		if id, _ := k.(int32); id > 0 && !this.has(id) {
+			this.keys[id] = true
 		}
 	}
 }
 
-func (this *Hash) act(t ActType, k interface{}, v interface{}) bool {
-	iid, key, it, err := this.ParseId(k)
-	if err != nil {
-		logger.Alert(err)
-		return false
+func (this *Hash) Data() error {
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
-	this.Select(key)
-	oid := this.ObjectId()
-	act := &Cache{OID: oid, IID: iid, AType: t, Key: key, Val: v}
-	act.IType = it
-	//ITYPE 监控
-	if act.IType != nil {
-		if onChange, ok := act.IType.(ITypeOnChange); ok {
-			if !onChange.OnChange(this.updater, act) {
-				return false
-			}
-		}
+	if len(this.keys) == 0 {
+		return nil
 	}
-	//通用监控
-	if this.updater.Monitor != nil {
-		this.updater.Monitor(this.updater, act)
+	keys := this.keys.Keys()
+	if src, err := this.model.Getter(this.statement.Updater, this.symbol, keys); err != nil {
+		return err
+	} else if src != nil {
+		this.dataset.Merge(src)
 	}
-	this.base.Act(act)
-	if this.update != nil {
-		this.Verify()
-	}
-	return true
-}
-
-func (this *Hash) Data() (err error) {
-	data := this.model.Model.(ModelHash).New()
-	keys := this.base.fields.keys
-	if len(keys) == 0 {
-		return
-	}
-	oid := this.ObjectId()
-	tx := db.Select(keys...).Find(data, oid)
-	if tx.Error != nil {
-		return tx.Error
-	}
-	this.data = NewData(this.model.Schema, data)
-	this.base.fields.reset()
+	this.keys = nil
 	return nil
 }
 
 func (this *Hash) Verify() (err error) {
-	defer func() {
-		if err == nil {
-			this.cache = append(this.cache, this.acts...)
-			this.acts = nil
-		} else {
-			this.update = nil
-			this.base.errMsg = err
-		}
-	}()
-	if this.update == nil {
-		this.update = update.New()
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
-	if len(this.base.acts) == 0 {
-		return
-	}
-	for _, act := range this.base.acts {
-		if err = parseHash(this, act); err != nil {
+	for _, act := range this.statement.operator {
+		if err = this.Parse(act); err != nil {
 			return
 		}
 	}
+	this.statement.verified = true
 	return
 }
 
-func (this *Hash) Save() (cache []*Cache, err error) {
-	if this.base.errMsg != nil {
-		return nil, this.base.errMsg
+func (this *Hash) Submit() (r []*operator.Operator, err error) {
+	if this.Updater.Error != nil {
+		return nil, this.Updater.Error
 	}
-	if this.update == nil || len(this.update) == 0 {
-		return
-	}
-	oid := this.ObjectId()
-	tx := db.Model(this.model.Model).Update(this.update, oid)
-	if tx.Error == nil {
-		cache = this.base.cache
-		this.base.cache = nil
-	} else {
-		err = tx.Error
-	}
-	return
-}
-
-func (this *Hash) ObjectId() string {
-	m := this.model.Model.(ModelHash)
-	return m.ObjectId(this.updater)
-}
-
-func (this *Hash) ParseId(id interface{}) (iid int32, oid string, it IType, err error) {
-	switch id.(type) {
-	case string:
-		oid = id.(string)
-	default:
-		iid, _ = ParseInt32(id)
-		if iid > 0 {
-			it = Config.IType(iid)
-			if it != nil {
-				oid, err = it.CreateId(this.updater, iid)
+	for _, op := range this.statement.operator {
+		if op.Type.IsValid() {
+			if v, ok := op.Result.(int64); ok {
+				this.dirty[op.IID] = v
+				this.dataset[op.IID] = v
+			} else {
+				fmt.Printf("hash save error:%+v\n", op)
 			}
 		}
-		if oid == "" {
-			err = fmt.Errorf("iid无法转换成字段:%v", iid)
+	}
+	this.statement.done()
+	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
+		err = nil
+	}
+	r = this.statement.cache
+	return
+}
+
+func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
+	id, ok := TryParseInt32(k)
+	if !ok {
+		_ = this.Errorf("updater Hash Operator key must int32:%v", k)
+		return
+	}
+	if t != operator.Types_Del {
+		if _, ok := TryParseInt64(v); !ok {
+			_ = this.Errorf("updater Hash Operator val must int64:%v", v)
+			return
 		}
 	}
-	return
+	op := operator.New(t, v, r)
+	op.IID = id
+	if !this.has(id) {
+		this.keys[id] = true
+	}
+	if mod, ok := this.model.(ModelListener); ok {
+		mod.Listener(this.Updater, op)
+	}
+	this.statement.Operator(op)
+	if this.verified {
+		_ = this.Verify()
+	}
 }

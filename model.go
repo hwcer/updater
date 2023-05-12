@@ -1,65 +1,64 @@
 package updater
 
 import (
+	"fmt"
 	"github.com/hwcer/cosgo/schema"
 )
 
-type ParseType int8
+type Parser int8
+type handleFunc func(updater *Updater, model any, ram RAMType) Handle
 
 const (
-	ParseTypeHash  ParseType = iota //HASH模式
-	ParseTypeTable                  //table模式
+	ParserTypeHash       Parser = iota //Map[string]int64模式
+	ParserTypeDocument                 //Document 单文档模式
+	ParserTypeCollection               //Collection 文档集合模式
 )
 
-var modelsRank []*Model
-var modelsDict = make(map[string]*Model)
+var handles = make(map[Parser]handleFunc)
 
-//type ModelInterface interface {
-//	ObjectID(uid string, iid int32, now time.Time) (oid string, err error) //创建OID
-//}
+func init() {
+	NewHandle(ParserTypeHash, NewHash)
+	NewHandle(ParserTypeDocument, NewDocument)
+	NewHandle(ParserTypeCollection, NewCollection)
+}
+
+// NewHandle 注册新解析器
+func NewHandle(name Parser, f handleFunc) {
+	handles[name] = f
+}
+
+var modelsRank []*Model
+var modelsDict = make(map[int32]*Model)
+var itypesDict = make(map[int32]IType) //ITypeId = IType
 
 type Model struct {
-	Name   string
-	Parse  ParseType
-	Model  interface{}
-	Schema *schema.Schema
+	ram    RAMType
+	name   string
+	model  any
+	parser Parser
 }
 
-func Register(pt ParseType, mod interface{}) (err error) {
-	i := &Model{Parse: pt, Model: mod}
-	i.Schema, err = schema.Parse(mod)
-	if err != nil {
-		return
+func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
+	if _, ok := handles[parser]; !ok {
+		return fmt.Errorf("parser unknown:%v", parser)
 	}
-	i.Name = i.Schema.Table
-	modelsRank = append(modelsRank, i)
-	modelsDict[i.Name] = i
+	mod := &Model{ram: ram, model: model, parser: parser}
+	sch, err := schema.Parse(model)
+	if err != nil {
+		return err
+	}
+	mod.name = sch.Table
+	modelsRank = append(modelsRank, mod)
+	for _, it := range itypes {
+		if parser == ParserTypeCollection {
+			it = it.(ITypeCollection)
+		}
+		id := it.Id()
+		if _, ok := modelsDict[id]; ok {
+			return fmt.Errorf("model IType(%v)已经存在:%v", it, mod.name)
+		}
+		modelsDict[id] = mod
+		itypesDict[id] = it
+	}
 	return nil
-}
-
-// ModelHash Hash必须有具备的方法
-type ModelHash interface {
-	New() interface{}
-	ObjectId(u *Updater) string //HASH KEY
-}
-
-// ModelTable Table必须具备的方法
-type ModelTable interface {
-	Copy() interface{}
-	MakeSlice() interface{} //[]ModelTable
-}
-
-// ModelGetVal 获取属性
-type ModelGetVal interface {
-	GetVal(key string) (interface{}, bool)
-}
-
-// ModelSetVal 设置属性
-type ModelSetVal interface {
-	SetVal(key string, val interface{}) (interface{}, error)
-}
-
-// ModelAddVal 增加属性
-type ModelAddVal interface {
-	AddVal(key string, val int64) (r int64, err error)
 }
