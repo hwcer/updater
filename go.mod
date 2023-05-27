@@ -2,14 +2,9 @@ module github.com/hwcer/updater
 
 go 1.18
 
-replace (
-	github.com/hwcer/cosgo v0.0.2 => ../cosgo
-	github.com/hwcer/logger v0.0.2 => ../logger
-)
-
 require (
-	github.com/hwcer/cosgo v0.0.2
-	github.com/hwcer/logger v0.0.2
+	github.com/hwcer/cosgo v0.0.3
+	github.com/hwcer/logger v0.0.3
 	go.mongodb.org/mongo-driver v1.11.4
 )
 
