@@ -255,6 +255,9 @@ func (this *Document) Submit() (r []*operator.Operator, err error) {
 	r = this.statement.cache
 	return
 }
+func (this *Document) Values() any {
+	return this.dataset
+}
 
 func (this *Document) ObjectId(k any) (key string, err error) {
 	switch v := k.(type) {

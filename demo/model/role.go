@@ -14,6 +14,8 @@ func init() {
 }
 
 type Role struct {
+	Id    string `bson:"_id" json:"id"`
+	Guid  string `bson:"guid" bson:"guid"`
 	Name  string `bson:"name"`
 	Level int32  `bson:"level"`
 	Money int64  `bson:"money"`
