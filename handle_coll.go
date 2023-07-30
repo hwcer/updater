@@ -162,7 +162,12 @@ func (this *Collection) New(op *operator.Operator, before ...bool) (err error) {
 	if op.Type != operator.Types_New {
 		return this.Updater.Errorf("operator type must be New:%+v", op)
 	}
-	if listen, ok := this.model.(ModelListener); ok {
+	it := this.Updater.IType(op.IID)
+	if it == nil {
+		Logger.Debug("IType not exist:%v", op.IID)
+		return
+	}
+	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op, before...)
@@ -255,7 +260,12 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
 	}
-	if listen, ok := this.model.(ModelListener); ok {
+	it := this.Updater.IType(op.IID)
+	if it == nil {
+		Logger.Debug("IType not exist:%v", op.IID)
+		return
+	}
+	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)

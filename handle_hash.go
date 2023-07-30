@@ -236,7 +236,7 @@ func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 		return
 	}
 	if t != operator.Types_Del {
-		if _, ok := TryParseInt64(v); !ok {
+		if _, ok = TryParseInt64(v); !ok {
 			_ = this.Errorf("updater Hash Operator val must int64:%v", v)
 			return
 		}
@@ -246,8 +246,13 @@ func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 	if !this.has(id) {
 		this.keys[id] = true
 	}
-	if mod, ok := this.model.(ModelListener); ok {
-		mod.Listener(this.Updater, op)
+	it := this.Updater.IType(op.IID)
+	if it == nil {
+		Logger.Debug("IType not exist:%v", op.IID)
+		return
+	}
+	if listen, ok := it.(ITypeListener); ok {
+		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
 	if this.verified {

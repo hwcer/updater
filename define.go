@@ -63,12 +63,16 @@ type ITypeResolve interface {
 	Resolve(u *Updater, iid int32, val int64) error
 }
 
+type ITypeListener interface {
+	Listener(u *Updater, op *operator.Operator)
+}
+
 // ModelIType 获取默认IType,仅仅doc模型使用
 //type ModelIType interface {
 //	IType() int32
 //}
 
 // ModelListener 监听数据变化
-type ModelListener interface {
-	Listener(u *Updater, op *operator.Operator)
-}
+//type ModelListener interface {
+//	Listener(u *Updater, op *operator.Operator)
+//}
