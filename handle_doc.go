@@ -255,6 +255,11 @@ func (this *Document) Submit() (r []*operator.Operator, err error) {
 	r = this.statement.cache
 	return
 }
+
+// Dirty 设置脏数据,手动修改内存后置脏同步到数据库
+func (this *Document) Dirty(k string, v any) {
+	this.dirty[k] = v
+}
 func (this *Document) Values() any {
 	return this.dataset
 }
