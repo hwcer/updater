@@ -243,6 +243,10 @@ func (this *Collection) Submit() (r []*operator.Operator, err error) {
 	return
 }
 
+func (this *Collection) Values() any {
+	return this.dataset
+}
+
 func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return

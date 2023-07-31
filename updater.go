@@ -46,7 +46,7 @@ func (u *Updater) Errorf(format any, args ...any) error {
 func (u *Updater) Reset() {
 	u.Time = time.Now()
 	u.strict = true
-	for _, w := range u.handles {
+	for _, w := range u.Handles() {
 		w.reset()
 	}
 }
@@ -58,6 +58,10 @@ func (u *Updater) Release() {
 	_ = u.emit(PlugsTypeRelease)
 	u.changed = false
 	u.operator = nil
+	hs := u.Handles()
+	for i := len(hs) - 1; i >= 0; i-- {
+		hs[i].release()
+	}
 	return
 }
 func (u *Updater) emit(t PlugsType) (err error) {
@@ -73,7 +77,7 @@ func (u *Updater) emit(t PlugsType) (err error) {
 // Init 构造函数 NEW之后立即调用
 func (u *Updater) init() (err error) {
 	u.Time = time.Now()
-	for _, w := range u.handles {
+	for _, w := range u.Handles() {
 		if err = w.init(); err != nil {
 			return
 		}
@@ -194,6 +198,7 @@ func (u *Updater) Data() (err error) {
 	return
 }
 
+// Submit 按照MODEL的倒序执行
 func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if u.Error != nil {
 		return nil, u.Error
@@ -208,8 +213,8 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if err = u.emit(PlugsTypeVerify); err != nil {
 		return
 	}
-	for _, w := range hs {
-		if err = w.Verify(); err != nil {
+	for i := len(hs) - 1; i >= 0; i-- {
+		if err = hs[i].Verify(); err != nil {
 			return
 		}
 	}
@@ -217,8 +222,8 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 		return
 	}
 	var opts []*operator.Operator
-	for _, w := range hs {
-		if opts, err = w.Submit(); err != nil {
+	for i := len(hs) - 1; i >= 0; i-- {
+		if opts, err = hs[i].Submit(); err != nil {
 			return
 		} else if len(opts) > 0 {
 			r = append(r, opts...)
@@ -305,8 +310,9 @@ func (u *Updater) Destroy() (err error) {
 	if err = u.emit(PlugsTypeDestroy); err != nil {
 		return
 	}
-	for _, w := range u.handles {
-		if err = w.destroy(); err != nil {
+	hs := u.Handles()
+	for i := len(hs) - 1; i >= 0; i-- {
+		if err = hs[i].destroy(); err != nil {
 			return
 		}
 	}

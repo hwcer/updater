@@ -304,12 +304,10 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 		this.keys[op.Key] = true
 	}
 	it := this.Updater.IType(op.IID)
-	if it == nil {
-		Logger.Debug("IType not exist:%v", op.IID)
-		return
-	}
-	if listen, ok := it.(ITypeListener); ok {
-		listen.Listener(this.Updater, op)
+	if it != nil {
+		if listen, ok := it.(ITypeListener); ok {
+			listen.Listener(this.Updater, op)
+		}
 	}
 	this.statement.Operator(op)
 	if this.verified {

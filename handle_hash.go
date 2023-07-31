@@ -228,6 +228,9 @@ func (this *Hash) Submit() (r []*operator.Operator, err error) {
 	r = this.statement.cache
 	return
 }
+func (this *Hash) Values() any {
+	return this.dataset
+}
 
 func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 	id, ok := TryParseInt32(k)

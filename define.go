@@ -23,6 +23,7 @@ type Handle interface {
 	Verify() error                                  //验证数据
 	Submit() ([]*operator.Operator, error)          //即时同步,提交所有操作
 	Select(keys ...any)                             //非内存模式时获取特定道具
+	Values() any                                    //获取数据集
 	Parser() Parser                                 //解析模型
 	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator
 
