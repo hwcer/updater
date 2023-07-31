@@ -50,6 +50,7 @@ func (stmt *statement) Errorf(format any, args ...any) error {
 	return stmt.Updater.Errorf(format, args...)
 }
 
+// Operator 直接调用有问题
 func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
 	if len(before) > 0 && before[0] {
 		stmt.operator = append([]*operator.Operator{c}, stmt.operator...)

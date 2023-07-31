@@ -248,6 +248,7 @@ func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 	op.IID = id
 	if !this.has(id) {
 		this.keys[id] = true
+		this.Updater.changed = true
 	}
 	it := this.Updater.IType(op.IID)
 	if it == nil {

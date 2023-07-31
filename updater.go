@@ -145,32 +145,32 @@ func (u *Updater) Del(id any) {
 }
 
 // New 直接创建新对象
-func (u *Updater) New(i any, before ...bool) error {
-	doc := dataset.NewDocument(i)
-	iid := doc.IID()
-	if iid <= 0 {
-		return errors.New("iid empty")
-	}
-	oid := doc.OID()
-	if oid == "" {
-		return errors.New("oid empty")
-	}
-	handle := u.handle(iid)
-	if handle == nil {
-		return errors.New("handle unknown")
-	}
-	if handle.Parser() != ParserTypeCollection {
-		return fmt.Errorf("handle Parser must be %v", ParserTypeCollection)
-	}
-	hn, ok := handle.(HandleNew)
-	if !ok {
-		return fmt.Errorf("handle not method New")
-	}
-	op := operator.New(operator.Types_New, doc.VAL(), []any{i})
-	op.OID = oid
-	op.IID = iid
-	return hn.New(op, before...)
-}
+//func (u *Updater) New(i any, before ...bool) error {
+//	doc := dataset.NewDocument(i)
+//	iid := doc.IID()
+//	if iid <= 0 {
+//		return errors.New("iid empty")
+//	}
+//	oid := doc.OID()
+//	if oid == "" {
+//		return errors.New("oid empty")
+//	}
+//	handle := u.handle(iid)
+//	if handle == nil {
+//		return errors.New("handle unknown")
+//	}
+//	if handle.Parser() != ParserTypeCollection {
+//		return fmt.Errorf("handle Parser must be %v", ParserTypeCollection)
+//	}
+//	hn, ok := handle.(HandleNew)
+//	if !ok {
+//		return fmt.Errorf("handle not method New")
+//	}
+//	op := operator.New(operator.Types_New, doc.VAL(), []any{i})
+//	op.OID = oid
+//	op.IID = iid
+//	return hn.New(op, before...)
+//}
 
 func (u *Updater) Select(keys ...any) {
 	for _, k := range keys {
@@ -278,6 +278,8 @@ func (u *Updater) Handles() (r []Handle) {
 	}
 	return
 }
+
+// Operator 直接插入，不触发任何事件
 func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
 	iid := op.IID
 	if iid <= 0 {

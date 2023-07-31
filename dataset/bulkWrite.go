@@ -36,10 +36,10 @@ func (this *bulkWrite) Update(update Update) {
 	//可以撤销Delete
 	this.bulkWriteType = bulkWriteTypeUpdate
 	if this.update == nil {
-		this.update = update
-	} else {
-		for k, v := range update {
-			this.update[k] = v
-		}
+		this.update = Update{}
 	}
+	for k, v := range update {
+		this.update[k] = v
+	}
+
 }

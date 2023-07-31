@@ -158,24 +158,19 @@ func (this *Collection) Set(k any, v ...any) {
 	}
 }
 
-func (this *Collection) New(op *operator.Operator, before ...bool) (err error) {
-	if op.Type != operator.Types_New {
-		return this.Updater.Errorf("operator type must be New:%+v", op)
-	}
-	it := this.Updater.IType(op.IID)
-	if it == nil {
-		Logger.Debug("IType not exist:%v", op.IID)
-		return
-	}
-	if listen, ok := it.(ITypeListener); ok {
-		listen.Listener(this.Updater, op)
-	}
-	this.statement.Operator(op, before...)
-	if this.verified {
-		err = this.Verify()
-	}
-	return
-}
+//func (this *Collection) New(op *operator.Operator, before ...bool) (err error) {
+//	if op.Type != operator.Types_New {
+//		return this.Updater.Errorf("operator type must be New:%+v", op)
+//	}
+//	if err = this.mayChange(op); err != nil {
+//		return err
+//	}
+//	this.statement.Operator(op, before...)
+//	if this.verified {
+//		err = this.Verify()
+//	}
+//	return
+//}
 
 func (this *Collection) Select(keys ...any) {
 	if this.ram == RAMTypeAlways {
@@ -199,7 +194,7 @@ func (this *Collection) Data() (err error) {
 	}
 	keys := this.keys.Keys()
 	err = this.model.Getter(this.Updater, keys, this.Receive)
-	this.keys = nil
+	this.keys = documentDirty{}
 	return
 }
 
@@ -247,6 +242,27 @@ func (this *Collection) Values() any {
 	return this.dataset
 }
 
+func (this *Collection) mayChange(op *operator.Operator) error {
+	it := this.IType(op.IID)
+	if it == nil {
+		return ErrITypeNotExist(op.IID)
+	}
+	//可以堆叠道具
+	if it.Stacked() {
+		if op.OID == "" {
+			op.OID, _ = it.ObjectId(this.Updater, op.IID)
+		}
+		if !this.has(op.OID) {
+			this.keys[op.OID] = true
+			this.Updater.changed = true
+		}
+	}
+	if listen, ok := it.(ITypeListener); ok {
+		listen.Listener(this.Updater, op)
+	}
+	return nil
+}
+
 func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
@@ -264,13 +280,9 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
 	}
-	it := this.Updater.IType(op.IID)
-	if it == nil {
-		Logger.Debug("IType not exist:%v", op.IID)
+	if err := this.mayChange(op); err != nil {
+		this.Updater.Error = err
 		return
-	}
-	if listen, ok := it.(ITypeListener); ok {
-		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
 	if this.verified {
@@ -330,6 +342,9 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 	it := this.IType(iid)
 	if it == nil {
 		return "", fmt.Errorf("IType unknown:%v", iid)
+	}
+	if !it.Stacked() {
+		return "", ErrOIDEmpty(iid)
 	}
 	oid, err = it.ObjectId(this.Updater, iid)
 	if err == nil && oid == "" {

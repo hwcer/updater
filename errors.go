@@ -20,6 +20,7 @@ func (e *ErrMsg) Error() string {
 func NewError(msg interface{}, args ...interface{}) *ErrMsg {
 	return &ErrMsg{msg: msg, args: args}
 }
+
 func ErrArgsIllegal(args ...any) *ErrMsg {
 	return NewError("args illegal", args...)
 }
@@ -36,6 +37,10 @@ func ErrIidEmpty(op *operator.Operator) *ErrMsg {
 }
 func ErrITypeNotExist(iid int32) *ErrMsg {
 	return NewError("IType Not Exist", iid)
+}
+
+func ErrOIDEmpty(args ...any) *ErrMsg {
+	return NewError("oid empty", args...)
 }
 
 var (

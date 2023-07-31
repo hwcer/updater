@@ -33,13 +33,14 @@ func collectionHandleResolve(coll *Collection, op *operator.Operator) error {
 }
 
 func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
-	if err = collectionParseId(coll, op); err == nil {
-		coll.values[op.OID] = 0
+	if op.OID == "" {
+		return ErrOIDEmpty(op.IID)
 	}
+	coll.values[op.OID] = 0 //TODO
 	return
 }
 
-// New 必须是创建好的ITEM对象
+// New 必须是创建好的ITEM对象,仅外部直接创建新对象时调用
 func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" || op.IID <= 0 || op.Value <= 0 {
 		return coll.Updater.Errorf("operator[New] oid iid,value cannot be empty:%+v", op)
@@ -55,14 +56,12 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 }
 
 func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
-	op.OID, err = coll.ObjectId(op.IID)
-	if err == ErrUnableUseIIDOperation {
+	if op.OID == "" {
 		return collectionHandleNewEquip(coll, op) //不可以堆叠装备类道具
-	} else if err != nil {
-		return
 	}
+	//可以叠加的道具
 	if v, ok := coll.val(op.OID); !ok {
-		return collectionHandleNewItem(coll, op) //可以叠加的装备
+		return collectionHandleNewItem(coll, op)
 	} else {
 		r := op.Value + v
 		op.Result = r
@@ -72,8 +71,8 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 }
 
 func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
-	if op.OID, err = coll.ObjectId(op.IID); err != nil {
-		return
+	if op.OID == "" {
+		return ErrOIDEmpty(op.IID)
 	}
 	d, ok := coll.val(op.OID)
 	if op.Value > d && coll.Updater.strict {
@@ -93,8 +92,8 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 }
 
 func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
-	if err = collectionParseId(coll, op); err != nil {
-		return err
+	if op.OID == "" {
+		return ErrOIDEmpty(op.IID)
 	}
 	if _, ok := coll.val(op.OID); !ok {
 		return ErrItemNotExist(op.OID)
@@ -119,8 +118,8 @@ func collectionCompareTransform(coll *Collection, op *operator.Operator, ok bool
 	return
 }
 func collectionHandleMax(coll *Collection, op *operator.Operator) (err error) {
-	if err = collectionParseId(coll, op); err != nil {
-		return err
+	if op.OID == "" {
+		return ErrOIDEmpty(op.IID)
 	}
 	if v, ok := coll.val(op.OID); op.Value > v {
 		err = collectionCompareTransform(coll, op, ok)
@@ -131,8 +130,8 @@ func collectionHandleMax(coll *Collection, op *operator.Operator) (err error) {
 }
 
 func collectionHandleMin(coll *Collection, op *operator.Operator) (err error) {
-	if err = collectionParseId(coll, op); err != nil {
-		return err
+	if op.OID == "" {
+		return ErrOIDEmpty(op.IID)
 	}
 	if v, ok := coll.val(op.OID); op.Value < v {
 		err = collectionCompareTransform(coll, op, ok)
@@ -169,7 +168,6 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
 		coll.values[oid] = 1
 	}
 	op.Result = newItem
-
 	return nil
 }
 
@@ -190,12 +188,4 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) error {
 	}
 
 	return nil
-}
-func collectionParseId(coll *Collection, op *operator.Operator) (err error) {
-	if op.OID == "" {
-		op.OID, err = coll.ObjectId(op.IID)
-	} else if op.IID <= 0 {
-		op.IID, err = Config.ParseId(coll.Updater, op.OID)
-	}
-	return
 }

@@ -46,7 +46,7 @@ func (this Dirty) BulkWrite(bw BulkWrite) BulkWrite {
 		case bulkWriteTypeCreate:
 			bw.Insert(v.data...)
 		case bulkWriteTypeUpdate:
-			bw.Update(v.Update, k)
+			bw.Update(map[string]any(v.update), k)
 		}
 	}
 	return bw

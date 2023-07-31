@@ -307,6 +307,7 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	}
 	if !this.has(op.Key) {
 		this.keys[op.Key] = true
+		this.Updater.changed = true
 	}
 	it := this.Updater.IType(op.IID)
 	if it != nil {
