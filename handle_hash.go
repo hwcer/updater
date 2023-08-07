@@ -3,6 +3,7 @@ package updater
 import (
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -141,13 +142,13 @@ func (this *Hash) destroy() (err error) {
 }
 
 func (this *Hash) Get(k any) (r any) {
-	if id, _ := k.(int32); id > 0 {
+	if id := dataset.ParseInt32(k); id > 0 {
 		r = this.val(id)
 	}
 	return
 }
 func (this *Hash) Val(k any) (r int64) {
-	if id, _ := k.(int32); id > 0 {
+	if id := dataset.ParseInt32(k); id > 0 {
 		r = this.val(id)
 	}
 	return
@@ -170,7 +171,7 @@ func (this *Hash) Select(keys ...any) {
 		return
 	}
 	for _, k := range keys {
-		if id, _ := k.(int32); id > 0 && !this.has(id) {
+		if id := dataset.ParseInt32(k); id > 0 && !this.has(id) {
 			this.keys[id] = true
 		}
 	}

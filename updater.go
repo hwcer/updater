@@ -279,6 +279,12 @@ func (u *Updater) Handles() (r []Handle) {
 	return
 }
 
+// Create 创建一批新对象,仅仅适用于coll类型
+func (u *Updater) Create(data dataset.Model) (err error) {
+	op := &operator.Operator{OID: data.GetOID(), IID: data.GetIID(), Type: operator.Types_New, Value: 1, Result: []any{data}}
+	return u.Operator(op)
+}
+
 // Operator 直接插入，不触发任何事件
 func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
 	iid := op.IID
