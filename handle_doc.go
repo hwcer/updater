@@ -293,8 +293,8 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	case string:
 		op.Key = s
 	default:
-		if iid := ParseInt32(k); iid > 0 {
-			op.Key, this.Updater.Error = this.model.Field(this.Updater, iid)
+		if op.IID = ParseInt32(k); op.IID > 0 {
+			op.Key, this.Updater.Error = this.model.Field(this.Updater, op.IID)
 		}
 	}
 	if this.Updater.Error != nil {
