@@ -20,6 +20,39 @@ func init() {
 }
 
 func (this *Collection) Parse(op *operator.Operator) (err error) {
+	it := this.Updater.IType(op.IID)
+	if it == nil {
+		return ErrITypeNotExist(op.IID)
+	}
+	//溢出判定
+	if op.Type == operator.Types_Add {
+		val := ParseInt64(op.Value)
+		num := this.dataset.Count(op.IID)
+		tot := val + num
+		imax := Config.IMax(op.IID)
+		if imax > 0 && tot > imax {
+			overflow := tot - imax
+			if overflow > val {
+				overflow = val //imax有改动
+			}
+			val -= overflow
+			op.Value = val
+			if resolve, ok := it.(ITypeResolve); ok {
+				if err = resolve.Resolve(this.Updater, op.IID, overflow); err != nil {
+					return
+				} else {
+					overflow = 0
+				}
+			}
+			if overflow > 0 {
+				//this.Adapter.overflow[cache.IID] += overflow
+			}
+		}
+		if val == 0 {
+			op.Type = operator.Types_Resolve
+		}
+	}
+
 	if f, ok := collectionParseHandle[op.Type]; ok {
 		return f(this, op)
 	}

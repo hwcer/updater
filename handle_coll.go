@@ -203,9 +203,6 @@ func (this *Collection) Verify() (err error) {
 		return this.Updater.Error
 	}
 	for _, act := range this.statement.operator {
-		if err = this.verify(act); err != nil {
-			return
-		}
 		if err = this.Parse(act); err != nil {
 			return
 		}
@@ -286,49 +283,13 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	}
 	this.statement.Operator(op)
 	if this.verified {
-		this.Updater.Error = this.Verify()
+		this.Updater.Error = this.Parse(op)
 	}
 }
 
 // Receive 接收业务逻辑层数据
 func (this *Collection) Receive(id string, data any) {
 	this.dataset.Set(id, data)
-}
-
-func (this *Collection) verify(cache *operator.Operator) (err error) {
-	it := this.Updater.IType(cache.IID)
-	if it == nil {
-		return ErrITypeNotExist(cache.IID)
-	}
-	//溢出判定
-	if cache.Type == operator.Types_Add {
-		val := ParseInt64(cache.Value)
-		num := this.dataset.Count(cache.IID)
-		tot := val + num
-		imax := Config.IMax(cache.IID)
-		if imax > 0 && tot > imax {
-			overflow := tot - imax
-			if overflow > val {
-				overflow = val //imax有改动
-			}
-			val -= overflow
-			cache.Value = val
-			if resolve, ok := it.(ITypeResolve); ok {
-				if err = resolve.Resolve(this.Updater, cache.IID, overflow); err != nil {
-					return
-				} else {
-					overflow = 0
-				}
-			}
-			if overflow > 0 {
-				//this.Adapter.overflow[cache.IID] += overflow
-			}
-		}
-		if val == 0 {
-			cache.Type = operator.Types_Resolve
-		}
-	}
-	return
 }
 
 func (this *Collection) ObjectId(key any) (oid string, err error) {

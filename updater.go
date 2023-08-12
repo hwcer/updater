@@ -9,15 +9,15 @@ import (
 )
 
 type Updater struct {
-	uid      string
-	Time     time.Time
-	Error    error
-	Plugs    Plugs
-	Emitter  emitter
-	strict   bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
-	changed  bool
-	handles  map[string]Handle
-	operator []*operator.Operator //临时操作,不涉及数据,直接返回给客户端,此类消息无视错误,直至成功
+	uid     string
+	Time    time.Time
+	Error   error
+	Plugs   Plugs
+	Emitter emitter
+	strict  bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	changed bool
+	handles map[string]Handle
+	//operator []*operator.Operator //临时操作,不涉及数据,直接返回给客户端,此类消息无视错误,直至成功
 }
 
 func New(uid string) (u *Updater, err error) {
@@ -57,7 +57,7 @@ func (u *Updater) Reset() {
 func (u *Updater) Release() {
 	_ = u.emit(PlugsTypeRelease)
 	u.changed = false
-	u.operator = nil
+	//u.operator = nil
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
@@ -203,7 +203,7 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if u.Error != nil {
 		return nil, u.Error
 	}
-	r = append(r, u.operator...)
+	//r = append(r, u.operator...)
 	if u.changed {
 		if err = u.Data(); err != nil {
 			return
@@ -305,12 +305,12 @@ func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
 }
 
 // Message  生成一次操作结果,返回给客户端,不会修改数据
-func (u *Updater) Message(t operator.Types, i int32, v int64, r any) *operator.Operator {
-	op := operator.New(t, v, r)
-	op.IID = i
-	u.operator = append(u.operator, op)
-	return op
-}
+//func (u *Updater) Message(t operator.Types, i int32, v int64, r any) *operator.Operator {
+//	op := operator.New(t, v, r)
+//	op.IID = i
+//	u.operator = append(u.operator, op)
+//	return op
+//}
 
 // Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
 // 仅缓存模式下需要且必要执行

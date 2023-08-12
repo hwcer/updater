@@ -317,6 +317,6 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	}
 	this.statement.Operator(op)
 	if this.verified {
-		_ = this.Verify()
+		this.Updater.Error = this.Parse(op)
 	}
 }
