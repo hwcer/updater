@@ -23,15 +23,15 @@ func (this Dirty) Update(op *operator.Operator) {
 		this[op.OID] = bw
 	}
 	switch op.Type {
-	case operator.Types_Del:
+	case operator.TypesDel:
 		bw.Delete()
-	case operator.Types_New:
+	case operator.TypesNew:
 		bw.Create(op.Result.([]any)...)
-	case operator.Types_Set:
+	case operator.TypesSet:
 		if update, ok := op.Result.(Update); ok {
 			bw.Update(update)
 		}
-	case operator.Types_Add, operator.Types_Sub:
+	case operator.TypesAdd, operator.TypesSub:
 		update := NewUpdate(operator.ItemNameVAL, op.Result)
 		bw.Update(update)
 	}

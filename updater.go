@@ -166,7 +166,7 @@ func (u *Updater) Del(id any) {
 //	if !ok {
 //		return fmt.Errorf("handle not method New")
 //	}
-//	op := operator.New(operator.Types_New, doc.VAL(), []any{i})
+//	op := operator.New(operator.TypesNew, doc.VAL(), []any{i})
 //	op.OID = oid
 //	op.IID = iid
 //	return hn.New(op, before...)
@@ -229,6 +229,7 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			r = append(r, opts...)
 		}
 	}
+	_ = u.emit(PlugsTypeSuccess)
 	return
 }
 
@@ -281,7 +282,7 @@ func (u *Updater) Handles() (r []Handle) {
 
 // Create 创建一批新对象,仅仅适用于coll类型
 func (u *Updater) Create(data dataset.Model) (err error) {
-	op := &operator.Operator{OID: data.GetOID(), IID: data.GetIID(), Type: operator.Types_New, Value: 1, Result: []any{data}}
+	op := &operator.Operator{OID: data.GetOID(), IID: data.GetIID(), Type: operator.TypesNew, Value: 1, Result: []any{data}}
 	return u.Operator(op)
 }
 
@@ -295,7 +296,7 @@ func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
 	if handle == nil {
 		return errors.New("handle unknown")
 	}
-	if op.Type == operator.Types_Set && handle.Parser() == ParserTypeCollection {
+	if op.Type == operator.TypesSet && handle.Parser() == ParserTypeCollection {
 		if _, ok := op.Result.(dataset.Update); !ok {
 			return errors.New("operator set result type must be dataset.Update")
 		}

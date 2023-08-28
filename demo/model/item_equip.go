@@ -38,7 +38,7 @@ func (this *equipIType) ObjectId(u *updater.Updater, iid int32) (string, error) 
 
 // Listener 自动分解前使用 Select(碎片ID) 预加载碎片信息
 func (this *equipIType) Listener(u *updater.Updater, op *operator.Operator) {
-	if op.Type == operator.Types_Add {
+	if op.Type == operator.TypesAdd {
 		//u.Select(1111)  碎片ID
 	}
 }

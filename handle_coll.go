@@ -143,13 +143,13 @@ func (this *Collection) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
 		if update := dataset.ParseUpdate(v[0]); update != nil {
-			this.operator(operator.Types_Set, k, 0, update)
+			this.operator(operator.TypesSet, k, 0, update)
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
-			this.operator(operator.Types_Set, k, 0, dataset.NewUpdate(field, v[1]))
+			this.operator(operator.TypesSet, k, 0, dataset.NewUpdate(field, v[1]))
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
@@ -159,7 +159,7 @@ func (this *Collection) Set(k any, v ...any) {
 }
 
 //func (this *Collection) New(op *operator.Operator, before ...bool) (err error) {
-//	if op.Type != operator.Types_New {
+//	if op.Type != operator.TypesNew {
 //		return this.Updater.Errorf("operator type must be New:%+v", op)
 //	}
 //	if err = this.mayChange(op); err != nil {

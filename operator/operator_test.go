@@ -9,7 +9,7 @@ func TestNew(t *testing.T) {
 	op := &Operator{
 		OID:  "sss",
 		IID:  1001,
-		Type: Types_Add,
+		Type: TypesAdd,
 	}
 
 	//op.String()

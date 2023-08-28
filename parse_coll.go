@@ -9,14 +9,14 @@ import (
 var collectionParseHandle = make(map[operator.Types]func(*Collection, *operator.Operator) error)
 
 func init() {
-	collectionParseHandle[operator.Types_New] = collectionHandleNew
-	collectionParseHandle[operator.Types_Add] = collectionHandleAdd
-	collectionParseHandle[operator.Types_Sub] = collectionHandleSub
-	collectionParseHandle[operator.Types_Set] = collectionHandleSet
-	collectionParseHandle[operator.Types_Del] = collectionHandleDel
-	collectionParseHandle[operator.Types_Max] = collectionHandleMax
-	collectionParseHandle[operator.Types_Min] = collectionHandleMin
-	collectionParseHandle[operator.Types_Resolve] = collectionHandleResolve
+	collectionParseHandle[operator.TypesNew] = collectionHandleNew
+	collectionParseHandle[operator.TypesAdd] = collectionHandleAdd
+	collectionParseHandle[operator.TypesSub] = collectionHandleSub
+	collectionParseHandle[operator.TypesSet] = collectionHandleSet
+	collectionParseHandle[operator.TypesDel] = collectionHandleDel
+	collectionParseHandle[operator.TypesMax] = collectionHandleMax
+	collectionParseHandle[operator.TypesMin] = collectionHandleMin
+	collectionParseHandle[operator.TypesResolve] = collectionHandleResolve
 }
 
 func (this *Collection) Parse(op *operator.Operator) (err error) {
@@ -25,7 +25,7 @@ func (this *Collection) Parse(op *operator.Operator) (err error) {
 		return ErrITypeNotExist(op.IID)
 	}
 	//溢出判定
-	if op.Type == operator.Types_Add {
+	if op.Type == operator.TypesAdd {
 		val := ParseInt64(op.Value)
 		num := this.dataset.Count(op.IID)
 		tot := val + num
@@ -49,7 +49,7 @@ func (this *Collection) Parse(op *operator.Operator) (err error) {
 			}
 		}
 		if val == 0 {
-			op.Type = operator.Types_Resolve
+			op.Type = operator.TypesResolve
 		}
 	}
 
@@ -112,7 +112,7 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	if !ok {
-		op.Type = operator.Types_Drop
+		op.Type = operator.TypesDrop
 	} else {
 		r := d - op.Value
 		if r < 0 {
@@ -141,10 +141,10 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 // collectionCompareTransform MAX MIN符合规则的转换成ADD或者SET
 func collectionCompareTransform(coll *Collection, op *operator.Operator, ok bool) (err error) {
 	if !ok {
-		op.Type = operator.Types_Add
+		op.Type = operator.TypesAdd
 		err = collectionHandleAdd(coll, op)
 	} else {
-		op.Type = operator.Types_Set
+		op.Type = operator.TypesSet
 		op.Result = dataset.NewUpdate(operator.ItemNameVAL, op.Value)
 		err = collectionHandleSet(coll, op)
 	}
@@ -157,7 +157,7 @@ func collectionHandleMax(coll *Collection, op *operator.Operator) (err error) {
 	if v, ok := coll.val(op.OID); op.Value > v {
 		err = collectionCompareTransform(coll, op, ok)
 	} else {
-		op.Type = operator.Types_Drop
+		op.Type = operator.TypesDrop
 	}
 	return
 }
@@ -169,14 +169,14 @@ func collectionHandleMin(coll *Collection, op *operator.Operator) (err error) {
 	if v, ok := coll.val(op.OID); op.Value < v {
 		err = collectionCompareTransform(coll, op, ok)
 	} else {
-		op.Type = operator.Types_Drop
+		op.Type = operator.TypesDrop
 	}
 	return
 }
 
 // collectionHandleNewEquip
 func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
-	op.Type = operator.Types_New
+	op.Type = operator.TypesNew
 	it := coll.IType(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
@@ -205,7 +205,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
 }
 
 func collectionHandleNewItem(coll *Collection, op *operator.Operator) error {
-	op.Type = operator.Types_New
+	op.Type = operator.TypesNew
 	it := coll.IType(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)

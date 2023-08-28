@@ -177,7 +177,7 @@ func (this *ticketPlug) sumTicket(u *updater.Updater, c ticketConfig, data *Item
 		op := &operator.Operator{}
 		op.OID = data.OID
 		op.IID = data.IID
-		op.Type = operator.Types_Set
+		op.Type = operator.TypesSet
 		op.Result = update
 		if err := u.Operator(op, true); err != nil {
 			logger.Alert(err)

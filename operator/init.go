@@ -7,17 +7,17 @@ func New(t Types, v int64, r any) *Operator {
 type Types uint8 //Cache act type
 
 const (
-	Types_None     Types = 0  //无意义
-	Types_Add      Types = 1  //添加
-	Types_Sub      Types = 2  //扣除
-	Types_Set      Types = 3  //set
-	Types_Del      Types = 4  //del
-	Types_New      Types = 5  //新对象
-	Types_Max      Types = 10 //最大值写入，最终转换成set或者drop
-	Types_Min      Types = 11 //最小值写入，最终转换成set或者drop
-	Types_Drop     Types = 90 //抛弃不执行任何操作
-	Types_Resolve  Types = 91 //自动分解
-	Types_Overflow Types = 92 //道具已满使用其他方式(邮件)转发
+	TypesNone     Types = 0  //无意义
+	TypesAdd      Types = 1  //添加
+	TypesSub      Types = 2  //扣除
+	TypesSet      Types = 3  //set
+	TypesDel      Types = 4  //del
+	TypesNew      Types = 5  //新对象
+	TypesMax      Types = 10 //最大值写入，最终转换成set或者drop
+	TypesMin      Types = 11 //最小值写入，最终转换成set或者drop
+	TypesDrop     Types = 90 //抛弃不执行任何操作
+	TypesResolve  Types = 91 //自动分解
+	TypesOverflow Types = 92 //道具已满使用其他方式(邮件)转发
 )
 
 type Operator struct {

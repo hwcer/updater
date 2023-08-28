@@ -7,6 +7,7 @@ const (
 	PlugsTypeData                     //Data前
 	PlugsTypeVerify                   //verify前
 	PlugsTypeSubmit                   //submit 前
+	PlugsTypeSuccess                  //全部执行结束
 	PlugsTypeRelease                  //Release 释放前
 	PlugsTypeDestroy                  //销毁前,需要实例化数据
 )

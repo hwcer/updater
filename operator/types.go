@@ -1,37 +1,37 @@
 package operator
 
 func (at Types) IsValid() bool {
-	return at == Types_Add || at == Types_Sub || at == Types_Set || at == Types_Del || at == Types_New
+	return at == TypesAdd || at == TypesSub || at == TypesSet || at == TypesDel || at == TypesNew
 }
 
 func (at Types) MustSelect() bool {
-	return at == Types_Add || at == Types_Sub || at == Types_Max || at == Types_Min
+	return at == TypesAdd || at == TypesSub || at == TypesMax || at == TypesMin
 }
 
 // MustNumber 必须是正整数的操作
 func (at Types) MustNumber() bool {
-	return at == Types_Add || at == Types_Sub || at == Types_Max || at == Types_Min
+	return at == TypesAdd || at == TypesSub || at == TypesMax || at == TypesMin
 }
 
 func (at Types) ToString() string {
 	switch at {
-	case Types_Add:
+	case TypesAdd:
 		return "Add"
-	case Types_Sub:
+	case TypesSub:
 		return "Sub"
-	case Types_Set:
+	case TypesSet:
 		return "Set"
-	case Types_Del:
+	case TypesDel:
 		return "Del"
-	case Types_New:
+	case TypesNew:
 		return "New"
-	case Types_Resolve:
+	case TypesResolve:
 		return "Resolve"
-	case Types_Max:
+	case TypesMax:
 		return "Max"
-	case Types_Min:
+	case TypesMin:
 		return "Min"
-	case Types_Drop:
+	case TypesDrop:
 		return "Drop"
 	default:
 		return "unknown"

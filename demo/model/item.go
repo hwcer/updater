@@ -129,7 +129,7 @@ func (this *itemIType) ObjectId(u *updater.Updater, iid int32) (string, error) {
 
 // Listener  处理普通道具获得与扣除时对应成就 todo
 func (this *itemIType) Listener(u *updater.Updater, op *operator.Operator) {
-	if op.Type == operator.Types_Add {
+	if op.Type == operator.TypesAdd {
 		//u.Select(1111)  碎片ID
 	}
 }
