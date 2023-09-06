@@ -5,6 +5,7 @@ func New(t Types, v int64, r any) *Operator {
 }
 
 type Types uint8 //Cache act type
+type IType uint8
 
 const (
 	TypesNone     Types = 0  //无意义
@@ -25,6 +26,7 @@ type Operator struct {
 	IID    int32  `json:"i,omitempty"` //item id
 	Key    string `json:"k,omitempty"` //字段名
 	Type   Types  `json:"t"`           //操作类型
+	IType  IType  `json:"b"`           //iid 数据类型
 	Value  int64  `json:"v"`           //增量
 	Result any    `json:"r"`
 }

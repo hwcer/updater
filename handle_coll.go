@@ -212,11 +212,13 @@ func (this *Collection) Verify() (err error) {
 }
 
 func (this *Collection) Submit() (r []*operator.Operator, err error) {
+	defer this.statement.done()
 	if this.Updater.Error != nil {
 		return nil, this.Updater.Error
 	}
+	r = this.statement.operator
 	//同步到内存
-	for _, op := range this.statement.operator {
+	for _, op := range r {
 		if op.Type.IsValid() {
 			if err = this.dataset.Update(op); err == nil {
 				this.dirty.Update(op)
@@ -226,12 +228,12 @@ func (this *Collection) Submit() (r []*operator.Operator, err error) {
 			}
 		}
 	}
-	this.statement.done()
+
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		Logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
-	r = this.statement.cache
+
 	return
 }
 

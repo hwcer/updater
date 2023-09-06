@@ -7,8 +7,6 @@ import (
 
 var Logger logger.Interface = logger.Default()
 
-const ZeroInt64 = int64(0)
-
 type Handle interface {
 	Del(k any)            //删除道具
 	Get(k any) any        //获取值
@@ -43,8 +41,8 @@ var Config = struct {
 	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
 }{}
 
-type Item interface {
-}
+//type Item interface {
+//}
 
 // IType 一个IType对于一种数据类型·
 // 多种数据类型 可以用一种数据模型(model,一张表结构)

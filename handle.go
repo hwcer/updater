@@ -15,8 +15,8 @@ const (
 type operatorHandle func(t operator.Types, k any, v int64, r any)
 
 type statement struct {
-	ram      RAMType
-	cache    []*operator.Operator
+	ram RAMType
+	//cache    []*operator.Operator
 	values   map[any]int64 //执行过程中的数量过程
 	handle   operatorHandle
 	Updater  *Updater
@@ -29,20 +29,22 @@ func NewStatement(u *Updater, ram RAMType, handle operatorHandle) *statement {
 }
 
 func (stmt *statement) done() {
-	stmt.cache = append(stmt.cache, stmt.operator...)
+	//stmt.cache = append(stmt.cache, stmt.operator...)
+	stmt.values = map[any]int64{}
 	stmt.operator = nil
+	stmt.verified = false
+	stmt.Updater.Error = nil
 }
 
 func (stmt *statement) reset() {
-	stmt.values = map[any]int64{}
+	if stmt.values == nil {
+		stmt.values = map[any]int64{}
+	}
 }
 
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
-	stmt.cache = nil
-	stmt.values = nil
-	stmt.operator = nil
-	stmt.verified = false
+	stmt.done()
 	return
 }
 

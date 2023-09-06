@@ -208,10 +208,12 @@ func (this *Hash) Verify() (err error) {
 }
 
 func (this *Hash) Submit() (r []*operator.Operator, err error) {
-	if this.Updater.Error != nil {
-		return nil, this.Updater.Error
+	defer this.statement.done()
+	if err = this.Updater.Error; err != nil {
+		return
 	}
-	for _, op := range this.statement.operator {
+	r = this.statement.operator
+	for _, op := range r {
 		if op.Type.IsValid() {
 			if v, ok := op.Result.(int64); ok {
 				this.dirty[op.IID] = v
@@ -221,12 +223,10 @@ func (this *Hash) Submit() (r []*operator.Operator, err error) {
 			}
 		}
 	}
-	this.statement.done()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
 	}
-	r = this.statement.cache
 	return
 }
 func (this *Hash) Values() any {

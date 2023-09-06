@@ -234,11 +234,13 @@ func (this *Document) Verify() (err error) {
 }
 
 func (this *Document) Submit() (r []*operator.Operator, err error) {
+	defer this.statement.done()
 	if this.Updater.Error != nil {
 		return nil, this.Updater.Error
 	}
 	//同步到内存
-	for _, op := range this.statement.operator {
+	r = this.statement.operator
+	for _, op := range r {
 		if op.Type.IsValid() {
 			if e := this.set(op.Key, op.Result); e != nil {
 				Logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.schema.Table, op.Key, op.Result)
@@ -247,12 +249,11 @@ func (this *Document) Submit() (r []*operator.Operator, err error) {
 			}
 		}
 	}
-	this.statement.done()
+
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.schema.Table, err)
 		err = nil
 	}
-	r = this.statement.cache
 	return
 }
 
