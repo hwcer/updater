@@ -1,7 +1,6 @@
 package dataset
 
 import (
-	"github.com/hwcer/updater/operator"
 	"go.mongodb.org/mongo-driver/bson"
 	"strings"
 )
@@ -44,7 +43,7 @@ func ParseMap(k string, i any) (r map[string]any) {
 		r, _ = i.(bson.M)
 	default:
 		r = make(map[string]interface{})
-		r[operator.ItemNameVAL] = i
+		r[ItemNameVAL] = i
 	}
 	return
 }

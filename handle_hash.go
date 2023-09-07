@@ -256,6 +256,7 @@ func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 		Logger.Debug("IType not exist:%v", op.IID)
 		return
 	}
+	op.IType = it.Id()
 	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}

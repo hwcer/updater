@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
-	"github.com/hwcer/updater/operator"
 )
 
 func NewDocument(i any) *Document {
@@ -16,16 +15,16 @@ type Document struct {
 }
 
 func (this *Document) OID() string {
-	v := this.Get(operator.ItemNameOID)
+	v := this.Get(ItemNameOID)
 	r, _ := v.(string)
 	return r
 }
 func (this *Document) IID() int32 {
-	v := this.Get(operator.ItemNameIID)
+	v := this.Get(ItemNameIID)
 	return ParseInt32(v)
 }
 func (this *Document) VAL() int64 {
-	v := this.Get(operator.ItemNameVAL)
+	v := this.Get(ItemNameVAL)
 	return ParseInt64(v)
 }
 

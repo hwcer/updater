@@ -132,7 +132,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 		return ErrItemNotExist(op.OID)
 	}
 	update, _ := op.Result.(dataset.Update)
-	if v, ok := update[operator.ItemNameVAL]; ok {
+	if v, ok := update[dataset.ItemNameVAL]; ok {
 		coll.values[op.IID] = ParseInt64(v)
 	}
 	return
@@ -145,7 +145,7 @@ func collectionCompareTransform(coll *Collection, op *operator.Operator, ok bool
 		err = collectionHandleAdd(coll, op)
 	} else {
 		op.Type = operator.TypesSet
-		op.Result = dataset.NewUpdate(operator.ItemNameVAL, op.Value)
+		op.Result = dataset.NewUpdate(dataset.ItemNameVAL, op.Value)
 		err = collectionHandleSet(coll, op)
 	}
 	return

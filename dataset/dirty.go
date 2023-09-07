@@ -32,7 +32,7 @@ func (this Dirty) Update(op *operator.Operator) {
 			bw.Update(update)
 		}
 	case operator.TypesAdd, operator.TypesSub:
-		update := NewUpdate(operator.ItemNameVAL, op.Result)
+		update := NewUpdate(ItemNameVAL, op.Result)
 		bw.Update(update)
 	}
 }

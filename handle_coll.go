@@ -246,6 +246,7 @@ func (this *Collection) mayChange(op *operator.Operator) error {
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
+	op.IType = it.Id()
 	//可以堆叠道具
 	if it.Stacked() {
 		if op.OID == "" {

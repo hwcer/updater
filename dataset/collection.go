@@ -77,7 +77,7 @@ func (this Collection) Update(op *operator.Operator) (err error) {
 		update, _ := op.Result.(Update)
 		err = this.update(op.OID, update)
 	case operator.TypesAdd, operator.TypesSub:
-		update := NewUpdate(operator.ItemNameVAL, op.Result)
+		update := NewUpdate(ItemNameVAL, op.Result)
 		err = this.update(op.OID, update)
 	}
 	return

@@ -312,6 +312,7 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	}
 	it := this.Updater.IType(op.IID)
 	if it != nil {
+		op.IType = it.Id()
 		if listen, ok := it.(ITypeListener); ok {
 			listen.Listener(this.Updater, op)
 		}
