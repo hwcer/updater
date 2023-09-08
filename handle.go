@@ -12,6 +12,11 @@ const (
 	RAMTypeAlways                //内存运行
 )
 
+// 通过MODEL直接获取IType
+type modelIType interface {
+	IType(iid int32) int32
+}
+
 type operatorHandle func(t operator.Types, k any, v int64, r any)
 
 type statement struct {

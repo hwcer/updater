@@ -283,7 +283,14 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 	}
 	return
 }
-
+func (this *Document) IType(iid int32) IType {
+	if h, ok := this.model.(modelIType); ok {
+		v := h.IType(iid)
+		return itypesDict[v]
+	} else {
+		return this.Updater.IType(iid)
+	}
+}
 func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	if t == operator.TypesDel {
 		Logger.Debug("updater document del is disabled")
@@ -310,9 +317,9 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 		this.keys[op.Key] = true
 		this.Updater.changed = true
 	}
-	it := this.Updater.IType(op.IID)
+	it := this.IType(op.IID)
 	if it != nil {
-		op.IType = it.Id()
+		op.Bag = it.Id()
 		if listen, ok := it.(ITypeListener); ok {
 			listen.Listener(this.Updater, op)
 		}

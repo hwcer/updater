@@ -232,6 +232,14 @@ func (this *Hash) Submit() (r []*operator.Operator, err error) {
 func (this *Hash) Values() any {
 	return this.dataset
 }
+func (this *Hash) IType(iid int32) IType {
+	if h, ok := this.model.(modelIType); ok {
+		v := h.IType(iid)
+		return itypesDict[v]
+	} else {
+		return this.Updater.IType(iid)
+	}
+}
 
 func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 	id, ok := TryParseInt32(k)
@@ -251,12 +259,13 @@ func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 		this.keys[id] = true
 		this.Updater.changed = true
 	}
-	it := this.Updater.IType(op.IID)
+
+	it := this.IType(op.IID)
 	if it == nil {
 		Logger.Debug("IType not exist:%v", op.IID)
 		return
 	}
-	op.IType = it.Id()
+	op.Bag = it.Id()
 	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}

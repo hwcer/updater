@@ -32,13 +32,6 @@ func (this *Collection) Parser() Parser {
 	return ParserTypeCollection
 }
 
-func (this *Collection) IType(iid int32) (it ITypeCollection) {
-	if i := this.Updater.IType(iid); i != nil {
-		it, _ = i.(ITypeCollection)
-	}
-	return
-}
-
 // Has 查询key(DBName)是否已经初始化
 func (this *Collection) has(key string) bool {
 	if this.ram == RAMTypeAlways {
@@ -240,13 +233,24 @@ func (this *Collection) Submit() (r []*operator.Operator, err error) {
 func (this *Collection) Values() any {
 	return this.dataset
 }
+func (this *Collection) IType(iid int32) (r ITypeCollection) {
+	var it IType
+	if h, ok := this.model.(modelIType); ok {
+		v := h.IType(iid)
+		it = itypesDict[v]
+	} else {
+		it = this.Updater.IType(iid)
+	}
+	r, _ = it.(ITypeCollection)
+	return
+}
 
 func (this *Collection) mayChange(op *operator.Operator) error {
 	it := this.IType(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
-	op.IType = it.Id()
+	op.Bag = it.Id()
 	//可以堆叠道具
 	if it.Stacked() {
 		if op.OID == "" {

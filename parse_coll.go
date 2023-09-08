@@ -20,7 +20,7 @@ func init() {
 }
 
 func (this *Collection) Parse(op *operator.Operator) (err error) {
-	it := this.Updater.IType(op.IID)
+	it := this.IType(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
