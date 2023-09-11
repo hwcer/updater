@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"errors"
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/dataset"
@@ -49,11 +50,11 @@ func (this documentDirty) Merge(src documentDirty) {
 // Document 文档存储
 type Document struct {
 	*statement
-	keys    documentDirty //当前执行过程需要查询的key
-	dirty   documentDirty //数据缓存
-	model   documentModel //handle model
-	schema  *schema.Schema
-	dataset any
+	keys  documentDirty //当前执行过程需要查询的key
+	dirty documentDirty //数据缓存
+	model documentModel //handle model
+	//schema  *schema.Schema
+	dataset *dataset.Document
 	history documentDirty // 仅按需获取模式(RAMTypeMaybe)下记录历史拉取记录
 }
 
@@ -85,20 +86,16 @@ func (this *Document) has(key string) bool {
 }
 
 func (this *Document) set(k string, v any) (err error) {
-	if i, ok := this.dataset.(dataset.ModelSet); ok {
-		return i.Set(k, v)
+	if this.dataset != nil {
+		return this.dataset.Set(k, v)
 	}
-	err = this.schema.SetValue(this.dataset, k, v)
-	Logger.Debug("建议给%v添加Set接口提升性能", this.schema.Name)
-	return
+	return errors.New("dataset is nil")
 }
 func (this *Document) get(k string) (r any) {
-	if i, ok := this.dataset.(dataset.ModelGet); ok {
-		return i.Get(k)
+	if this.dataset != nil {
+		return this.dataset.Get(k)
 	}
-	r = this.schema.GetValue(this.dataset, k)
-	Logger.Debug("建议给%v添加Get接口提升性能", this.schema.Name)
-	return
+	return errors.New("dataset is nil")
 }
 
 func (this *Document) val(k string) (r int64) {
@@ -116,7 +113,7 @@ func (this *Document) save() (err error) {
 	if len(this.dirty) == 0 {
 		return
 	}
-	if err = this.model.Setter(this.statement.Updater, this.dataset, this.dirty); err == nil {
+	if err = this.model.Setter(this.statement.Updater, this.dataset.Interface(), this.dirty); err == nil {
 		this.dirty = nil
 	}
 	return
@@ -129,11 +126,12 @@ func (this *Document) reset() {
 		this.dirty = documentDirty{}
 	}
 	if this.dataset == nil {
-		this.dataset = this.model.New(this.Updater)
+		i := this.model.New(this.Updater)
+		this.dataset = dataset.NewDocument(i)
 	}
-	if this.schema == nil {
-		this.schema, this.Updater.Error = schema.Parse(this.dataset)
-	}
+	//if this.schema == nil {
+	//	this.schema, this.Updater.Error = schema.Parse(this.dataset)
+	//}
 	if this.keys == nil && this.ram != RAMTypeAlways {
 		this.keys = documentDirty{}
 	}
@@ -153,8 +151,9 @@ func (this *Document) release() {
 }
 func (this *Document) init() (err error) {
 	if this.statement.ram == RAMTypeAlways {
-		this.dataset = this.model.New(this.Updater)
-		err = this.model.Getter(this.Updater, this.dataset, nil)
+		i := this.model.New(this.Updater)
+		this.dataset = dataset.NewDocument(i)
+		err = this.model.Getter(this.Updater, this.dataset.Interface(), nil)
 	}
 	return
 }
@@ -213,7 +212,7 @@ func (this *Document) Data() (err error) {
 		return nil
 	}
 	keys := this.keys.Keys()
-	if err = this.model.Getter(this.Updater, this.dataset, keys); err == nil && this.history != nil {
+	if err = this.model.Getter(this.Updater, this.dataset.Interface(), keys); err == nil && this.history != nil {
 		this.history.Merge(this.keys)
 	}
 	this.keys = nil
@@ -233,6 +232,22 @@ func (this *Document) Verify() (err error) {
 	return
 }
 
+// Table  表名
+func (this *Document) Table() (r string) {
+	if sch := this.Schema(); sch != nil {
+		r = sch.Table
+	}
+	return
+}
+
+func (this *Document) Schema() *schema.Schema {
+	sch, err := this.dataset.Schema()
+	if err != nil {
+		this.Updater.Error = err
+	}
+	return sch
+}
+
 func (this *Document) Submit() (r []*operator.Operator, err error) {
 	defer this.statement.done()
 	if this.Updater.Error != nil {
@@ -243,7 +258,7 @@ func (this *Document) Submit() (r []*operator.Operator, err error) {
 	for _, op := range r {
 		if op.Type.IsValid() {
 			if e := this.set(op.Key, op.Result); e != nil {
-				Logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.schema.Table, op.Key, op.Result)
+				Logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.Table(), op.Key, op.Result)
 			} else {
 				this.dirty[op.Key] = op.Result
 			}
@@ -251,7 +266,7 @@ func (this *Document) Submit() (r []*operator.Operator, err error) {
 	}
 
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.schema.Table, err)
+		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
 		err = nil
 	}
 	return
@@ -262,7 +277,7 @@ func (this *Document) Dirty(k string, v any) {
 	this.dirty[k] = v
 }
 func (this *Document) Values() any {
-	return this.dataset
+	return this.dataset.Interface()
 }
 
 func (this *Document) ObjectId(k any) (key string, err error) {
@@ -273,9 +288,11 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 		iid := ParseInt32(k)
 		key, err = this.model.Field(this.Updater, iid)
 	}
-	if err == nil {
-		field := this.schema.LookUpField(key)
-		if field != nil {
+	if err != nil {
+		return
+	}
+	if sch := this.Schema(); sch != nil {
+		if field := sch.LookUpField(key); field != nil {
 			key = field.DBName
 		} else {
 			err = fmt.Errorf("document field not exist")
@@ -308,7 +325,12 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
 	}
-	op.OID = this.schema.Table
+	sch, err := this.dataset.Schema()
+	if err != nil {
+		this.Updater.Error = err
+		return
+	}
+	op.OID = sch.Table
 
 	if this.Updater.Error != nil {
 		return

@@ -28,27 +28,36 @@ func (this *Document) VAL() int64 {
 	return ParseInt64(v)
 }
 
-func (this *Document) Get(key string) any {
+func (this *Document) Schema() (*schema.Schema, error) {
+	return schema.Parse(this.item)
+}
+func (this *Document) Get(key string) (r any) {
 	if m, ok := this.item.(ModelGet); ok {
-		return m.Get(key)
+		if r, ok = m.Get(key); ok {
+			return
+		}
 	}
-	sch, err := schema.Parse(this.item)
+	sch, err := this.Schema()
 	if err != nil {
 		logger.Error(err)
 		return nil
 	}
+	logger.Debug("建议给%v.%v添加Get接口提升性能", sch.Name, key)
 	return sch.GetValue(this.item, key)
 }
 
 func (this *Document) Set(key string, val any) error {
 	if m, ok := this.item.(ModelSet); ok {
-		return m.Set(key, val)
+		if m.Set(key, val) {
+			return nil
+		}
 	}
-	sch, err := schema.Parse(this.item)
+	sch, err := this.Schema()
 	if err != nil {
 		logger.Error(err)
 		return nil
 	}
+	logger.Debug("建议给%v.%v添加Set接口提升性能", sch.Name, key)
 	return sch.SetValue(this.item, key, val)
 }
 
@@ -63,21 +72,8 @@ func (this *Document) Add(key string, val int64) (r int64, err error) {
 }
 
 func (this *Document) Update(data Update) (err error) {
-	if m, ok := this.item.(ModelSet); ok {
-		for k, v := range data {
-			if err = m.Set(k, v); err != nil {
-				return
-			}
-		}
-		return
-	}
-	sch, err := schema.Parse(this.item)
-	if err != nil {
-		logger.Error(err)
-		return nil
-	}
 	for k, v := range data {
-		if err = sch.SetValue(this.item, k, v); err != nil {
+		if err = this.Set(k, v); err != nil {
 			return
 		}
 	}

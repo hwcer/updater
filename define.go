@@ -8,14 +8,14 @@ import (
 var Logger logger.Interface = logger.Default()
 
 type Handle interface {
-	Del(k any)            //删除道具
-	Get(k any) any        //获取值
-	Val(k any) int64      //获取val值
-	Add(k int32, v int32) //自增v
-	Sub(k int32, v int32) //扣除v
-	Max(k int32, v int64) //如果大于原来的值就写入
-	Min(k int32, v int64) //如果小于于原来的值就写入
-	Set(k any, v ...any)  //设置v值
+	Del(k any)           //删除道具
+	Get(k any) any       //获取值
+	Val(k any) int64     //获取val值
+	Add(k any, v int32)  //自增v
+	Sub(k any, v int32)  //扣除v
+	Max(k any, v int64)  //如果大于原来的值就写入
+	Min(k any, v int64)  //如果小于于原来的值就写入
+	Set(k any, v ...any) //设置v值
 
 	Data() error                                    //非内存模式获取数据库中的数据
 	Verify() error                                  //验证数据

@@ -13,10 +13,10 @@ type Model interface {
 }
 
 type ModelGet interface {
-	Get(string) any
+	Get(string) (v any, ok bool)
 }
 type ModelSet interface {
-	Set(k string, v any) error
+	Set(k string, v any) (ok bool)
 }
 
 type ModelClone interface {
