@@ -3,6 +3,7 @@ package updater
 import (
 	"errors"
 	"fmt"
+	"github.com/hwcer/cosgo/utils"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 	"time"
@@ -46,7 +47,7 @@ func (u *Updater) Errorf(format any, args ...any) error {
 
 // Reset 重置,每次请求开始时调用
 func (u *Updater) Reset() {
-	u.Time = time.Now()
+	u.Time = utils.Time.Now()
 	u.strict = true
 	for _, w := range u.Handles() {
 		w.reset()

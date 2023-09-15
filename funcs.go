@@ -7,6 +7,14 @@ func TryParseInt64(i any) (v int64, ok bool) {
 		v = int64(d)
 	case uint:
 		v = int64(d)
+	case int8:
+		v = int64(d)
+	case uint8:
+		v = int64(d)
+	case int16:
+		v = int64(d)
+	case uint16:
+		v = int64(d)
 	case int32:
 		v = int64(d)
 	case uint32:
