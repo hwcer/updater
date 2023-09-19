@@ -44,11 +44,11 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 		return fmt.Errorf("parser unknown:%v", parser)
 	}
 	mod := &Model{ram: ram, model: model, parser: parser}
-	sch, err := schema.Parse(model)
-	if err != nil {
-		return err
+	if t, ok := model.(schema.Tabler); ok {
+		mod.name = t.TableName()
+	} else {
+		mod.name = schema.Kind(model).Name()
 	}
-	mod.name = sch.Table
 	modelsRank = append(modelsRank, mod)
 	for _, it := range itypes {
 		if parser == ParserTypeCollection {

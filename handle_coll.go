@@ -107,6 +107,15 @@ func (this *Collection) destroy() (err error) {
 	return this.save()
 }
 
+func (this *Collection) Has(id any) (r bool) {
+	if oid, err := this.ObjectId(id); err == nil {
+		r = this.has(oid)
+	} else {
+		Logger.Debug(err)
+	}
+	return
+}
+
 // Get 返回item,不可叠加道具只能使用oid获取
 func (this *Collection) Get(key any) (r any) {
 	if oid, err := this.ObjectId(key); err == nil {
@@ -151,19 +160,25 @@ func (this *Collection) Set(k any, v ...any) {
 	}
 }
 
-//func (this *Collection) New(op *operator.Operator, before ...bool) (err error) {
-//	if op.Type != operator.TypesNew {
-//		return this.Updater.Errorf("operator type must be New:%+v", op)
-//	}
-//	if err = this.mayChange(op); err != nil {
-//		return err
-//	}
-//	this.statement.Operator(op, before...)
-//	if this.verified {
-//		err = this.Verify()
-//	}
-//	return
-//}
+// New 使用全新的模型插入
+func (this *Collection) New(v dataset.Model) (err error) {
+	op := &operator.Operator{OID: v.GetOID(), IID: v.GetIID(), Type: operator.TypesNew, Result: []any{v}}
+	if i, ok := v.(dataset.ModelVal); ok {
+		op.Value = i.GetVal()
+	} else {
+		op.Value = 1
+	}
+	if err = this.mayChange(op); err != nil {
+		return this.Updater.Errorf(err)
+	}
+	this.statement.Operator(op)
+	if this.verified {
+		if err = this.Parse(op); err != nil {
+			return this.Updater.Errorf(err)
+		}
+	}
+	return
+}
 
 func (this *Collection) Select(keys ...any) {
 	if this.ram == RAMTypeAlways {
@@ -172,7 +187,7 @@ func (this *Collection) Select(keys ...any) {
 	for _, k := range keys {
 		if oid, err := this.ObjectId(k); err == nil && !this.has(oid) {
 			this.keys[oid] = true
-		} else {
+		} else if err != nil {
 			Logger.Debug(err)
 		}
 	}
