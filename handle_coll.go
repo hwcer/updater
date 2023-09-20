@@ -248,6 +248,15 @@ func (this *Collection) Submit() (r []*operator.Operator, err error) {
 func (this *Collection) Values() any {
 	return this.dataset
 }
+
+func (this *Collection) Range(h func(id string, val any) bool) {
+	for id, dt := range this.dataset {
+		if !h(id, dt.Interface()) {
+			return
+		}
+	}
+}
+
 func (this *Collection) IType(iid int32) (r ITypeCollection) {
 	var it IType
 	if h, ok := this.model.(modelIType); ok {
