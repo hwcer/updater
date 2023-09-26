@@ -18,7 +18,7 @@ type Updater struct {
 	strict  bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	changed bool
 	handles map[string]Handle
-	//operator []*operator.Operator //临时操作,不涉及数据,直接返回给客户端,此类消息无视错误,直至成功
+	dirty   []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 }
 
 func New(uid string) (u *Updater, err error) {
@@ -59,8 +59,8 @@ func (u *Updater) Reset() {
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
 	_ = u.emit(PlugsTypeRelease)
+	u.dirty = nil
 	u.changed = false
-	//u.operator = nil
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
@@ -147,34 +147,6 @@ func (u *Updater) Del(id any) {
 	}
 }
 
-// New 直接创建新对象
-//func (u *Updater) New(i any, before ...bool) error {
-//	doc := dataset.NewDocument(i)
-//	iid := doc.IID()
-//	if iid <= 0 {
-//		return errors.New("iid empty")
-//	}
-//	oid := doc.OID()
-//	if oid == "" {
-//		return errors.New("oid empty")
-//	}
-//	handle := u.handle(iid)
-//	if handle == nil {
-//		return errors.New("handle unknown")
-//	}
-//	if handle.Parser() != ParserTypeCollection {
-//		return fmt.Errorf("handle Parser must be %v", ParserTypeCollection)
-//	}
-//	hn, ok := handle.(HandleNew)
-//	if !ok {
-//		return fmt.Errorf("handle not method New")
-//	}
-//	op := operator.New(operator.TypesNew, doc.VAL(), []any{i})
-//	op.OID = oid
-//	op.IID = iid
-//	return hn.New(op, before...)
-//}
-
 func (u *Updater) Select(keys ...any) {
 	for _, k := range keys {
 		if w := u.handle(k); w != nil {
@@ -232,6 +204,11 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			r = append(r, opts...)
 		}
 	}
+	if len(u.dirty) > 0 {
+		r = append(r, u.dirty...)
+		u.dirty = nil
+	}
+
 	_ = u.emit(PlugsTypeSuccess)
 	return
 }
@@ -329,4 +306,9 @@ func (u *Updater) Destroy() (err error) {
 		}
 	}
 	return
+}
+
+// Dirty 设置脏数据,手动更新到客户端,不进行任何操作
+func (u *Updater) Dirty(ops ...*operator.Operator) {
+	u.dirty = append(u.dirty, ops...)
 }
