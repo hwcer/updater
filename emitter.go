@@ -19,8 +19,8 @@ func (u *Updater) On(name EventType, handle listener) {
 }
 
 // Emit Updater.Save之后统一触发
-func (u *Updater) Emit(name EventType, v ...int32) {
-	u.Emitter.Emit(name, v...)
+func (u *Updater) Emit(name EventType, v int32, args ...int32) {
+	u.Emitter.Emit(name, v, args...)
 }
 
 func (e *emitter) On(name EventType, handle listener) {
@@ -30,14 +30,14 @@ func (e *emitter) On(name EventType, handle listener) {
 	e.listeners[name] = append(e.listeners[name], handle)
 }
 
-func (e *emitter) Emit(name EventType, v ...int32) {
-	if len(v) == 0 {
-		return
-	}
+func (e *emitter) Emit(name EventType, v int32, args ...int32) {
+	vs := make([]int32, 0, len(args)+1)
+	vs = append(vs, v)
+	vs = append(vs, args...)
 	if e.events == nil {
 		e.events = map[EventType][]emitterValues{}
 	}
-	e.events[name] = append(e.events[name], v)
+	e.events[name] = append(e.events[name], vs)
 }
 
 func (e *emitter) emit(u *Updater, t PlugsType) (err error) {
