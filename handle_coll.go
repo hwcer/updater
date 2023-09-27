@@ -96,7 +96,7 @@ func (this *Collection) release() {
 }
 func (this *Collection) init() error {
 	this.dataset = dataset.New()
-	if this.statement.ram == RAMTypeAlways {
+	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
 		this.Updater.Error = this.model.Getter(this.Updater, nil, this.Receive)
 	}
 	return this.Updater.Error

@@ -130,7 +130,7 @@ func (this *Hash) release() {
 }
 func (this *Hash) init() error {
 	this.symbol = this.model.Symbol(this.Updater)
-	if this.statement.ram == RAMTypeAlways {
+	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
 		this.dataset, this.Updater.Error = this.model.Getter(this.Updater, this.symbol, nil)
 	}
 	return this.Updater.Error
