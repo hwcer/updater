@@ -16,24 +16,33 @@ const (
 type plugs interface {
 	Emit(u *Updater, t PlugsType) error
 }
+type plugsHandle func(u *Updater) error
 
-type NewPlugsHandle func(updater *Updater) plugs
+//type NewPlugsHandle func(updater *Updater) plugs
 
-var globalPlugs = map[string]NewPlugsHandle{}
+//var globalPlugs = map[string]NewPlugsHandle{}
 
-func AddGlobalPlugs(name string, handle NewPlugsHandle) {
-	globalPlugs[name] = handle
-}
+//func AddGlobalPlugs(name string, handle NewPlugsHandle) {
+//	globalPlugs[name] = handle
+//}
 
 type Plugs struct {
-	plugs  map[string]plugs
-	global map[string]plugs
+	plugs map[string]plugs
+	//global map[string]plugs
+	events map[PlugsType][]plugsHandle
+}
+
+func (this *Plugs) On(t PlugsType, handle plugsHandle) {
+	if this.events == nil {
+		this.events = map[PlugsType][]plugsHandle{}
+	}
+	this.events[t] = append(this.events[t], handle)
 }
 
 func (this *Plugs) Get(name string) any {
-	if this.global != nil && this.global[name] != nil {
-		return this.global[name]
-	}
+	//if this.global != nil && this.global[name] != nil {
+	//	return this.global[name]
+	//}
 	if this.plugs != nil && this.plugs[name] != nil {
 		return this.plugs[name]
 	}
@@ -42,9 +51,9 @@ func (this *Plugs) Get(name string) any {
 
 // Set 设置插件,如果已存在(全局,当前)返回false
 func (this *Plugs) Set(name string, handle plugs) bool {
-	if this.global != nil && this.global[name] != nil {
-		return false
-	}
+	//if this.global != nil && this.global[name] != nil {
+	//	return false
+	//}
 	if this.plugs != nil && this.plugs[name] != nil {
 		return false
 	}
@@ -56,9 +65,9 @@ func (this *Plugs) Set(name string, handle plugs) bool {
 }
 
 func (this *Plugs) LoadOrStore(name string, handle plugs) any {
-	if this.global != nil && this.global[name] != nil {
-		return this.global[name]
-	}
+	//if this.global != nil && this.global[name] != nil {
+	//	return this.global[name]
+	//}
 	if this.plugs != nil && this.plugs[name] != nil {
 		return this.plugs[name]
 	}
@@ -73,24 +82,34 @@ func (this *Plugs) emit(u *Updater, t PlugsType) (err error) {
 	if t == PlugsTypeRelease {
 		defer func() {
 			this.plugs = nil
+			this.events = nil
 		}()
 	}
 
-	if t == PlugsTypeInit && len(globalPlugs) > 0 {
-		this.global = map[string]plugs{}
-		for k, f := range globalPlugs {
-			this.global[k] = f(u)
-		}
-	}
+	//if t == PlugsTypeInit && len(globalPlugs) > 0 {
+	//	this.global = map[string]plugs{}
+	//	for k, f := range globalPlugs {
+	//		this.global[k] = f(u)
+	//	}
+	//}
 
 	if u.Error != nil {
 		return
 	}
-	for _, p := range this.global {
-		if err = p.Emit(u, t); err != nil {
-			return
+	//通用事件
+	if this.events != nil {
+		for _, h := range this.events[t] {
+			if err = h(u); err != nil {
+				return
+			}
 		}
 	}
+
+	//for _, p := range this.global {
+	//	if err = p.Emit(u, t); err != nil {
+	//		return
+	//	}
+	//}
 	for _, p := range this.plugs {
 		if err = p.Emit(u, t); err != nil {
 			return
