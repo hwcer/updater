@@ -13,8 +13,8 @@ type Updater struct {
 	uid     string
 	Time    time.Time
 	Error   error
-	Plugs   *Plugs
-	Emitter emitter
+	Plugs   Plugs
+	Emitter Emitter
 	strict  bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	changed bool
 	handles map[string]Handle
@@ -23,7 +23,7 @@ type Updater struct {
 
 func New(uid string) (u *Updater, err error) {
 	u = &Updater{uid: uid}
-	u.Plugs = &Plugs{}
+	//u.Plugs = &Plugs{}
 	u.handles = make(map[string]Handle)
 	for _, model := range modelsRank {
 		u.handles[model.name] = handles[model.parser](u, model.model, model.ram)

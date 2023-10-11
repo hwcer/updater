@@ -1,71 +1,107 @@
 package updater
 
-type EventType int32
+import "github.com/hwcer/updater/events"
 
-// listener 返回false时将移除,全局事件无法移除
-type listener func(u *Updater, t EventType, v int32, args ...int32) bool
+// listener 业务逻辑层面普通任务事件,返回false时将移除
+type listener func(u *Updater, t int32, v int32, args ...int32) bool
 
 // EmitterValues 第一个
 type emitterValues []int32
 
-type emitter struct {
-	events    map[EventType][]emitterValues
-	listeners map[EventType][]listener
+type Emitter struct {
+	events    map[int32][]*events.Listener
+	values    map[int32][]emitterValues
+	listeners map[int32][]listener
 }
 
 // On 添加即时任务类监控
-func (u *Updater) On(name EventType, handle listener) {
+//
+// handle : process or listener
+func (u *Updater) On(name int32, handle listener) {
 	u.Emitter.On(name, handle)
 }
 
 // Emit Updater.Save之后统一触发
-func (u *Updater) Emit(name EventType, v int32, args ...int32) {
+func (u *Updater) Emit(name int32, v int32, args ...int32) {
 	u.Emitter.Emit(name, v, args...)
 }
 
-func (e *emitter) On(name EventType, handle listener) {
+func (u *Updater) Listener(k any, t int32, args []int32, handle events.Handle) *events.Listener {
+	return u.Emitter.Listener(k, t, args, handle)
+}
+
+func (e *Emitter) On(name int32, handle listener) {
 	if e.listeners == nil {
-		e.listeners = map[EventType][]listener{}
+		e.listeners = map[int32][]listener{}
 	}
 	e.listeners[name] = append(e.listeners[name], handle)
 }
 
-func (e *emitter) Emit(name EventType, v int32, args ...int32) {
+func (e *Emitter) Emit(name int32, v int32, args ...int32) {
 	vs := make([]int32, 0, len(args)+1)
 	vs = append(vs, v)
 	vs = append(vs, args...)
-	if e.events == nil {
-		e.events = map[EventType][]emitterValues{}
+	if e.values == nil {
+		e.values = map[int32][]emitterValues{}
 	}
-	e.events[name] = append(e.events[name], vs)
+	e.values[name] = append(e.values[name], vs)
 }
 
-func (e *emitter) emit(u *Updater, t PlugsType) (err error) {
+// Listener 监听事件,并比较args 如果成功,则回调handle更新val
+//
+// 可以通过 events.Register 注册全局过滤器,默认参数一致通过比较
+func (e *Emitter) Listener(k any, t int32, args []int32, handle events.Handle) (r *events.Listener) {
+	r = events.New(k, args, handle)
+	if e.events == nil {
+		e.events = map[int32][]*events.Listener{}
+	}
+	e.events[t] = append(e.events[t], r)
+	return
+}
+
+func (e *Emitter) emit(u *Updater, t PlugsType) (err error) {
 	if t == PlugsTypeRelease {
 		defer func() {
-			e.events = nil
+			e.values = nil
 		}()
 	}
-	if t != PlugsTypeSubmit || len(e.events) == 0 || len(e.listeners) == 0 {
+	if t != PlugsTypeSubmit || len(e.values) == 0 {
 		return
 	}
-	for k, v := range e.events {
-		next := make([]listener, 0, len(e.listeners[k]))
-		for _, h := range e.listeners[k] {
-			if e.doTask(u, k, v, h) {
-				next = append(next, h)
-			}
+	for et, vs := range e.values {
+		for _, v := range vs {
+			e.doEvents(u, et, v[0], v[1:])
+			e.doListener(u, et, v[0], v[1:])
 		}
-		e.listeners[k] = next
 	}
 	return
 }
 
-func (e *emitter) doTask(u *Updater, t EventType, vs []emitterValues, h listener) bool {
-	for _, v := range vs {
-		if !h(u, t, v[0], v[1:]...) {
-			return false
+// doEvents
+func (e *Emitter) doEvents(_ *Updater, t int32, v int32, args []int32) {
+	if len(e.events[t]) == 0 {
+		return
+	}
+	var dict []*events.Listener
+	for _, l := range e.events[t] {
+		if l.Handle(t, v, args) {
+			dict = append(dict, l)
 		}
 	}
-	return true
+	e.events[t] = dict
+}
+
+// doListener
+func (e *Emitter) doListener(u *Updater, t int32, v int32, args []int32) {
+	if len(e.listeners[t]) == 0 {
+		return
+	}
+	var dict []listener
+	for _, l := range e.listeners[t] {
+		if l(u, t, v, args...) {
+			dict = append(dict, l)
+		}
+	}
+	e.listeners[t] = dict
+
 }

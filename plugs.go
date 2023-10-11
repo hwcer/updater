@@ -12,105 +12,85 @@ const (
 	PlugsTypeDestroy                  //销毁前,需要实例化数据
 )
 
-// plugs 每个EventType 调用一次
-type plugs interface {
+type Event func(u *Updater) error
+type Process interface {
 	Emit(u *Updater, t PlugsType) error
 }
-type plugsHandle func(u *Updater) error
-
-//type NewPlugsHandle func(updater *Updater) plugs
-
-//var globalPlugs = map[string]NewPlugsHandle{}
-
-//func AddGlobalPlugs(name string, handle NewPlugsHandle) {
-//	globalPlugs[name] = handle
-//}
 
 type Plugs struct {
-	plugs map[string]plugs
-	//global map[string]plugs
-	events map[PlugsType][]plugsHandle
+	events    map[PlugsType][]Event
+	processes map[string]Process
 }
 
-func (this *Plugs) On(t PlugsType, handle plugsHandle) {
+func (this *Plugs) On(t PlugsType, handle Event) {
 	if this.events == nil {
-		this.events = map[PlugsType][]plugsHandle{}
+		this.events = map[PlugsType][]Event{}
 	}
 	this.events[t] = append(this.events[t], handle)
 }
 
+// Get 获取plug
 func (this *Plugs) Get(name string) any {
-	//if this.global != nil && this.global[name] != nil {
-	//	return this.global[name]
-	//}
-	if this.plugs != nil && this.plugs[name] != nil {
-		return this.plugs[name]
+	if this.processes != nil && this.processes[name] != nil {
+		return this.processes[name]
 	}
 	return nil
 }
 
 // Set 设置插件,如果已存在(全局,当前)返回false
-func (this *Plugs) Set(name string, handle plugs) bool {
-	//if this.global != nil && this.global[name] != nil {
-	//	return false
-	//}
-	if this.plugs != nil && this.plugs[name] != nil {
+func (this *Plugs) Set(name string, handle Process) bool {
+	if this.processes == nil {
+		this.processes = map[string]Process{}
+	}
+	if _, ok := this.processes[name]; ok {
 		return false
 	}
-	if this.plugs == nil {
-		this.plugs = map[string]plugs{}
-	}
-	this.plugs[name] = handle
+	this.processes[name] = handle
 	return true
 }
 
-func (this *Plugs) LoadOrStore(name string, handle plugs) any {
-	//if this.global != nil && this.global[name] != nil {
-	//	return this.global[name]
-	//}
-	if this.plugs != nil && this.plugs[name] != nil {
-		return this.plugs[name]
+func (this *Plugs) LoadOrStore(name string, handle Process) (v Process) {
+	if this.processes == nil {
+		this.processes = map[string]Process{}
 	}
-	if this.plugs == nil {
-		this.plugs = map[string]plugs{}
+	if v = this.processes[name]; v == nil {
+		v = handle
+		this.processes[name] = handle
 	}
-	this.plugs[name] = handle
-	return handle
+	return
+}
+
+func (this *Plugs) LoadOrCreate(name string, creator func() Process) (v Process) {
+	if this.processes == nil {
+		this.processes = map[string]Process{}
+	}
+	if v = this.processes[name]; v == nil {
+		v = creator()
+		this.processes[name] = v
+	}
+	return
 }
 
 func (this *Plugs) emit(u *Updater, t PlugsType) (err error) {
 	if t == PlugsTypeRelease {
 		defer func() {
-			this.plugs = nil
 			this.events = nil
+			this.processes = nil
 		}()
 	}
-
-	//if t == PlugsTypeInit && len(globalPlugs) > 0 {
-	//	this.global = map[string]plugs{}
-	//	for k, f := range globalPlugs {
-	//		this.global[k] = f(u)
-	//	}
-	//}
 
 	if u.Error != nil {
 		return
 	}
 	//通用事件
-	if this.events != nil {
-		for _, h := range this.events[t] {
-			if err = h(u); err != nil {
-				return
-			}
+
+	for _, h := range this.events[t] {
+		if err = h(u); err != nil {
+			return
 		}
 	}
 
-	//for _, p := range this.global {
-	//	if err = p.Emit(u, t); err != nil {
-	//		return
-	//	}
-	//}
-	for _, p := range this.plugs {
+	for _, p := range this.processes {
 		if err = p.Emit(u, t); err != nil {
 			return
 		}

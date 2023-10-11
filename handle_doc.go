@@ -6,6 +6,7 @@ import (
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
+	"strings"
 )
 
 /*
@@ -289,6 +290,9 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 		key, err = this.model.Field(this.Updater, iid)
 	}
 	if err != nil {
+		return
+	}
+	if strings.Index(key, ".") > 0 {
 		return
 	}
 	if sch := this.Schema(); sch != nil {
