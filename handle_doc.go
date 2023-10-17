@@ -255,9 +255,6 @@ func (this *Document) Submit() (r []*operator.Operator, err error) {
 		return nil, this.Updater.Error
 	}
 	//同步到内存
-	//if this.dirty == nil {
-	//	this.dirty = documentDirty{}
-	//}
 	r = this.statement.operator
 	for _, op := range r {
 		if op.Type.IsValid() {
