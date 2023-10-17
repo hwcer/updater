@@ -7,10 +7,12 @@ import (
 )
 
 func NewDocument(i any) *Document {
-	return &Document{item: i}
+	d := &Document{item: i}
+	return d
 }
 
 type Document struct {
+	sch  *schema.Schema
 	item any
 }
 
@@ -28,8 +30,13 @@ func (this *Document) VAL() int64 {
 	return ParseInt64(v)
 }
 
-func (this *Document) Schema() (*schema.Schema, error) {
-	return schema.Parse(this.item)
+func (this *Document) Schema() (sch *schema.Schema, err error) {
+	if this.sch == nil {
+		if sch, err = schema.Parse(this.item); err == nil {
+			this.sch = sch
+		}
+	}
+	return this.sch, nil
 }
 func (this *Document) Get(key string) (r any) {
 	if m, ok := this.item.(ModelGet); ok {
