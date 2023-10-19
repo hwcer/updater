@@ -33,12 +33,12 @@ func (l *Listener) Handle(t int32, v int32, args []int32) bool {
 }
 
 func (l *Listener) compare(t int32, args []int32) bool {
+	if len(l.args) == 0 {
+		return true
+	}
 	if l.Filter != nil {
 		return l.Filter(l.args, args)
-	} else if f := filters[t]; f != nil {
-		return f(l.args, args)
-	} else {
-		return defaultFilter(l.args, args)
 	}
-
+	f := Require(t)
+	return f(l.args, args)
 }
