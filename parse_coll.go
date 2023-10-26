@@ -20,39 +20,9 @@ func init() {
 }
 
 func (this *Collection) Parse(op *operator.Operator) (err error) {
-	it := this.IType(op.IID)
-	if it == nil {
-		return ErrITypeNotExist(op.IID)
+	if err = overflow(this.Updater, this, op); err != nil {
+		return
 	}
-	//溢出判定
-	if op.Type == operator.TypesAdd {
-		val := ParseInt64(op.Value)
-		num := this.dataset.Count(op.IID)
-		tot := val + num
-		imax := Config.IMax(op.IID)
-		if imax > 0 && tot > imax {
-			overflow := tot - imax
-			if overflow > val {
-				overflow = val //imax有改动
-			}
-			val -= overflow
-			op.Value = val
-			if resolve, ok := it.(ITypeResolve); ok {
-				if err = resolve.Resolve(this.Updater, op.IID, overflow); err != nil {
-					return
-				} else {
-					overflow = 0
-				}
-			}
-			if overflow > 0 {
-				//this.Adapter.overflow[cache.IID] += overflow
-			}
-		}
-		if val == 0 {
-			op.Type = operator.TypesResolve
-		}
-	}
-
 	if f, ok := collectionParseHandle[op.Type]; ok {
 		return f(this, op)
 	}
@@ -177,7 +147,7 @@ func collectionHandleMin(coll *Collection, op *operator.Operator) (err error) {
 // collectionHandleNewEquip
 func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
 	op.Type = operator.TypesNew
-	it := coll.IType(op.IID)
+	it := coll.ITypeCollection(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
@@ -206,7 +176,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
 
 func collectionHandleNewItem(coll *Collection, op *operator.Operator) error {
 	op.Type = operator.TypesNew
-	it := coll.IType(op.IID)
+	it := coll.ITypeCollection(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}

@@ -14,13 +14,20 @@ func init() {
 	hashParseHandle[operator.TypesMax] = hashParseMax
 	hashParseHandle[operator.TypesMin] = hashParseMin
 	hashParseHandle[operator.TypesSet] = hashParseSet
+	hashParseHandle[operator.TypesResolve] = hashParseResolve
 }
 
-func (this *Hash) Parse(op *operator.Operator) error {
+func (this *Hash) Parse(op *operator.Operator) (err error) {
+	if err = overflow(this.Updater, this, op); err != nil {
+		return
+	}
 	if f, ok := hashParseHandle[op.Type]; ok {
 		return f(this, op)
 	}
 	return fmt.Errorf("hash operator type not exist:%v", op.Type.ToString())
+}
+func hashParseResolve(this *Hash, op *operator.Operator) (err error) {
+	return
 }
 
 func hashParseAdd(this *Hash, op *operator.Operator) (err error) {

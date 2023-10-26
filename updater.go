@@ -173,8 +173,8 @@ func (u *Updater) Data() (err error) {
 	return
 }
 
-// Submit 按照MODEL的倒序执行
-func (u *Updater) Submit() (r []*operator.Operator, err error) {
+// Verify 手动执行Verify对操作进行检查
+func (u *Updater) Verify() (hs []Handle, err error) {
 	if u.Error != nil {
 		return nil, u.Error
 	}
@@ -184,21 +184,30 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			return
 		}
 	}
-	hs := u.Handles()
+	hs = u.Handles()
 	if err = u.emit(PlugsTypeVerify); err != nil {
 		return
 	}
 	for i := len(hs) - 1; i >= 0; i-- {
-		if err = hs[i].Verify(); err != nil {
+		if err = hs[i].verify(); err != nil {
 			return
 		}
+	}
+	return
+}
+
+// Submit 按照MODEL的倒序执行
+func (u *Updater) Submit() (r []*operator.Operator, err error) {
+	var hs []Handle
+	if hs, err = u.Verify(); err != nil {
+		return
 	}
 	if err = u.emit(PlugsTypeSubmit); err != nil {
 		return
 	}
 	var opts []*operator.Operator
 	for i := len(hs) - 1; i >= 0; i-- {
-		if opts, err = hs[i].Submit(); err != nil {
+		if opts, err = hs[i].submit(); err != nil {
 			return
 		} else if len(opts) > 0 {
 			r = append(r, opts...)

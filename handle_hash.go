@@ -194,7 +194,7 @@ func (this *Hash) Data() error {
 	return nil
 }
 
-func (this *Hash) Verify() (err error) {
+func (this *Hash) verify() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
@@ -207,7 +207,7 @@ func (this *Hash) Verify() (err error) {
 	return
 }
 
-func (this *Hash) Submit() (r []*operator.Operator, err error) {
+func (this *Hash) submit() (r []*operator.Operator, err error) {
 	defer this.statement.done()
 	if err = this.Updater.Error; err != nil {
 		return
@@ -229,9 +229,19 @@ func (this *Hash) Submit() (r []*operator.Operator, err error) {
 	}
 	return
 }
-func (this *Hash) Values() any {
+
+func (this *Hash) Range(f func(int32, int64) bool) {
+	for k, v := range this.dataset {
+		if !f(k, v) {
+			return
+		}
+	}
+}
+
+func (this *Hash) Values() map[int32]int64 {
 	return this.dataset
 }
+
 func (this *Hash) IType(iid int32) IType {
 	if h, ok := this.model.(modelIType); ok {
 		v := h.IType(iid)

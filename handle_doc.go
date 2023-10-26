@@ -220,7 +220,7 @@ func (this *Document) Data() (err error) {
 	return
 }
 
-func (this *Document) Verify() (err error) {
+func (this *Document) verify() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
@@ -249,7 +249,7 @@ func (this *Document) Schema() *schema.Schema {
 	return sch
 }
 
-func (this *Document) Submit() (r []*operator.Operator, err error) {
+func (this *Document) submit() (r []*operator.Operator, err error) {
 	defer this.statement.done()
 	if this.Updater.Error != nil {
 		return nil, this.Updater.Error
@@ -277,7 +277,7 @@ func (this *Document) Submit() (r []*operator.Operator, err error) {
 func (this *Document) Dirty(k string, v any) {
 	this.dirty[k] = v
 }
-func (this *Document) Values() any {
+func (this *Document) Interface() any {
 	return this.dataset.Interface()
 }
 

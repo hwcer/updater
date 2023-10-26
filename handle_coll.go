@@ -206,7 +206,7 @@ func (this *Collection) Data() (err error) {
 	return
 }
 
-func (this *Collection) Verify() (err error) {
+func (this *Collection) verify() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
@@ -219,7 +219,7 @@ func (this *Collection) Verify() (err error) {
 	return
 }
 
-func (this *Collection) Submit() (r []*operator.Operator, err error) {
+func (this *Collection) submit() (r []*operator.Operator, err error) {
 	defer this.statement.done()
 	if this.Updater.Error != nil {
 		return nil, this.Updater.Error
@@ -245,9 +245,9 @@ func (this *Collection) Submit() (r []*operator.Operator, err error) {
 	return
 }
 
-func (this *Collection) Values() any {
-	return this.dataset
-}
+//func (this *Collection) Values() any {
+//	return this.dataset
+//}
 
 func (this *Collection) Range(h func(id string, val any) bool) {
 	for id, dt := range this.dataset {
@@ -257,20 +257,24 @@ func (this *Collection) Range(h func(id string, val any) bool) {
 	}
 }
 
-func (this *Collection) IType(iid int32) (r ITypeCollection) {
-	var it IType
+func (this *Collection) IType(iid int32) IType {
 	if h, ok := this.model.(modelIType); ok {
 		v := h.IType(iid)
-		it = itypesDict[v]
+		return itypesDict[v]
 	} else {
-		it = this.Updater.IType(iid)
+		return this.Updater.IType(iid)
 	}
-	r, _ = it.(ITypeCollection)
+}
+
+func (this *Collection) ITypeCollection(iid int32) (r ITypeCollection) {
+	if it := this.IType(iid); it != nil {
+		r, _ = it.(ITypeCollection)
+	}
 	return
 }
 
 func (this *Collection) mayChange(op *operator.Operator) error {
-	it := this.IType(op.IID)
+	it := this.ITypeCollection(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
@@ -331,7 +335,7 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 	if iid <= 0 {
 		return "", fmt.Errorf("iid empty:%v", iid)
 	}
-	it := this.IType(iid)
+	it := this.ITypeCollection(iid)
 	if it == nil {
 		return "", fmt.Errorf("IType unknown:%v", iid)
 	}
