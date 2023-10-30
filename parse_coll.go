@@ -45,7 +45,7 @@ func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 
 // New 必须是创建好的ITEM对象,仅外部直接创建新对象时调用
 func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
-	if op.OID == "" || op.IID <= 0 || op.Value <= 0 {
+	if op.OID == "" || op.Value <= 0 {
 		return coll.Updater.Errorf("operator[New] oid iid,value cannot be empty:%+v", op)
 	}
 	if op.Result == nil {

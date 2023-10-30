@@ -245,9 +245,10 @@ func (this *Collection) submit() (r []*operator.Operator, err error) {
 	return
 }
 
-//func (this *Collection) Values() any {
-//	return this.dataset
-//}
+// Len 总记录数
+func (this *Collection) Len() int {
+	return len(this.dataset)
+}
 
 func (this *Collection) Range(h func(id string, val any) bool) {
 	for id, dt := range this.dataset {
