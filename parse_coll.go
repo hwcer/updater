@@ -103,7 +103,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	}
 	update, _ := op.Result.(dataset.Update)
 	if v, ok := update[dataset.ItemNameVAL]; ok {
-		coll.values[op.IID] = ParseInt64(v)
+		coll.values[op.OID] = ParseInt64(v)
 	}
 	return
 }
