@@ -80,9 +80,6 @@ func (this *Document) has(key string) bool {
 	if this.history != nil && this.history.Has(key) {
 		return true
 	}
-	if this.history.Has(key) {
-		return true
-	}
 	return false
 }
 

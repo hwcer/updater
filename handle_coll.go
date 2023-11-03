@@ -109,7 +109,7 @@ func (this *Collection) destroy() (err error) {
 
 func (this *Collection) Has(id any) (r bool) {
 	if oid, err := this.ObjectId(id); err == nil {
-		r = this.has(oid)
+		r = this.dirty.Has(oid) || this.dataset.Has(oid)
 	} else {
 		Logger.Debug(err)
 	}
