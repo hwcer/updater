@@ -14,6 +14,11 @@ type collectionModel interface {
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
 
+// collectionUpsert set时如果不存在,是否自动转换为new
+type collectionUpsert interface {
+	Upsert(update *Updater, op *operator.Operator) bool
+}
+
 type Collection struct {
 	*statement
 	keys    documentDirty

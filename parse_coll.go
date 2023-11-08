@@ -45,8 +45,8 @@ func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 
 // New 必须是创建好的ITEM对象,仅外部直接创建新对象时调用
 func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
-	if op.OID == "" || op.Value <= 0 {
-		return coll.Updater.Errorf("operator[New] oid iid,value cannot be empty:%+v", op)
+	if op.OID == "" {
+		return coll.Updater.Errorf("operator[New] oid  cannot be empty:%+v", op)
 	}
 	if op.Result == nil {
 		return coll.Updater.Errorf("operator[New] Result empty:%+v", op)
@@ -98,8 +98,24 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrOIDEmpty(op.IID)
 	}
-	if _, ok := coll.val(op.OID); !ok {
-		return ErrItemNotExist(op.OID)
+	if !coll.dirty.Has(op.OID) && !coll.dataset.Has(op.OID) && coll.values[op.OID] == 0 {
+		if upsert, ok := coll.model.(collectionUpsert); ok && upsert.Upsert(coll.Updater, op) {
+			it := coll.ITypeCollection(op.IID)
+			var i any
+			if i, err = it.New(coll.Updater, op); err != nil {
+				return
+			}
+			doc := dataset.NewDocument(i)
+			if err = doc.Update(op.Result.(dataset.Update)); err != nil {
+				return
+			}
+			op.Type = operator.TypesNew
+			op.Value = doc.VAL()
+			op.Result = []any{doc.Interface()}
+			return collectionHandleNew(coll, op)
+		} else {
+			return ErrItemNotExist(op.OID)
+		}
 	}
 	update, _ := op.Result.(dataset.Update)
 	if v, ok := update[dataset.ItemNameVAL]; ok {
