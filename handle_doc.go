@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 	"strings"
@@ -51,10 +52,10 @@ func (this *Document) get(k string) (r any) {
 	if this.dirty != nil && this.dirty.Has(k) {
 		return this.dirty.Get(k)
 	}
-	if this.dataset != nil {
+	if this.statement.has(k) && this.dataset != nil {
 		return this.dataset.Get(k)
 	}
-	return errors.New("dataset is nil")
+	return nil
 }
 
 func (this *Document) val(k string) (r int64, ok bool) {
@@ -100,7 +101,8 @@ func (this *Document) release() {
 }
 func (this *Document) init() (err error) {
 	if this.statement.ram == RAMTypeMaybe {
-		this.statement.ram = RAMTypeAlways
+		this.statement.ram = RAMTypeNone
+		logger.Alert("updater Document模型不支持RAMTypeMaybe已经自动转换为RAMTypeNone")
 	}
 	if this.statement.ram == RAMTypeAlways {
 		i := this.model.New(this.Updater)
