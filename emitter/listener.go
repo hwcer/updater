@@ -1,4 +1,4 @@
-package events
+package emitter
 
 type Handle func(l *Listener, val int32) bool //满足条件后的更新器,返回false移除监听
 

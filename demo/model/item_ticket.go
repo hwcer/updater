@@ -66,7 +66,7 @@ func (this *ticketIType) Listener(u *updater.Updater, op *operator.Operator) {
 	if limit[0] > 0 && limit[1] > 0 {
 		u.Select(limit[0])
 	}
-	plug := u.Plugs.LoadOrStore(ticketPlugName, &ticketPlug{}).(*ticketPlug)
+	plug := u.Events.LoadOrStore(ticketPlugName, &ticketPlug{}).(*ticketPlug)
 	plug.add(op.IID, c)
 }
 

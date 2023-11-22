@@ -10,21 +10,22 @@ import (
 )
 
 type Updater struct {
-	uid      string
-	Time     time.Time
-	Error    error
-	Plugs    Plugs
-	Emitter  Emitter
-	strict   bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
-	changed  bool //数据变动,需要使用Data更新数据
-	operated bool //新操作需要重执行Verify检查数据
-	handles  map[string]Handle
+	uid     string
+	Time    time.Time
+	Error   error
+	Events  Events
+	Emitter Emitter
+
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
+	strict   bool                 //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	changed  bool                 //数据变动,需要使用Data更新数据
+	operated bool                 //新操作需要重执行Verify检查数据
+	handles  map[string]Handle
 }
 
 func New(uid string) (u *Updater, err error) {
 	u = &Updater{uid: uid}
-	//u.Plugs = &Plugs{}
+	//u.Events = &Events{}
 	u.handles = make(map[string]Handle)
 	for _, model := range modelsRank {
 		u.handles[model.name] = handles[model.parser](u, model.model, model.ram)
@@ -32,6 +33,10 @@ func New(uid string) (u *Updater, err error) {
 
 	err = u.init()
 	return
+}
+
+func (u *Updater) On(t PlugsType, handle Event) {
+	u.Events.On(t, handle)
 }
 
 func (u *Updater) Errorf(format any, args ...any) error {
@@ -59,7 +64,7 @@ func (u *Updater) Reset() {
 // 无论有无错误,都应该执行Release
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
-	_ = u.emit(PlugsTypeRelease)
+	u.emit(PlugsTypeRelease)
 	u.dirty = nil
 	u.changed = false
 	u.operated = false
@@ -67,16 +72,12 @@ func (u *Updater) Release() {
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
 	}
+	u.Events.release()
 	return
 }
-func (u *Updater) emit(t PlugsType) (err error) {
-	if err = u.Plugs.emit(u, t); err != nil {
-		return
-	}
-	if err = u.Emitter.emit(u, t); err != nil {
-		return
-	}
-	return
+
+func (u *Updater) emit(t PlugsType) {
+	u.Events.emit(u, t)
 }
 
 // Init 构造函数 NEW之后立即调用
@@ -87,7 +88,8 @@ func (u *Updater) init() (err error) {
 			return
 		}
 	}
-	return u.emit(PlugsTypeInit)
+	u.emit(PlugsTypeInit)
+	return
 }
 
 func (u *Updater) Uid() string {
@@ -178,9 +180,7 @@ func (u *Updater) data(hs []Handle) (err error) {
 	defer func() {
 		u.changed = false
 	}()
-	if err = u.emit(PlugsTypeData); err != nil {
-		return
-	}
+	u.emit(PlugsTypeData)
 	for _, w := range hs {
 		if err = w.Data(); err != nil {
 			return
@@ -199,14 +199,13 @@ func (u *Updater) verify(hs []Handle) (err error) {
 	defer func() {
 		u.operated = false
 	}()
-	if err = u.emit(PlugsTypeVerify); err != nil {
-		return
-	}
+	u.emit(PlugsTypeVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].Verify(); err != nil {
 			return
 		}
 	}
+	u.Emitter.emit(u)
 	return
 }
 
@@ -234,15 +233,13 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if err = u.submit(hs); err != nil {
 		return
 	}
-	if err = u.emit(PlugsTypeSubmit); err != nil {
-		return
-	}
+	u.emit(PlugsTypeSubmit)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].submit(); err != nil {
 			return
 		}
 	}
-	_ = u.emit(PlugsTypeSuccess)
+	u.emit(PlugsTypeSuccess)
 	r = u.dirty
 	u.dirty = nil
 	return
@@ -331,9 +328,7 @@ func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
 // Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
 // 仅缓存模式下需要且必要执行
 func (u *Updater) Destroy() (err error) {
-	if err = u.emit(PlugsTypeDestroy); err != nil {
-		return
-	}
+	//u.emit(PlugsTypeDestroy)
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].destroy(); err != nil {

@@ -1,4 +1,4 @@
-package events
+package emitter
 
 // 条件过滤器
 var filters = map[int32]Filter{}
