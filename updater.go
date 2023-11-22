@@ -177,9 +177,7 @@ func (u *Updater) data(hs []Handle) (err error) {
 	if !u.changed {
 		return
 	}
-	defer func() {
-		u.changed = false
-	}()
+	u.changed = false
 	u.emit(PlugsTypeData)
 	for _, w := range hs {
 		if err = w.Data(); err != nil {
@@ -196,9 +194,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 	if !u.operated {
 		return
 	}
-	defer func() {
-		u.operated = false
-	}()
+	u.operated = false
 	u.emit(PlugsTypeVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].Verify(); err != nil {
