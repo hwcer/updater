@@ -43,7 +43,7 @@ func (stmt *statement) done() {
 	stmt.Updater.Error = nil
 }
 
-// Has 查询key(DBName)是否已经初始化
+// Has 查询key(DBName)是否已经初始化  todo
 func (stmt *statement) has(key any) bool {
 	if stmt.ram == RAMTypeAlways {
 		return true
