@@ -304,6 +304,12 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 // Receive 接收业务逻辑层数据
 func (this *Collection) Receive(id string, data any) {
 	this.dataset.Set(id, data)
+	if this.ram == RAMTypeMaybe {
+		if this.statement.history == nil {
+			this.statement.history = Keys{}
+		}
+		this.statement.history.Select(id)
+	}
 }
 
 func (this *Collection) ObjectId(key any) (oid string, err error) {
