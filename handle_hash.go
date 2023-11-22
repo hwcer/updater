@@ -103,7 +103,7 @@ func (this *Hash) init() error {
 	this.symbol = this.model.Symbol(this.Updater)
 	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
 		this.dataset, this.Updater.Error = this.model.Getter(this.Updater, this.symbol, nil)
-		if this.Updater.Error == nil && len(this.dataset) > 0 && this.statement.ram == RAMTypeMaybe {
+		if this.statement.ram == RAMTypeMaybe && this.Updater.Error == nil && len(this.dataset) > 0 {
 			if this.statement.history == nil {
 				this.statement.history = Keys{}
 			}

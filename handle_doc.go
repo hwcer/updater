@@ -10,7 +10,6 @@ import (
 )
 
 /*
-建议使用 Document.Get(nil) 获取dataset.(struct) 直接读struct字段
 切记不要直接修改dataset
 建议使用dataset中实现以下接口提高性能
 
@@ -100,7 +99,10 @@ func (this *Document) release() {
 	}
 }
 func (this *Document) init() (err error) {
-	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
+	if this.statement.ram == RAMTypeMaybe {
+		this.statement.ram = RAMTypeAlways
+	}
+	if this.statement.ram == RAMTypeAlways {
 		i := this.model.New(this.Updater)
 		this.dataset = dataset.NewDocument(i)
 		err = this.model.Getter(this.Updater, this.dataset.Interface(), nil)
