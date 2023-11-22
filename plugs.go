@@ -12,7 +12,7 @@ const (
 	PlugsTypeDestroy                  //销毁前,需要实例化数据
 )
 
-type Event func(u *Updater) error
+type Event func(u *Updater) bool
 type Process interface {
 	Emit(u *Updater, t PlugsType) error
 }
@@ -84,10 +84,14 @@ func (this *Plugs) emit(u *Updater, t PlugsType) (err error) {
 	}
 	//通用事件
 
-	for _, h := range this.events[t] {
-		if err = h(u); err != nil {
-			return
+	if events := this.events[t]; len(events) > 0 {
+		var nev []Event
+		for _, h := range events {
+			if h(u) {
+				nev = append(nev, h)
+			}
 		}
+		this.events[t] = nev
 	}
 
 	for _, p := range this.processes {

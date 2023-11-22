@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -31,14 +32,15 @@ func hashParseResolve(this *Hash, op *operator.Operator) (err error) {
 }
 
 func hashParseAdd(this *Hash, op *operator.Operator) (err error) {
-	r := this.val(op.IID) + op.Value
+	r, _ := this.val(op.IID)
+	r += op.Value
 	op.Result = r
 	this.values[op.IID] = r
 	return
 }
 
 func hashParseSub(this *Hash, op *operator.Operator) (err error) {
-	d := this.val(op.IID)
+	d, _ := this.val(op.IID)
 	if op.Value > d && this.Updater.strict {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
@@ -53,7 +55,7 @@ func hashParseSub(this *Hash, op *operator.Operator) (err error) {
 
 func hashParseSet(this *Hash, op *operator.Operator) (err error) {
 	op.Type = operator.TypesSet
-	this.values[op.IID] = ParseInt64(op.Result)
+	this.values[op.IID] = dataset.ParseInt64(op.Result)
 	return
 }
 
@@ -64,7 +66,8 @@ func hashParseSet(this *Hash, op *operator.Operator) (err error) {
 //}
 
 func hashParseMax(this *Hash, op *operator.Operator) (err error) {
-	if op.Value > this.val(op.IID) {
+	v, _ := this.val(op.IID)
+	if op.Value > v {
 		op.Result = op.Value
 		err = hashParseSet(this, op)
 	} else {
@@ -74,7 +77,8 @@ func hashParseMax(this *Hash, op *operator.Operator) (err error) {
 }
 
 func hashParseMin(this *Hash, op *operator.Operator) (err error) {
-	if op.Value > this.val(op.IID) {
+	v, _ := this.val(op.IID)
+	if op.Value > v {
 		op.Result = op.Value
 		err = hashParseSet(this, op)
 	} else {

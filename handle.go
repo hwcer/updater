@@ -20,13 +20,14 @@ type modelIType interface {
 type operatorHandle func(t operator.Types, k any, v int64, r any)
 
 type statement struct {
-	ram RAMType
-	//cache    []*operator.Operator
+	ram      RAMType
 	values   map[any]int64 //执行过程中的数量过程
 	handle   operatorHandle
 	Updater  *Updater
 	operator []*operator.Operator //操作
-	verified bool                 //是否已经检查过
+	cache    []*operator.Operator
+	keys     Keys
+	history  Keys
 }
 
 func NewStatement(u *Updater, ram RAMType, handle operatorHandle) *statement {
@@ -35,15 +36,35 @@ func NewStatement(u *Updater, ram RAMType, handle operatorHandle) *statement {
 
 func (stmt *statement) done() {
 	//stmt.cache = append(stmt.cache, stmt.operator...)
+	stmt.keys = nil
 	stmt.values = map[any]int64{}
 	stmt.operator = nil
-	stmt.verified = false
+	//stmt.verify = false
 	stmt.Updater.Error = nil
 }
 
+// Has 查询key(DBName)是否已经初始化
+func (stmt *statement) has(key any) bool {
+	if stmt.ram == RAMTypeAlways {
+		return true
+	}
+	if stmt.keys != nil && stmt.keys.Has(key) {
+		return true
+	}
+	if stmt.history != nil && stmt.history.Has(key) {
+		return true
+	}
+	return false
+}
 func (stmt *statement) reset() {
 	if stmt.values == nil {
 		stmt.values = map[any]int64{}
+	}
+	if stmt.keys == nil && stmt.ram != RAMTypeAlways {
+		stmt.keys = Keys{}
+	}
+	if stmt.history == nil && stmt.ram == RAMTypeMaybe {
+		stmt.history = Keys{}
 	}
 }
 
@@ -51,6 +72,39 @@ func (stmt *statement) reset() {
 func (stmt *statement) release() {
 	stmt.done()
 	return
+}
+
+// date 执行Data 后操作
+func (stmt *statement) date() {
+	if stmt.history != nil {
+		stmt.history.Merge(stmt.keys)
+	}
+	stmt.keys = Keys{}
+}
+
+// verify 执行verify后操作
+func (stmt *statement) verify() {
+	if len(stmt.operator) > 0 {
+		stmt.cache = append(stmt.cache, stmt.operator...)
+		stmt.operator = nil
+	}
+}
+
+func (stmt *statement) submit() {
+	if len(stmt.cache) > 0 {
+		stmt.Updater.dirty = append(stmt.Updater.dirty, stmt.cache...)
+		stmt.cache = nil
+	}
+}
+
+func (stmt *statement) Select(key any) {
+	if stmt.ram == RAMTypeAlways {
+		return
+	}
+	if !stmt.has(key) {
+		stmt.keys.Select(key)
+		stmt.Updater.changed = true
+	}
 }
 
 func (stmt *statement) Errorf(format any, args ...any) error {
@@ -64,6 +118,7 @@ func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
 	} else {
 		stmt.operator = append(stmt.operator, c)
 	}
+	stmt.Updater.operated = true
 }
 
 //func (b *statement) Has(key string) bool {

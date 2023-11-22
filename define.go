@@ -19,14 +19,14 @@ type Handle interface {
 	Data() error                                    //非内存模式获取数据库中的数据
 	Select(keys ...any)                             //非内存模式时获取特定道具
 	Parser() Parser                                 //解析模型
+	Verify() error                                  //验证数据,执行过程的数据开始按顺序生效,但不会修改缓存
 	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator,不会触发任何事件
 	IType(int32) IType                              //根据iid获取IType
 	init() error                                    //构造方法
 	reset()                                         //运行时开始时
 	release()                                       //运行时释放缓存信息,并返回所有操作过程
 	destroy() error                                 //同步所有数据到数据库,手动同步,或者销毁时执行
-	verify() error                                  //验证数据,执行过程的数据开始按顺序生效,但不会修改缓存
-	submit() ([]*operator.Operator, error)          //即时同步,提交所有操作,缓存生效,同步数据库
+	submit() error                                  //即时同步,提交所有操作,缓存生效,同步数据库
 }
 
 //type HandleNew interface {
@@ -76,3 +76,77 @@ type ITypeListener interface {
 //type ModelListener interface {
 //	Listener(u *Updater, op *operator.Operator)
 //}
+
+type Keys map[any]struct{}
+
+func (this Keys) Has(k any) (ok bool) {
+	_, ok = this[k]
+	return
+}
+
+func (this Keys) ToString() (r []string) {
+	for k, _ := range this {
+		if sk, ok := k.(string); ok {
+			r = append(r, sk)
+		}
+	}
+	return
+}
+
+func (this Keys) ToInt32() (r []int32) {
+	for k, _ := range this {
+		if ik, ok := k.(int32); ok {
+			r = append(r, ik)
+		}
+	}
+	return
+}
+
+//func (this Keys) Keys() (r []string) {
+//	for k, _ := range this {
+//		if sk, ok := k.(string); ok {
+//			r = append(r, sk)
+//		}
+//	}
+//	return
+//}
+
+func (this Keys) Merge(src Keys) {
+	for k, _ := range src {
+		this[k] = struct{}{}
+	}
+}
+
+func (this Keys) Select(ks ...any) {
+	for _, k := range ks {
+		this[k] = struct{}{}
+	}
+}
+
+//type documentKeys map[string]any
+
+type Dirty map[string]any
+
+func (this Dirty) Get(k string) any {
+	return this[k]
+}
+
+func (this Dirty) Has(k string) bool {
+	if _, ok := this[k]; ok {
+		return true
+	}
+	return false
+}
+
+func (this Dirty) Keys() (r []string) {
+	for k, _ := range this {
+		r = append(r, k)
+	}
+	return
+}
+
+func (this Dirty) Merge(src Dirty) {
+	for k, v := range src {
+		this[k] = v
+	}
+}

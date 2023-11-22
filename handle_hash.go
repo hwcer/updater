@@ -14,18 +14,6 @@ type hashModel interface {
 }
 
 type hashData map[int32]int64
-type hashKeys map[int32]bool
-
-func (this hashKeys) Keys() (r []int32) {
-	for k, _ := range this {
-		r = append(r, k)
-	}
-	return
-}
-func (this hashKeys) Has(k int32) (r bool) {
-	_, r = this[k]
-	return
-}
 
 func (this hashData) Has(k int32) (r bool) {
 	_, r = this[k]
@@ -39,9 +27,8 @@ func (data hashData) Merge(src hashData) {
 
 // Hash HashMAP储存
 type Hash struct {
-	*statement
+	statement
 	name    string //model database name
-	keys    hashKeys
 	model   hashModel
 	symbol  any      //标记时效性
 	dirty   hashData //需要写入数据的数据
@@ -51,7 +38,7 @@ type Hash struct {
 func NewHash(u *Updater, model any, ram RAMType) Handle {
 	r := &Hash{}
 	r.model = model.(hashModel)
-	r.statement = NewStatement(u, ram, r.operator)
+	r.statement = *NewStatement(u, ram, r.operator)
 	if sch, err := schema.Parse(model); err == nil {
 		r.name = sch.Table
 	} else {
@@ -64,27 +51,15 @@ func (this *Hash) Parser() Parser {
 	return ParserTypeHash
 }
 
-// has 检查k是否已经缓存,或者下次会被缓存
-func (this *Hash) has(key int32) (r bool) {
-	if this.ram == RAMTypeAlways {
-		return true
-	}
-	if this.keys != nil && this.keys.Has(key) {
-		return true
-	}
-	if this.dirty.Has(key) || this.dataset.Has(key) {
-		return true
+func (this *Hash) val(iid int32) (r int64, ok bool) {
+	if r, ok = this.values[iid]; ok {
+		return
+	} else {
+		if r, ok = this.dataset[iid]; ok {
+			this.values[iid] = r
+		}
 	}
 	return
-}
-
-func (this *Hash) val(iid int32) (r int64) {
-	if v, ok := this.values[iid]; ok {
-		return v
-	}
-	r = this.dataset[iid]
-	this.values[iid] = r
-	return r
 }
 
 func (this *Hash) save() (err error) {
@@ -114,14 +89,10 @@ func (this *Hash) reset() {
 	if this.dataset == nil {
 		this.dataset = hashData{}
 	}
-	if this.keys == nil && this.ram != RAMTypeAlways {
-		this.keys = hashKeys{}
-	}
 }
 
 // release 运行时释放
 func (this *Hash) release() {
-	this.keys = nil
 	this.statement.release()
 	if this.statement.ram == RAMTypeNone {
 		this.dirty = nil
@@ -142,14 +113,14 @@ func (this *Hash) destroy() (err error) {
 }
 
 func (this *Hash) Get(k any) (r any) {
-	if id := dataset.ParseInt32(k); id > 0 {
-		r = this.val(id)
+	if id, ok := dataset.TryParseInt32(k); ok {
+		r, _ = this.val(id)
 	}
 	return
 }
 func (this *Hash) Val(k any) (r int64) {
-	if id := dataset.ParseInt32(k); id > 0 {
-		r = this.val(id)
+	if id, ok := dataset.TryParseInt32(k); ok {
+		r, _ = this.val(id)
 	}
 	return
 }
@@ -159,7 +130,7 @@ func (this *Hash) Val(k any) (r int64) {
 func (this *Hash) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
-		this.operator(operator.TypesSet, k, 0, ParseInt64(v[0]))
+		this.operator(operator.TypesSet, k, 0, dataset.ParseInt64(v[0]))
 	default:
 		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
@@ -167,34 +138,30 @@ func (this *Hash) Set(k any, v ...any) {
 
 // Select 指定需要更新的字段
 func (this *Hash) Select(keys ...any) {
-	if this.statement.ram == RAMTypeAlways {
-		return
-	}
 	for _, k := range keys {
-		if id := dataset.ParseInt32(k); id > 0 && !this.has(id) {
-			this.keys[id] = true
+		if id, ok := dataset.TryParseInt32(k); ok {
+			this.statement.Select(id)
 		}
 	}
 }
 
-func (this *Hash) Data() error {
+func (this *Hash) Data() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
 	if len(this.keys) == 0 {
 		return nil
 	}
-	keys := this.keys.Keys()
-	if src, err := this.model.Getter(this.statement.Updater, this.symbol, keys); err != nil {
-		return err
-	} else if src != nil {
+	keys := this.keys.ToInt32()
+	var src map[int32]int64
+	if src, err = this.model.Getter(this.statement.Updater, this.symbol, keys); err == nil {
 		this.dataset.Merge(src)
+		this.statement.date()
 	}
-	this.keys = nil
-	return nil
+	return
 }
 
-func (this *Hash) verify() (err error) {
+func (this *Hash) Verify() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
@@ -203,17 +170,17 @@ func (this *Hash) verify() (err error) {
 			return
 		}
 	}
-	this.statement.verified = true
+	this.statement.verify()
 	return
 }
 
-func (this *Hash) submit() (r []*operator.Operator, err error) {
+func (this *Hash) submit() (err error) {
 	defer this.statement.done()
 	if err = this.Updater.Error; err != nil {
 		return
 	}
-	r = this.statement.operator
-	for _, op := range r {
+	//r = this.statement.operator
+	for _, op := range this.statement.cache {
 		if op.Type.IsValid() {
 			if v, ok := op.Result.(int64); ok {
 				this.dirty[op.IID] = v
@@ -223,6 +190,7 @@ func (this *Hash) submit() (r []*operator.Operator, err error) {
 			}
 		}
 	}
+	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
@@ -238,9 +206,9 @@ func (this *Hash) Range(f func(int32, int64) bool) {
 	}
 }
 
-func (this *Hash) Values() map[int32]int64 {
-	return this.dataset
-}
+//func (this *Hash) Values() map[int32]int64 {
+//	return this.dataset
+//}
 
 func (this *Hash) IType(iid int32) IType {
 	if h, ok := this.model.(modelIType); ok {
@@ -252,24 +220,20 @@ func (this *Hash) IType(iid int32) IType {
 }
 
 func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
-	id, ok := TryParseInt32(k)
+	id, ok := dataset.TryParseInt32(k)
 	if !ok {
 		_ = this.Errorf("updater Hash Operator key must int32:%v", k)
 		return
 	}
 	if t != operator.TypesDel {
-		if _, ok = TryParseInt64(v); !ok {
+		if _, ok = dataset.TryParseInt64(v); !ok {
 			_ = this.Errorf("updater Hash Operator val must int64:%v", v)
 			return
 		}
 	}
 	op := operator.New(t, v, r)
 	op.IID = id
-	if !this.has(id) {
-		this.keys[id] = true
-		this.Updater.changed = true
-	}
-
+	this.statement.Select(id)
 	it := this.IType(op.IID)
 	if it == nil {
 		Logger.Debug("IType not exist:%v", op.IID)
@@ -280,7 +244,4 @@ func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 		listen.Listener(this.Updater, op)
 	}
 	this.statement.Operator(op)
-	if this.verified {
-		this.Updater.Error = this.Parse(op)
-	}
 }

@@ -20,67 +20,26 @@ import (
 type documentModel interface {
 	New(update *Updater) any                                      //初始化对象
 	Field(update *Updater, iid int32) (string, error)             //使用IID映射字段名
-	Getter(update *Updater, model any, keys []string) error       //获取数据接口,需要对data进行赋值,keys==nil 获取所有
+	Getter(update *Updater, data any, keys []string) error        //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, model any, data map[string]any) error //保存数据接口
-}
-
-//type documentKeys map[string]any
-
-type documentDirty map[string]any
-
-func (this documentDirty) Has(k string) bool {
-	if _, ok := this[k]; ok {
-		return true
-	}
-	return false
-}
-
-func (this documentDirty) Keys() (r []string) {
-	for k, _ := range this {
-		r = append(r, k)
-	}
-	return
-}
-
-func (this documentDirty) Merge(src documentDirty) {
-	for k, v := range src {
-		this[k] = v
-	}
 }
 
 // Document 文档存储
 type Document struct {
-	*statement
-	keys  documentDirty //当前执行过程需要查询的key
-	dirty documentDirty //数据缓存
-	model documentModel //handle model
-	//schema  *schema.Schema
-	dataset *dataset.Document
-	history documentDirty // 仅按需获取模式(RAMTypeMaybe)下记录历史拉取记录
+	statement
+	dirty   Dirty             //数据缓存
+	model   documentModel     //handle model
+	dataset *dataset.Document //数据
 }
 
 func NewDocument(u *Updater, model any, ram RAMType) Handle {
 	r := &Document{}
 	r.model = model.(documentModel)
-	r.statement = NewStatement(u, ram, r.operator)
+	r.statement = *NewStatement(u, ram, r.operator)
 	return r
 }
 func (this *Document) Parser() Parser {
 	return ParserTypeDocument
-}
-
-// Has 查询key(DBName)是否已经初始化
-func (this *Document) has(key string) bool {
-	if this.statement.ram == RAMTypeAlways {
-		return true
-	}
-	if this.keys != nil && this.keys.Has(key) {
-		return true
-	}
-	if this.history != nil && this.history.Has(key) {
-		return true
-	}
-	return false
 }
 
 func (this *Document) set(k string, v any) (err error) {
@@ -90,19 +49,22 @@ func (this *Document) set(k string, v any) (err error) {
 	return errors.New("dataset is nil")
 }
 func (this *Document) get(k string) (r any) {
+	if this.dirty != nil && this.dirty.Has(k) {
+		return this.dirty.Get(k)
+	}
 	if this.dataset != nil {
 		return this.dataset.Get(k)
 	}
 	return errors.New("dataset is nil")
 }
 
-func (this *Document) val(k string) (r int64) {
-	if v, ok := this.values[k]; ok {
-		return v
-	}
-	if v := this.get(k); v != nil {
-		r = ParseInt64(v)
-		this.values[k] = r
+func (this *Document) val(k string) (r int64, ok bool) {
+	if r, ok = this.values[k]; ok {
+		return
+	} else if v := this.get(k); v != nil {
+		if r, ok = dataset.TryParseInt64(v); ok {
+			this.values[k] = r
+		}
 	}
 	return
 }
@@ -121,26 +83,16 @@ func (this *Document) save() (err error) {
 func (this *Document) reset() {
 	this.statement.reset()
 	if this.dirty == nil {
-		this.dirty = documentDirty{}
+		this.dirty = Dirty{}
 	}
 	if this.dataset == nil {
 		i := this.model.New(this.Updater)
 		this.dataset = dataset.NewDocument(i)
 	}
-	//if this.schema == nil {
-	//	this.schema, this.Updater.Error = schema.Parse(this.dataset)
-	//}
-	if this.keys == nil && this.ram != RAMTypeAlways {
-		this.keys = documentDirty{}
-	}
-	if this.history == nil && this.ram == RAMTypeMaybe {
-		this.history = documentDirty{}
-	}
 }
 
 // release 运行时释放
 func (this *Document) release() {
-	this.keys = nil
 	this.statement.release()
 	if this.statement.ram == RAMTypeNone {
 		this.dirty = nil
@@ -161,7 +113,7 @@ func (this *Document) destroy() (err error) {
 	return this.save()
 }
 
-// Get k==nil 获取的是整个struct
+// Get  对象中的特定值
 // 不建议使用GET获取特定字段值
 func (this *Document) Get(k any) (r any) {
 	if key, err := this.ObjectId(k); err == nil {
@@ -173,7 +125,7 @@ func (this *Document) Get(k any) (r any) {
 // Val 不建议使用Val获取特定字段值的int64值
 func (this *Document) Val(k any) (r int64) {
 	if key, err := this.ObjectId(k); err == nil {
-		r = this.val(key)
+		r, _ = this.val(key)
 	}
 	return
 }
@@ -190,12 +142,9 @@ func (this *Document) Set(k any, v ...any) {
 }
 
 func (this *Document) Select(keys ...any) {
-	if this.ram == RAMTypeAlways {
-		return
-	}
 	for _, k := range keys {
-		if key, err := this.ObjectId(k); err == nil && !this.has(key) {
-			this.keys[key] = true
+		if key, err := this.ObjectId(k); err == nil {
+			this.statement.Select(key)
 		} else {
 			Logger.Alert(err)
 		}
@@ -209,15 +158,14 @@ func (this *Document) Data() (err error) {
 	if len(this.keys) == 0 {
 		return nil
 	}
-	keys := this.keys.Keys()
-	if err = this.model.Getter(this.Updater, this.dataset.Interface(), keys); err == nil && this.history != nil {
-		this.history.Merge(this.keys)
+	keys := this.keys.ToString()
+	if err = this.model.Getter(this.Updater, this.dataset.Interface(), keys); err == nil {
+		this.statement.date()
 	}
-	this.keys = nil
 	return
 }
 
-func (this *Document) verify() (err error) {
+func (this *Document) Verify() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
@@ -226,7 +174,7 @@ func (this *Document) verify() (err error) {
 			return
 		}
 	}
-	this.statement.verified = true
+	this.statement.verify()
 	return
 }
 
@@ -246,14 +194,14 @@ func (this *Document) Schema() *schema.Schema {
 	return sch
 }
 
-func (this *Document) submit() (r []*operator.Operator, err error) {
+func (this *Document) submit() (err error) {
 	defer this.statement.done()
-	if this.Updater.Error != nil {
-		return nil, this.Updater.Error
+	if err = this.Updater.Error; err != nil {
+		return
 	}
 	//同步到内存
-	r = this.statement.operator
-	for _, op := range r {
+	//r = this.statement.operator
+	for _, op := range this.statement.cache {
 		if op.Type.IsValid() {
 			if e := this.set(op.Key, op.Result); e != nil {
 				Logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.Table(), op.Key, op.Result)
@@ -262,7 +210,7 @@ func (this *Document) submit() (r []*operator.Operator, err error) {
 			}
 		}
 	}
-
+	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
 		err = nil
@@ -274,6 +222,7 @@ func (this *Document) submit() (r []*operator.Operator, err error) {
 func (this *Document) Dirty(k string, v any) {
 	this.dirty[k] = v
 }
+
 func (this *Document) Interface() any {
 	return this.dataset.Interface()
 }
@@ -283,7 +232,7 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 	case string:
 		key = v
 	default:
-		iid := ParseInt32(k)
+		iid := dataset.ParseInt32(k)
 		key, err = this.model.Field(this.Updater, iid)
 	}
 	if err != nil {
@@ -319,7 +268,7 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	case string:
 		op.Key = s
 	default:
-		if op.IID = ParseInt32(k); op.IID > 0 {
+		if op.IID = dataset.ParseInt32(k); op.IID > 0 {
 			op.Key, this.Updater.Error = this.model.Field(this.Updater, op.IID)
 		}
 	}
@@ -332,14 +281,10 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 		return
 	}
 	op.OID = sch.Table
-
 	if this.Updater.Error != nil {
 		return
 	}
-	if !this.has(op.Key) {
-		this.keys[op.Key] = true
-		this.Updater.changed = true
-	}
+	this.statement.Select(op.Key)
 	it := this.IType(op.IID)
 	if it != nil {
 		op.Bag = it.Id()
@@ -348,7 +293,4 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 		}
 	}
 	this.statement.Operator(op)
-	if this.verified {
-		this.Updater.Error = this.Parse(op)
-	}
 }

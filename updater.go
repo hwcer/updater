@@ -10,15 +10,16 @@ import (
 )
 
 type Updater struct {
-	uid     string
-	Time    time.Time
-	Error   error
-	Plugs   Plugs
-	Emitter Emitter
-	strict  bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
-	changed bool
-	handles map[string]Handle
-	dirty   []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
+	uid      string
+	Time     time.Time
+	Error    error
+	Plugs    Plugs
+	Emitter  Emitter
+	strict   bool //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	changed  bool //数据变动,需要使用Data更新数据
+	operated bool //新操作需要重执行Verify检查数据
+	handles  map[string]Handle
+	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 }
 
 func New(uid string) (u *Updater, err error) {
@@ -61,6 +62,7 @@ func (u *Updater) Release() {
 	_ = u.emit(PlugsTypeRelease)
 	u.dirty = nil
 	u.changed = false
+	u.operated = false
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
@@ -156,8 +158,22 @@ func (u *Updater) Select(keys ...any) {
 }
 
 func (u *Updater) Data() (err error) {
-	if u.Error != nil {
-		return u.Error
+	hs := u.Handles()
+	return u.data(hs)
+}
+
+// Verify 手动执行Verify对操作进行检查
+func (u *Updater) Verify() (err error) {
+	hs := u.Handles()
+	return u.verify(hs)
+}
+
+func (u *Updater) data(hs []Handle) (err error) {
+	if err = u.Error; err != nil {
+		return
+	}
+	if !u.changed {
+		return
 	}
 	defer func() {
 		u.changed = false
@@ -165,7 +181,7 @@ func (u *Updater) Data() (err error) {
 	if err = u.emit(PlugsTypeData); err != nil {
 		return
 	}
-	for _, w := range u.Handles() {
+	for _, w := range hs {
 		if err = w.Data(); err != nil {
 			return
 		}
@@ -173,23 +189,36 @@ func (u *Updater) Data() (err error) {
 	return
 }
 
-// Verify 手动执行Verify对操作进行检查
-func (u *Updater) Verify() (hs []Handle, err error) {
-	if u.Error != nil {
-		return nil, u.Error
+func (u *Updater) verify(hs []Handle) (err error) {
+	if err = u.Error; err != nil {
+		return
 	}
-	//r = append(r, u.operator...)
-	if u.changed {
-		if err = u.Data(); err != nil {
-			return
-		}
+	if !u.operated {
+		return
 	}
-	hs = u.Handles()
+	defer func() {
+		u.operated = false
+	}()
 	if err = u.emit(PlugsTypeVerify); err != nil {
 		return
 	}
 	for i := len(hs) - 1; i >= 0; i-- {
-		if err = hs[i].verify(); err != nil {
+		if err = hs[i].Verify(); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (u *Updater) submit(hs []Handle) (err error) {
+	for u.changed || u.operated {
+		if err = u.Error; err != nil {
+			return
+		}
+		if err = u.data(hs); err != nil {
+			return
+		}
+		if err = u.verify(hs); err != nil {
 			return
 		}
 	}
@@ -198,27 +227,24 @@ func (u *Updater) Verify() (hs []Handle, err error) {
 
 // Submit 按照MODEL的倒序执行
 func (u *Updater) Submit() (r []*operator.Operator, err error) {
-	var hs []Handle
-	if hs, err = u.Verify(); err != nil {
+	if err = u.Error; err != nil {
+		return
+	}
+	hs := u.Handles()
+	if err = u.submit(hs); err != nil {
 		return
 	}
 	if err = u.emit(PlugsTypeSubmit); err != nil {
 		return
 	}
-	var opts []*operator.Operator
 	for i := len(hs) - 1; i >= 0; i-- {
-		if opts, err = hs[i].submit(); err != nil {
+		if err = hs[i].submit(); err != nil {
 			return
-		} else if len(opts) > 0 {
-			r = append(r, opts...)
 		}
 	}
-	if len(u.dirty) > 0 {
-		r = append(r, u.dirty...)
-		u.dirty = nil
-	}
-
 	_ = u.emit(PlugsTypeSuccess)
+	r = u.dirty
+	u.dirty = nil
 	return
 }
 
@@ -235,7 +261,7 @@ func (u *Updater) ParseId(key any) (iid int32, err error) {
 	if v, ok := key.(string); ok {
 		iid, err = Config.ParseId(u, v)
 	} else {
-		iid = ParseInt32(key)
+		iid = dataset.ParseInt32(key)
 	}
 	return
 }
@@ -318,6 +344,6 @@ func (u *Updater) Destroy() (err error) {
 }
 
 // Dirty 设置脏数据,手动更新到客户端,不进行任何操作
-func (u *Updater) Dirty(ops ...*operator.Operator) {
-	u.dirty = append(u.dirty, ops...)
+func (u *Updater) Dirty(opt ...*operator.Operator) {
+	u.dirty = append(u.dirty, opt...)
 }

@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -29,14 +30,15 @@ func documentParseResolve(this *Document, op *operator.Operator) (err error) {
 	return
 }
 func documentParseAdd(this *Document, op *operator.Operator) (err error) {
-	r := this.val(op.Key) + op.Value
+	r, _ := this.val(op.Key)
+	r += op.Value
 	op.Result = r
 	this.values[op.Key] = r
 	return
 }
 
 func documentParseSub(this *Document, op *operator.Operator) (err error) {
-	d := this.val(op.Key)
+	d, _ := this.val(op.Key)
 	if op.Value > d && this.Updater.strict {
 		return ErrItemNotEnough(op.Key, op.Value, d)
 	}
@@ -51,14 +53,15 @@ func documentParseSub(this *Document, op *operator.Operator) (err error) {
 
 func documentParseSet(this *Document, op *operator.Operator) (err error) {
 	op.Type = operator.TypesSet
-	if r, ok := TryParseInt64(op.Result); ok {
+	if r, ok := dataset.TryParseInt64(op.Result); ok {
 		this.values[op.Key] = r
 	}
 	return
 }
 
 func documentParseMax(this *Document, op *operator.Operator) (err error) {
-	if op.Value > this.val(op.Key) {
+	v, _ := this.val(op.Key)
+	if op.Value > v {
 		op.Result = op.Value
 		err = documentParseSet(this, op)
 	} else {
@@ -68,7 +71,8 @@ func documentParseMax(this *Document, op *operator.Operator) (err error) {
 }
 
 func documentParseMin(this *Document, op *operator.Operator) (err error) {
-	if op.Value < this.val(op.Key) {
+	v, _ := this.val(op.Key)
+	if op.Value < v {
 		op.Result = op.Value
 		err = documentParseSet(this, op)
 	} else {

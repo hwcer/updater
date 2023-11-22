@@ -20,8 +20,7 @@ type collectionUpsert interface {
 }
 
 type Collection struct {
-	*statement
-	keys    documentDirty
+	statement
 	model   collectionModel
 	dirty   dataset.Dirty
 	dataset dataset.Collection
@@ -30,25 +29,11 @@ type Collection struct {
 func NewCollection(u *Updater, model any, ram RAMType) Handle {
 	r := &Collection{}
 	r.model = model.(collectionModel)
-	r.statement = NewStatement(u, ram, r.operator)
+	r.statement = *NewStatement(u, ram, r.operator)
 	return r
 }
 func (this *Collection) Parser() Parser {
 	return ParserTypeCollection
-}
-
-// Has 查询key(DBName)是否已经初始化
-func (this *Collection) has(key string) bool {
-	if this.ram == RAMTypeAlways {
-		return true
-	}
-	if this.keys != nil && this.keys.Has(key) {
-		return true
-	}
-	if this.dirty.Has(key) || this.dataset.Has(key) {
-		return true
-	}
-	return false
 }
 
 func (this *Collection) get(k string) (r *dataset.Document) {
@@ -58,8 +43,7 @@ func (this *Collection) get(k string) (r *dataset.Document) {
 func (this *Collection) val(id string) (r int64, ok bool) {
 	if r, ok = this.values[id]; ok {
 		return
-	}
-	if d := this.dataset.Get(id); d != nil {
+	} else if d := this.dataset.Get(id); d != nil {
 		ok = true
 		r = this.dataset.Val(id)
 		this.values[id] = r
@@ -86,13 +70,9 @@ func (this *Collection) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.New()
 	}
-	if this.keys == nil && this.ram != RAMTypeAlways {
-		this.keys = documentDirty{}
-	}
 }
 
 func (this *Collection) release() {
-	this.keys = nil
 	this.statement.release()
 	if this.statement.ram == RAMTypeNone {
 		this.dirty = nil
@@ -136,9 +116,7 @@ func (this *Collection) Get(key any) (r any) {
 // Val 直接获取 item中的val值,不可叠加道具只能使用oid获取
 func (this *Collection) Val(key any) (r int64) {
 	if oid, err := this.ObjectId(key); err == nil {
-		if i := this.get(oid); i != nil {
-			r = i.VAL()
-		}
+		r, _ = this.val(oid)
 	}
 	return
 }
@@ -177,23 +155,20 @@ func (this *Collection) New(v dataset.Model) (err error) {
 		return this.Updater.Errorf(err)
 	}
 	this.statement.Operator(op)
-	if this.verified {
-		if err = this.Parse(op); err != nil {
-			return this.Updater.Errorf(err)
-		}
-	}
+	//if this.verify {
+	//	if err = this.Parse(op); err != nil {
+	//		return this.Updater.Errorf(err)
+	//	}
+	//}
 	return
 }
 
 func (this *Collection) Select(keys ...any) {
-	if this.ram == RAMTypeAlways {
-		return
-	}
 	for _, k := range keys {
-		if oid, err := this.ObjectId(k); err == nil && !this.has(oid) {
-			this.keys[oid] = true
-		} else if err != nil {
-			Logger.Debug(err)
+		if oid, err := this.ObjectId(k); err == nil {
+			this.statement.Select(oid)
+		} else {
+			Logger.Alert(err)
 		}
 	}
 }
@@ -205,13 +180,14 @@ func (this *Collection) Data() (err error) {
 	if len(this.keys) == 0 {
 		return nil
 	}
-	keys := this.keys.Keys()
-	err = this.model.Getter(this.Updater, keys, this.Receive)
-	this.keys = documentDirty{}
+	keys := this.keys.ToString()
+	if err = this.model.Getter(this.Updater, keys, this.Receive); err == nil {
+		this.statement.date()
+	}
 	return
 }
 
-func (this *Collection) verify() (err error) {
+func (this *Collection) Verify() (err error) {
 	if this.Updater.Error != nil {
 		return this.Updater.Error
 	}
@@ -220,18 +196,18 @@ func (this *Collection) verify() (err error) {
 			return
 		}
 	}
-	this.statement.verified = true
+	this.statement.verify()
 	return
 }
 
-func (this *Collection) submit() (r []*operator.Operator, err error) {
+func (this *Collection) submit() (err error) {
 	defer this.statement.done()
-	if this.Updater.Error != nil {
-		return nil, this.Updater.Error
+	if err = this.Updater.Error; err != nil {
+		return
 	}
-	r = this.statement.operator
+	//r = this.statement.operator
 	//同步到内存
-	for _, op := range r {
+	for _, op := range this.statement.cache {
 		if op.Type.IsValid() {
 			if err = this.dataset.Update(op); err == nil {
 				this.dirty.Update(op)
@@ -241,7 +217,7 @@ func (this *Collection) submit() (r []*operator.Operator, err error) {
 			}
 		}
 	}
-
+	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		Logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
@@ -279,26 +255,26 @@ func (this *Collection) ITypeCollection(iid int32) (r ITypeCollection) {
 	return
 }
 
-func (this *Collection) mayChange(op *operator.Operator) error {
+func (this *Collection) mayChange(op *operator.Operator) (err error) {
 	it := this.ITypeCollection(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
 	op.Bag = it.Id()
 	//可以堆叠道具
-	if it.Stacked() {
-		if op.OID == "" {
-			op.OID, _ = it.ObjectId(this.Updater, op.IID)
-		}
-		if !this.has(op.OID) {
-			this.keys[op.OID] = true
-			this.Updater.changed = true
-		}
+	if op.OID == "" && it.Stacked() {
+		op.OID, err = it.ObjectId(this.Updater, op.IID)
+	}
+	if err != nil {
+		return
+	}
+	if op.OID != "" {
+		this.statement.Select(op.OID)
 	}
 	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}
-	return nil
+	return
 }
 
 func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
@@ -310,7 +286,7 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	case string:
 		op.OID = d
 	default:
-		op.IID = ParseInt32(k)
+		op.IID = dataset.ParseInt32(k)
 	}
 	if op.IID == 0 {
 		op.IID, this.Updater.Error = Config.ParseId(this.Updater, op.OID)
@@ -323,9 +299,6 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 		return
 	}
 	this.statement.Operator(op)
-	if this.verified {
-		this.Updater.Error = this.Parse(op)
-	}
 }
 
 // Receive 接收业务逻辑层数据
@@ -337,7 +310,7 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 	if v, ok := key.(string); ok {
 		return v, nil
 	}
-	iid := ParseInt32(key)
+	iid := dataset.ParseInt32(key)
 	if iid <= 0 {
 		return "", fmt.Errorf("iid empty:%v", iid)
 	}
