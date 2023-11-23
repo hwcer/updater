@@ -216,6 +216,7 @@ func (u *Updater) submit(hs []Handle) (err error) {
 		if err = u.verify(hs); err != nil {
 			return
 		}
+		u.emit(PlugsTypeSubmit)
 	}
 	return
 }
@@ -229,7 +230,7 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if err = u.submit(hs); err != nil {
 		return
 	}
-	u.emit(PlugsTypeSubmit)
+
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].submit(); err != nil {
 			return
