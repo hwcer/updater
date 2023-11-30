@@ -52,7 +52,7 @@ func (this *Collection) val(id string) (r int64, ok bool) {
 }
 
 func (this *Collection) save() (err error) {
-	if len(this.dirty) == 0 {
+	if this.Updater.Async || len(this.dirty) == 0 {
 		return
 	}
 	bulkWrite := this.model.BulkWrite(this.Updater)
@@ -74,7 +74,7 @@ func (this *Collection) reset() {
 
 func (this *Collection) release() {
 	this.statement.release()
-	if this.statement.ram == RAMTypeNone {
+	if !this.Updater.Async && this.statement.ram == RAMTypeNone {
 		this.dirty = nil
 		this.dataset = nil
 	}
@@ -261,6 +261,12 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 		return ErrITypeNotExist(op.IID)
 	}
 	op.Bag = it.Id()
+	if listen, ok := it.(ITypeListener); ok {
+		listen.Listener(this.Updater, op)
+	}
+	if op.Type == operator.TypesDrop || op.Type == operator.TypesResolve {
+		return nil
+	}
 	//可以堆叠道具
 	if op.OID == "" && it.Stacked() {
 		op.OID, err = it.ObjectId(this.Updater, op.IID)
@@ -271,9 +277,7 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 	if op.OID != "" {
 		this.statement.Select(op.OID)
 	}
-	if listen, ok := it.(ITypeListener); ok {
-		listen.Listener(this.Updater, op)
-	}
+
 	return
 }
 

@@ -23,6 +23,7 @@ type Handle interface {
 	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator,不会触发任何事件
 	IType(int32) IType                              //根据iid获取IType
 	init() error                                    //构造方法
+	save() error                                    //保存所有数据
 	reset()                                         //运行时开始时
 	release()                                       //运行时释放缓存信息,并返回所有操作过程
 	destroy() error                                 //同步所有数据到数据库,手动同步,或者销毁时执行

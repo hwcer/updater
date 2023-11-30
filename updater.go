@@ -10,28 +10,22 @@ import (
 )
 
 type Updater struct {
-	uid     string
-	Time    time.Time
-	Error   error
-	Events  Events
-	Emitter Emitter
-
+	uid      string
+	Time     time.Time
+	Error    error
+	Events   Events
+	Emitter  Emitter
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	strict   bool                 //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	changed  bool                 //数据变动,需要使用Data更新数据
 	operated bool                 //新操作需要重执行Verify检查数据
-	handles  map[string]Handle
+	handles  map[string]Handle    //Handle
+	Async    bool                 //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
 }
 
 func New(uid string) (u *Updater, err error) {
 	u = &Updater{uid: uid}
-	//u.Events = &Events{}
-	u.handles = make(map[string]Handle)
-	for _, model := range modelsRank {
-		u.handles[model.name] = handles[model.parser](u, model.model, model.ram)
-	}
-
-	err = u.init()
+	err = u.Reload()
 	return
 }
 
@@ -49,6 +43,33 @@ func (u *Updater) Errorf(format any, args ...any) error {
 		u.Error = fmt.Errorf("%v", v)
 	}
 	return u.Error
+}
+
+// Save 保存所有缓存数并自动关闭异步模式
+func (u *Updater) Save() (err error) {
+	u.Async = false
+	for _, w := range u.Handles() {
+		if err = w.save(); err != nil {
+			return
+		}
+	}
+	return
+}
+
+// Reload 重新加载数据,自动关闭异步数据
+func (u *Updater) Reload() (err error) {
+	u.Time = time.Now()
+	u.Async = false
+	u.handles = make(map[string]Handle)
+	for _, model := range modelsRank {
+		h := handles[model.parser](u, model.model, model.ram)
+		if err = h.init(); err != nil {
+			return
+		}
+		u.handles[model.name] = h
+	}
+	u.emit(PlugsTypeInit)
+	return
 }
 
 // Reset 重置,每次请求开始时调用
@@ -78,18 +99,6 @@ func (u *Updater) Release() {
 
 func (u *Updater) emit(t PlugsType) {
 	u.Events.emit(u, t)
-}
-
-// Init 构造函数 NEW之后立即调用
-func (u *Updater) init() (err error) {
-	u.Time = time.Now()
-	for _, w := range u.Handles() {
-		if err = w.init(); err != nil {
-			return
-		}
-	}
-	u.emit(PlugsTypeInit)
-	return
 }
 
 func (u *Updater) Uid() string {

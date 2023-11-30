@@ -70,7 +70,7 @@ func (this *Document) val(k string) (r int64, ok bool) {
 }
 
 func (this *Document) save() (err error) {
-	if len(this.dirty) == 0 {
+	if this.Updater.Async || len(this.dirty) == 0 {
 		return
 	}
 	if err = this.model.Setter(this.statement.Updater, this.dataset.Interface(), this.dirty); err == nil {
@@ -94,7 +94,7 @@ func (this *Document) reset() {
 // release 运行时释放
 func (this *Document) release() {
 	this.statement.release()
-	if this.statement.ram == RAMTypeNone {
+	if !this.Updater.Async && this.statement.ram == RAMTypeNone {
 		this.dirty = nil
 		this.dataset = nil
 	}

@@ -36,8 +36,10 @@ func NewStatement(u *Updater, ram RAMType, handle operatorHandle) *statement {
 
 func (stmt *statement) done() {
 	//stmt.cache = append(stmt.cache, stmt.operator...)
-	stmt.keys = nil
-	stmt.values = map[any]int64{}
+	if !stmt.Updater.Async {
+		stmt.keys = nil
+		stmt.values = map[any]int64{}
+	}
 	stmt.operator = nil
 	//stmt.verify = false
 	stmt.Updater.Error = nil
@@ -136,30 +138,30 @@ func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
 //	}
 //}
 
-func (this *statement) Add(k any, v int32) {
+func (stmt *statement) Add(k any, v int32) {
 	if v <= 0 {
 		return
 	}
-	this.handle(operator.TypesAdd, k, int64(v), nil)
+	stmt.handle(operator.TypesAdd, k, int64(v), nil)
 }
 
-func (this *statement) Sub(k any, v int32) {
+func (stmt *statement) Sub(k any, v int32) {
 	if v <= 0 {
 		return
 	}
-	this.handle(operator.TypesSub, k, int64(v), nil)
+	stmt.handle(operator.TypesSub, k, int64(v), nil)
 }
 
-func (this *statement) Max(k any, v int64) {
-	this.handle(operator.TypesMax, k, v, nil)
+func (stmt *statement) Max(k any, v int64) {
+	stmt.handle(operator.TypesMax, k, v, nil)
 }
 
-func (this *statement) Min(k any, v int64) {
-	this.handle(operator.TypesMin, k, v, nil)
+func (stmt *statement) Min(k any, v int64) {
+	stmt.handle(operator.TypesMin, k, v, nil)
 }
 
-func (this *statement) Del(k any) {
-	this.handle(operator.TypesDel, k, 0, nil)
+func (stmt *statement) Del(k any) {
+	stmt.handle(operator.TypesDel, k, 0, nil)
 }
 
 // Set set结果

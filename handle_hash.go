@@ -63,7 +63,7 @@ func (this *Hash) val(iid int32) (r int64, ok bool) {
 }
 
 func (this *Hash) save() (err error) {
-	if len(this.dirty) == 0 {
+	if this.Updater.Async || len(this.dirty) == 0 {
 		return
 	}
 	if err = this.model.Setter(this.statement.Updater, this.symbol, this.dirty); err == nil {
@@ -76,6 +76,7 @@ func (this *Hash) save() (err error) {
 func (this *Hash) reset() {
 	this.statement.reset()
 	if s := this.model.Symbol(this.Updater); s != this.symbol {
+		//todo Async
 		if err := this.save(); err != nil {
 			Logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dirty, err)
 		}
@@ -94,7 +95,7 @@ func (this *Hash) reset() {
 // release 运行时释放
 func (this *Hash) release() {
 	this.statement.release()
-	if this.statement.ram == RAMTypeNone {
+	if !this.Updater.Async && this.statement.ram == RAMTypeNone {
 		this.dirty = nil
 		this.dataset = nil
 	}
