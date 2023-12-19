@@ -23,6 +23,7 @@ type Collection struct {
 	statement
 	model   collectionModel
 	dirty   dataset.Dirty
+	remove  []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset dataset.Collection
 }
 
@@ -222,6 +223,12 @@ func (this *Collection) submit() (err error) {
 		Logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
+	if len(this.remove) > 0 {
+		for _, k := range this.remove {
+			this.dataset.Del(k)
+		}
+		this.remove = nil
+	}
 
 	return
 }
@@ -336,4 +343,16 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 		err = ErrUnableUseIIDOperation
 	}
 	return
+}
+
+// Remove 从内存中移除可能近期不在需要的数据,仅在RAMTypeMaybe模式下生效
+func (this *Collection) Remove(keys ...any) {
+	if this.ram != RAMTypeMaybe {
+		return
+	}
+	for _, k := range keys {
+		if oid, err := this.ObjectId(k); err == nil {
+			this.remove = append(this.remove, oid)
+		}
+	}
 }
