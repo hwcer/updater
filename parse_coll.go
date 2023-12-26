@@ -16,6 +16,7 @@ func init() {
 	collectionParseHandle[operator.TypesDel] = collectionHandleDel
 	collectionParseHandle[operator.TypesMax] = collectionHandleMax
 	collectionParseHandle[operator.TypesMin] = collectionHandleMin
+	collectionParseHandle[operator.TypesDrop] = collectionHandleResolve
 	collectionParseHandle[operator.TypesResolve] = collectionHandleResolve
 }
 

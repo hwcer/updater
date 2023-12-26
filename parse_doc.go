@@ -14,6 +14,7 @@ func init() {
 	documentParseHandle[operator.TypesSub] = documentParseSub
 	documentParseHandle[operator.TypesMax] = documentParseMax
 	documentParseHandle[operator.TypesMin] = documentParseMin
+	documentParseHandle[operator.TypesDrop] = documentParseResolve
 	documentParseHandle[operator.TypesResolve] = documentParseResolve
 }
 

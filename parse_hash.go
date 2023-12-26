@@ -9,12 +9,13 @@ import (
 var hashParseHandle = make(map[operator.Types]func(*Hash, *operator.Operator) error)
 
 func init() {
-	//hashParseHandle[operator.TypesDel] = hashParseDel
 	hashParseHandle[operator.TypesAdd] = hashParseAdd
 	hashParseHandle[operator.TypesSub] = hashParseSub
+	hashParseHandle[operator.TypesSet] = hashParseSet
+	hashParseHandle[operator.TypesDel] = hashParseDel
 	hashParseHandle[operator.TypesMax] = hashParseMax
 	hashParseHandle[operator.TypesMin] = hashParseMin
-	hashParseHandle[operator.TypesSet] = hashParseSet
+	hashParseHandle[operator.TypesDrop] = hashParseResolve
 	hashParseHandle[operator.TypesResolve] = hashParseResolve
 }
 
@@ -59,11 +60,11 @@ func hashParseSet(this *Hash, op *operator.Operator) (err error) {
 	return
 }
 
-//func hashParseDel(this *Hash, op *operator.Operator) (err error) {
-//	op.Result = ZeroInt64
-//	this.values[op.IID] = ZeroInt64
-//	return
-//}
+func hashParseDel(this *Hash, op *operator.Operator) (err error) {
+	op.Result = 0
+	this.values[op.IID] = 0
+	return
+}
 
 func hashParseMax(this *Hash, op *operator.Operator) (err error) {
 	v, _ := this.val(op.IID)
