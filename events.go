@@ -1,31 +1,28 @@
 package updater
 
-type PlugsType int8
+type EventType int8
 
 const (
-	PlugsTypeInit    PlugsType = iota //初始化后
-	PlugsTypeData                     //Data前
-	PlugsTypeVerify                   //verify前
-	PlugsTypeSubmit                   //submit 前
-	PlugsTypeSuccess                  //全部执行结束
-	PlugsTypeRelease                  //Release 释放前
-	//PlugsTypeDestroy                  //销毁前,需要实例化数据
+	EventTypePreData    EventType = iota //Data前
+	EventTypePreVerify                   //verify前
+	EventTypePreSubmit                   //submit 前
+	EventTypePreRelease                  //Release 释放前
 )
 
 type Event func(u *Updater) bool
 
 type Middleware interface {
-	Emit(u *Updater, t PlugsType) bool
+	Emit(u *Updater, t EventType) bool
 }
 
 type Events struct {
-	events      map[PlugsType][]Event
+	events      map[EventType][]Event
 	middlewares map[string]Middleware
 }
 
-func (e *Events) On(t PlugsType, handle Event) {
+func (e *Events) On(t EventType, handle Event) {
 	if e.events == nil {
-		e.events = map[PlugsType][]Event{}
+		e.events = map[EventType][]Event{}
 	}
 	e.events[t] = append(e.events[t], handle)
 }
@@ -72,7 +69,7 @@ func (e *Events) LoadOrCreate(name string, creator func() Middleware) (v Middlew
 	return
 }
 
-func (e *Events) emit(u *Updater, t PlugsType) {
+func (e *Events) emit(u *Updater, t EventType) {
 	if u.Error != nil {
 		return
 	}
@@ -85,7 +82,7 @@ func (e *Events) release() {
 	e.middlewares = nil
 }
 
-func (e *Events) emitMiddleware(u *Updater, t PlugsType) {
+func (e *Events) emitMiddleware(u *Updater, t EventType) {
 	if len(e.middlewares) == 0 {
 		return
 	}
@@ -98,7 +95,7 @@ func (e *Events) emitMiddleware(u *Updater, t PlugsType) {
 	e.middlewares = mw
 }
 
-func (e *Events) emitEvents(u *Updater, t PlugsType) {
+func (e *Events) emitEvents(u *Updater, t EventType) {
 	if events := e.events[t]; len(events) > 0 {
 		var es []Event
 		for _, h := range events {

@@ -74,8 +74,8 @@ type ticketPlug struct {
 	dict map[int32]ticketConfig
 }
 
-func (this *ticketPlug) Emit(u *updater.Updater, t updater.PlugsType) error {
-	if t == updater.PlugsTypeVerify && len(this.dict) > 0 {
+func (this *ticketPlug) Emit(u *updater.Updater, t updater.EventType) error {
+	if t == updater.EventTypePreVerify && len(this.dict) > 0 {
 		return this.checkAllTicket(u)
 	}
 	return nil

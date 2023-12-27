@@ -29,7 +29,7 @@ func New(uid string) (u *Updater, err error) {
 	return
 }
 
-func (u *Updater) On(t PlugsType, handle Event) {
+func (u *Updater) On(t EventType, handle Event) {
 	u.Events.On(t, handle)
 }
 
@@ -68,7 +68,7 @@ func (u *Updater) Reload() (err error) {
 		}
 		u.handles[model.name] = h
 	}
-	u.emit(PlugsTypeInit)
+	//u.emit(PlugsTypeInit)
 	return
 }
 
@@ -85,7 +85,7 @@ func (u *Updater) Reset() {
 // 无论有无错误,都应该执行Release
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
-	u.emit(PlugsTypeRelease)
+	u.emit(EventTypePreRelease)
 	u.dirty = nil
 	u.changed = false
 	u.operated = false
@@ -97,7 +97,7 @@ func (u *Updater) Release() {
 	return
 }
 
-func (u *Updater) emit(t PlugsType) {
+func (u *Updater) emit(t EventType) {
 	u.Events.emit(u, t)
 }
 
@@ -187,7 +187,7 @@ func (u *Updater) data(hs []Handle) (err error) {
 		return
 	}
 	u.changed = false
-	u.emit(PlugsTypeData)
+	u.emit(EventTypePreData)
 	for _, w := range hs {
 		if err = w.Data(); err != nil {
 			return
@@ -204,7 +204,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 		return
 	}
 	u.operated = false
-	u.emit(PlugsTypeVerify)
+	u.emit(EventTypePreVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].Verify(); err != nil {
 			return
@@ -225,7 +225,7 @@ func (u *Updater) submit(hs []Handle) (err error) {
 		if err = u.verify(hs); err != nil {
 			return
 		}
-		u.emit(PlugsTypeSubmit)
+		u.emit(EventTypePreSubmit)
 	}
 	return
 }
@@ -245,7 +245,7 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			return
 		}
 	}
-	u.emit(PlugsTypeSuccess)
+	//u.emit(PlugsTypeSuccess)
 	r = u.dirty
 	u.dirty = nil
 	return
