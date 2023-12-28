@@ -75,7 +75,7 @@ type ticketPlug struct {
 }
 
 func (this *ticketPlug) Emit(u *updater.Updater, t updater.EventType) error {
-	if t == updater.EventTypePreVerify && len(this.dict) > 0 {
+	if t == updater.OnPreVerify && len(this.dict) > 0 {
 		return this.checkAllTicket(u)
 	}
 	return nil

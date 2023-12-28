@@ -29,7 +29,7 @@ func New(uid string) (u *Updater, err error) {
 	return
 }
 
-func (u *Updater) On(t EventType, handle Event) {
+func (u *Updater) On(t EventType, handle Listener) {
 	u.Events.On(t, handle)
 }
 
@@ -85,7 +85,7 @@ func (u *Updater) Reset() {
 // 无论有无错误,都应该执行Release
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
-	u.emit(EventTypePreRelease)
+	u.emit(OnPreRelease)
 	u.dirty = nil
 	u.changed = false
 	u.operated = false
@@ -187,7 +187,7 @@ func (u *Updater) data(hs []Handle) (err error) {
 		return
 	}
 	u.changed = false
-	u.emit(EventTypePreData)
+	u.emit(OnPreData)
 	for _, w := range hs {
 		if err = w.Data(); err != nil {
 			return
@@ -204,7 +204,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 		return
 	}
 	u.operated = false
-	u.emit(EventTypePreVerify)
+	u.emit(OnPreVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].Verify(); err != nil {
 			return
@@ -225,7 +225,7 @@ func (u *Updater) submit(hs []Handle) (err error) {
 		if err = u.verify(hs); err != nil {
 			return
 		}
-		u.emit(EventTypePreSubmit)
+		u.emit(OnPreSubmit)
 	}
 	return
 }

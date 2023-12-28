@@ -3,26 +3,26 @@ package updater
 type EventType int8
 
 const (
-	EventTypePreData    EventType = iota //Data前
-	EventTypePreVerify                   //verify前
-	EventTypePreSubmit                   //submit 前
-	EventTypePreRelease                  //Release 释放前
+	OnPreData    EventType = iota //Data前
+	OnPreVerify                   //verify前
+	OnPreSubmit                   //submit 前
+	OnPreRelease                  //Release 释放前
 )
 
-type Event func(u *Updater) bool
+type Listener func(u *Updater) bool
 
 type Middleware interface {
 	Emit(u *Updater, t EventType) bool
 }
 
 type Events struct {
-	events      map[EventType][]Event
+	events      map[EventType][]Listener
 	middlewares map[string]Middleware
 }
 
-func (e *Events) On(t EventType, handle Event) {
+func (e *Events) On(t EventType, handle Listener) {
 	if e.events == nil {
-		e.events = map[EventType][]Event{}
+		e.events = map[EventType][]Listener{}
 	}
 	e.events[t] = append(e.events[t], handle)
 }
@@ -97,7 +97,7 @@ func (e *Events) emitMiddleware(u *Updater, t EventType) {
 
 func (e *Events) emitEvents(u *Updater, t EventType) {
 	if events := e.events[t]; len(events) > 0 {
-		var es []Event
+		var es []Listener
 		for _, h := range events {
 			if h(u) {
 				es = append(es, h)
