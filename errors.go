@@ -45,4 +45,5 @@ func ErrOIDEmpty(args ...any) *ErrMsg {
 
 var (
 	ErrUnableUseIIDOperation = NewError("unable to use iid operation")
+	ErrSubmitEndlessLoop     = NewError("submit endless loop") //出现死循环,检查事件和插件是否正确移除(返回false)
 )

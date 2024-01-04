@@ -215,6 +215,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 }
 
 func (u *Updater) submit(hs []Handle) (err error) {
+	i := int8(1)
 	for u.changed || u.operated {
 		if err = u.Error; err != nil {
 			return
@@ -226,6 +227,9 @@ func (u *Updater) submit(hs []Handle) (err error) {
 			return
 		}
 		u.emit(OnPreSubmit)
+		if i = i + 1; i >= 100 {
+			return ErrSubmitEndlessLoop
+		}
 	}
 	return
 }
