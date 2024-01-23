@@ -85,6 +85,10 @@ func (this Keys) Has(k any) (ok bool) {
 	return
 }
 
+func (this Keys) Remove(k any) {
+	delete(this, k)
+}
+
 func (this Keys) ToString() (r []string) {
 	for k, _ := range this {
 		if sk, ok := k.(string); ok {

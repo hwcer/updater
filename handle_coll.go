@@ -226,6 +226,7 @@ func (this *Collection) submit() (err error) {
 	if len(this.remove) > 0 {
 		for _, k := range this.remove {
 			this.dataset.Del(k)
+			this.statement.history.Remove(k)
 		}
 		this.remove = nil
 	}
