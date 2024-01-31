@@ -3,6 +3,7 @@ package updater
 import (
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
@@ -42,7 +43,7 @@ func NewHash(u *Updater, model any, ram RAMType) Handle {
 	if sch, err := schema.Parse(model); err == nil {
 		r.name = sch.Table
 	} else {
-		Logger.Fatal(err)
+		logger.Fatal(err)
 	}
 	return r
 }
@@ -78,7 +79,7 @@ func (this *Hash) reset() {
 	if s := this.model.Symbol(this.Updater); s != this.symbol {
 		//todo Async
 		if err := this.save(); err != nil {
-			Logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dirty, err)
+			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dirty, err)
 		}
 		this.symbol = s
 		this.dirty = nil
@@ -201,7 +202,7 @@ func (this *Hash) submit() (err error) {
 	}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
+		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
 	}
 	return
@@ -245,7 +246,7 @@ func (this *Hash) operator(t operator.Types, k any, v int64, r any) {
 	this.statement.Select(id)
 	it := this.IType(op.IID)
 	if it == nil {
-		Logger.Debug("IType not exist:%v", op.IID)
+		logger.Debug("IType not exist:%v", op.IID)
 		return
 	}
 	op.Bag = it.Id()

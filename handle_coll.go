@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
@@ -97,7 +98,7 @@ func (this *Collection) Has(id any) (r bool) {
 	if oid, err := this.ObjectId(id); err == nil {
 		r = this.dirty.Has(oid) || this.dataset.Has(oid)
 	} else {
-		Logger.Debug(err)
+		logger.Debug(err)
 	}
 	return
 }
@@ -109,7 +110,7 @@ func (this *Collection) Get(key any) (r any) {
 			r = i.Interface()
 		}
 	} else {
-		Logger.Debug(err)
+		logger.Debug(err)
 	}
 	return
 }
@@ -169,7 +170,7 @@ func (this *Collection) Select(keys ...any) {
 		if oid, err := this.ObjectId(k); err == nil {
 			this.statement.Select(oid)
 		} else {
-			Logger.Alert(err)
+			logger.Alert(err)
 		}
 	}
 }
@@ -213,14 +214,14 @@ func (this *Collection) submit() (err error) {
 			if err = this.dataset.Update(op); err == nil {
 				this.dirty.Update(op)
 			} else {
-				Logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v", err, op)
+				logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v", err, op)
 				err = nil
 			}
 		}
 	}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		Logger.Alert("同步数据失败,等待下次同步:%v", err)
+		logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
 	if len(this.remove) > 0 {

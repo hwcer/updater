@@ -1,11 +1,8 @@
 package updater
 
 import (
-	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/operator"
 )
-
-var Logger logger.Interface = logger.Default()
 
 type Handle interface {
 	Del(k any)                                      //删除道具

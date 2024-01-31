@@ -150,7 +150,7 @@ func (this *Document) Select(keys ...any) {
 		if key, err := this.ObjectId(k); err == nil {
 			this.statement.Select(key)
 		} else {
-			Logger.Alert(err)
+			logger.Alert(err)
 		}
 	}
 }
@@ -208,7 +208,7 @@ func (this *Document) submit() (err error) {
 	for _, op := range this.statement.cache {
 		if op.Type.IsValid() {
 			if e := this.set(op.Key, op.Result); e != nil {
-				Logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.Table(), op.Key, op.Result)
+				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.Table(), op.Key, op.Result)
 			} else {
 				this.dirty[op.Key] = op.Result
 			}
@@ -216,7 +216,7 @@ func (this *Document) submit() (err error) {
 	}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		Logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
+		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
 		err = nil
 	}
 	return
@@ -264,7 +264,7 @@ func (this *Document) IType(iid int32) IType {
 }
 func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	if t == operator.TypesDel {
-		Logger.Debug("updater document del is disabled")
+		logger.Debug("updater document del is disabled")
 		return
 	}
 	op := operator.New(t, v, r)
