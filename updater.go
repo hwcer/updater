@@ -11,17 +11,17 @@ import (
 )
 
 type Updater struct {
-	uid      string
-	Time     time.Time
-	Error    error
-	Events   Events
-	Emitter  Emitter
-	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
-	strict   bool                 //非严格模式下,扣除道具不足时允许扣成0,而不是报错
-	changed  bool                 //数据变动,需要使用Data更新数据
-	operated bool                 //新操作需要重执行Verify检查数据
-	handles  map[string]Handle    //Handle
-	Async    bool                 //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
+	uid     string
+	Time    time.Time
+	Error   error
+	Events  Events
+	Emitter Emitter
+	dirty   []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
+	//strict   bool                 //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	changed  bool              //数据变动,需要使用Data更新数据
+	operated bool              //新操作需要重执行Verify检查数据
+	handles  map[string]Handle //Handle
+	Async    bool              //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
 }
 
 func New(uid string) (u *Updater, err error) {
@@ -76,7 +76,7 @@ func (u *Updater) Reload() (err error) {
 // Reset 重置,每次请求开始时调用
 func (u *Updater) Reset() {
 	u.Time = utils.Time.Now()
-	u.strict = true
+	//u.strict = true
 	for _, w := range u.Handles() {
 		w.reset()
 	}
@@ -107,9 +107,9 @@ func (u *Updater) Uid() string {
 }
 
 // Strict 开启或者关闭严格模式,关闭严格模式道具不足时扣成0,仅当前请求生效
-func (u *Updater) Strict(v bool) {
-	u.strict = v
-}
+//func (u *Updater) Strict(v bool) {
+//	u.strict = v
+//}
 
 func (u *Updater) Get(id any) (r any) {
 	if w := u.handle(id); w != nil {

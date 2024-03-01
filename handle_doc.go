@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"errors"
 	"fmt"
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
@@ -27,44 +26,41 @@ type documentModel interface {
 // Document 文档存储
 type Document struct {
 	statement
-	dirty   Dirty             //数据缓存
-	model   documentModel     //handle model
-	dataset *dataset.Document //数据
+	dirty   Dirty            //数据缓存
+	model   documentModel    //handle model
+	dataset dataset.Document //数据
 }
 
 func NewDocument(u *Updater, model any, ram RAMType) Handle {
 	r := &Document{}
 	r.model = model.(documentModel)
-	r.statement = *NewStatement(u, ram, r.operator)
+	r.statement = *newStatement(u, ram, r.operator, r.has)
 	return r
 }
 func (this *Document) Parser() Parser {
 	return ParserTypeDocument
 }
 
-func (this *Document) set(k string, v any) (err error) {
-	if this.dataset != nil {
-		return this.dataset.Set(k, v)
-	}
-	return errors.New("dataset is nil")
-}
-func (this *Document) get(k string) (r any) {
-	if this.dirty != nil && this.dirty.Has(k) {
-		return this.dirty.Get(k)
-	}
-	if this.statement.has(k) && this.dataset != nil {
-		return this.dataset.Get(k)
-	}
-	return nil
-}
+//func (this *Document) set(k string, v any) (err error) {
+//	if this.dataset != nil {
+//		return this.dataset.Set(k, v)
+//	}
+//	return errors.New("dataset is nil")
+//}
+
+//func (this *Document) get(k string) (r any) {
+//
+//	if this.statement.has(k) && this.dataset != nil {
+//		return this.dataset.Get(k)
+//	}
+//	return nil
+//}
 
 func (this *Document) val(k string) (r int64, ok bool) {
-	if r, ok = this.values[k]; ok {
+	if r, ok = this.values.get(k); ok {
 		return
-	} else if v := this.get(k); v != nil {
-		if r, ok = dataset.TryParseInt64(v); ok {
-			this.values[k] = r
-		}
+	} else if v := this.dataset.Get(k); v != nil {
+		r, ok = dataset.TryParseInt64(v)
 	}
 	return
 }
@@ -85,10 +81,10 @@ func (this *Document) reset() {
 	if this.dirty == nil {
 		this.dirty = Dirty{}
 	}
-	if this.dataset == nil {
-		i := this.model.New(this.Updater)
-		this.dataset = dataset.NewDocument(i)
-	}
+	//if this.dataset == nil {
+	//	i := this.model.New(this.Updater)
+	//	this.dataset = dataset.NewDocument(i)
+	//}
 }
 
 // release 运行时释放
@@ -115,6 +111,10 @@ func (this *Document) init() (err error) {
 // 关闭时执行,玩家下线
 func (this *Document) destroy() (err error) {
 	return this.save()
+}
+
+func (this *Document) Has(k any) bool {
+	return true
 }
 
 // Get  对象中的特定值
@@ -199,7 +199,7 @@ func (this *Document) Schema() *schema.Schema {
 }
 
 func (this *Document) submit() (err error) {
-	defer this.statement.done()
+	//defer this.statement.done()
 	if err = this.Updater.Error; err != nil {
 		return
 	}

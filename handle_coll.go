@@ -10,15 +10,16 @@ import (
 type Receive func(oid string, doc any)
 
 type collectionModel interface {
+	Upsert(update *Updater, op *operator.Operator) bool
 	Getter(update *Updater, keys []string, fn Receive) error //keys==nil 初始化所有
 	Setter(update *Updater, bulkWrite dataset.BulkWrite) error
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
 
 // collectionUpsert set时如果不存在,是否自动转换为new
-type collectionUpsert interface {
-	Upsert(update *Updater, op *operator.Operator) bool
-}
+//type collectionUpsert interface {
+//	Upsert(update *Updater, op *operator.Operator) bool
+//}
 
 type Collection struct {
 	statement
@@ -31,24 +32,22 @@ type Collection struct {
 func NewCollection(u *Updater, model any, ram RAMType) Handle {
 	r := &Collection{}
 	r.model = model.(collectionModel)
-	r.statement = *NewStatement(u, ram, r.operator)
+	r.statement = *newStatement(u, ram, r.operator, r.Has)
 	return r
 }
 func (this *Collection) Parser() Parser {
 	return ParserTypeCollection
 }
 
-func (this *Collection) get(k string) (r *dataset.Document) {
-	return this.dataset.Get(k)
-}
+//func (this *Collection) get(k string) (r *dataset.Document) {
+//	return this.dataset.Get(k)
+//}
 
 func (this *Collection) val(id string) (r int64, ok bool) {
-	if r, ok = this.values[id]; ok {
+	if r, ok = this.values.get(id); ok {
 		return
-	} else if d := this.dataset.Get(id); d != nil {
-		ok = true
-		r = this.dataset.Val(id)
-		this.values[id] = r
+	} else {
+		r, ok = this.dataset.Val(id)
 	}
 	return
 }
@@ -96,7 +95,7 @@ func (this *Collection) destroy() (err error) {
 
 func (this *Collection) Has(id any) (r bool) {
 	if oid, err := this.ObjectId(id); err == nil {
-		r = this.dirty.Has(oid) || this.dataset.Has(oid)
+		r = this.dataset.Has(oid)
 	} else {
 		logger.Debug(err)
 	}
@@ -106,7 +105,7 @@ func (this *Collection) Has(id any) (r bool) {
 // Get 返回item,不可叠加道具只能使用oid获取
 func (this *Collection) Get(key any) (r any) {
 	if oid, err := this.ObjectId(key); err == nil {
-		if i := this.get(oid); i != nil {
+		if i := this.dataset.Get(oid); i != nil {
 			r = i.Interface()
 		}
 	} else {
@@ -203,7 +202,7 @@ func (this *Collection) Verify() (err error) {
 }
 
 func (this *Collection) submit() (err error) {
-	defer this.statement.done()
+	//defer this.statement.done()
 	if err = this.Updater.Error; err != nil {
 		return
 	}
@@ -227,7 +226,7 @@ func (this *Collection) submit() (err error) {
 	if len(this.remove) > 0 {
 		for _, k := range this.remove {
 			this.dataset.Del(k)
-			this.statement.history.Remove(k)
+			//this.statement.history.Remove(k)
 		}
 		this.remove = nil
 	}
@@ -317,12 +316,6 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 // Receive 接收业务逻辑层数据
 func (this *Collection) Receive(id string, data any) {
 	this.dataset.Set(id, data)
-	if this.ram == RAMTypeMaybe {
-		if this.statement.history == nil {
-			this.statement.history = Keys{}
-		}
-		this.statement.history.Select(id)
-	}
 }
 
 func (this *Collection) ObjectId(key any) (oid string, err error) {

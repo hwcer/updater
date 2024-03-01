@@ -9,42 +9,37 @@ import (
 )
 
 type hashModel interface {
-	Symbol(u *Updater) any                                                //获取信息标识符号,如果和当前不一样将会重置数据
-	Getter(u *Updater, symbol any, keys []int32) (map[int32]int64, error) //获取数据接口,返回 []byte(bson.raw) , bson.Document
-	Setter(u *Updater, symbol any, update map[int32]int64) error          //保存数据接口
+	Getter(u *Updater, data *HashDataset, keys []int32) (err error) //获取数据接口
+	Setter(u *Updater, data *HashDataset) error                     //保存数据接口
 }
 
-type hashData map[int32]int64
-
-func (this hashData) Has(k int32) (r bool) {
-	_, r = this[k]
-	return
-}
-func (data hashData) Merge(src hashData) {
-	for k, v := range src {
-		data[k] = v
-	}
-}
+//func (data hashData) Merge(src hashData) {
+//	for k, v := range src {
+//		data[k] = v
+//	}
+//}
 
 // Hash HashMAP储存
 type Hash struct {
 	statement
 	name    string //model database name
 	model   hashModel
-	symbol  any      //标记时效性
-	dirty   hashData //需要写入数据的数据
-	dataset hashData //数据集
+	dataset HashDataset
+	//dirty   hashData //需要写入数据的数据
+	//expire  int64    //数据集过期时间，0-永不过期
+	//dataset hashData //数据集
 }
 
 func NewHash(u *Updater, model any, ram RAMType) Handle {
 	r := &Hash{}
 	r.model = model.(hashModel)
-	r.statement = *NewStatement(u, ram, r.operator)
+	r.statement = *newStatement(u, ram, r.operator, r.Has)
 	if sch, err := schema.Parse(model); err == nil {
 		r.name = sch.Table
 	} else {
 		logger.Fatal(err)
 	}
+	r.dataset = HashDataset{Values: map[int32]int64{}}
 	return r
 }
 
@@ -52,23 +47,28 @@ func (this *Hash) Parser() Parser {
 	return ParserTypeHash
 }
 
+func (this *Hash) init() error {
+	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
+		this.Updater.Error = this.model.Getter(this.Updater, &this.dataset, nil)
+	}
+	return this.Updater.Error
+}
+
 func (this *Hash) val(iid int32) (r int64, ok bool) {
-	if r, ok = this.values[iid]; ok {
+	if r, ok = this.values.get(iid); ok {
 		return
 	} else {
-		if r, ok = this.dataset[iid]; ok {
-			this.values[iid] = r
-		}
+		r, ok = this.dataset.Get(iid)
 	}
 	return
 }
 
 func (this *Hash) save() (err error) {
-	if this.Updater.Async || len(this.dirty) == 0 {
+	if this.Updater.Async || len(this.dataset.dirty) == 0 {
 		return
 	}
-	if err = this.model.Setter(this.statement.Updater, this.symbol, this.dirty); err == nil {
-		this.dirty = nil
+	if err = this.model.Setter(this.statement.Updater, &this.dataset); err == nil {
+		this.dataset.dirty = nil
 	}
 	return
 }
@@ -76,20 +76,12 @@ func (this *Hash) save() (err error) {
 // reset 运行时开始时
 func (this *Hash) reset() {
 	this.statement.reset()
-	if s := this.model.Symbol(this.Updater); s != this.symbol {
-		//todo Async
-		if err := this.save(); err != nil {
-			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dirty, err)
+	if this.dataset.Expire > 0 && this.dataset.Expire < this.Updater.Time.Unix() {
+		if this.Updater.Error = this.save(); this.Updater.Error != nil {
+			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
+		} else {
+			_ = this.init()
 		}
-		this.symbol = s
-		this.dirty = nil
-		this.dataset = nil
-	}
-	if this.dirty == nil {
-		this.dirty = hashData{}
-	}
-	if this.dataset == nil {
-		this.dataset = hashData{}
 	}
 }
 
@@ -97,24 +89,8 @@ func (this *Hash) reset() {
 func (this *Hash) release() {
 	this.statement.release()
 	if !this.Updater.Async && this.statement.ram == RAMTypeNone {
-		this.dirty = nil
-		this.dataset = nil
+		this.dataset.release()
 	}
-}
-func (this *Hash) init() error {
-	this.symbol = this.model.Symbol(this.Updater)
-	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
-		this.dataset, this.Updater.Error = this.model.Getter(this.Updater, this.symbol, nil)
-		if this.statement.ram == RAMTypeMaybe && this.Updater.Error == nil && len(this.dataset) > 0 {
-			if this.statement.history == nil {
-				this.statement.history = Keys{}
-			}
-			for k, _ := range this.dataset {
-				this.statement.history.Select(k)
-			}
-		}
-	}
-	return this.Updater.Error
 }
 
 // 关闭时执行,玩家下线
@@ -122,9 +98,13 @@ func (this *Hash) destroy() (err error) {
 	return this.save()
 }
 
+func (this *Hash) Has(k any) bool {
+	return this.dataset.Has(dataset.ParseInt32(k))
+}
+
 func (this *Hash) Get(k any) (r any) {
 	if id, ok := dataset.TryParseInt32(k); ok {
-		r, _ = this.val(id)
+		r, _ = this.dataset.Get(id)
 	}
 	return
 }
@@ -146,11 +126,14 @@ func (this *Hash) Set(k any, v ...any) {
 	}
 }
 
-// Select 指定需要更新的字段
+// Select 指定需要从数据库更新的字段
 func (this *Hash) Select(keys ...any) {
+	if this.ram == RAMTypeAlways {
+		return
+	}
 	for _, k := range keys {
-		if id, ok := dataset.TryParseInt32(k); ok {
-			this.statement.Select(id)
+		if iid, ok := dataset.TryParseInt32(k); ok {
+			this.statement.Select(iid)
 		}
 	}
 }
@@ -163,9 +146,7 @@ func (this *Hash) Data() (err error) {
 		return nil
 	}
 	keys := this.keys.ToInt32()
-	var src map[int32]int64
-	if src, err = this.model.Getter(this.statement.Updater, this.symbol, keys); err == nil {
-		this.dataset.Merge(src)
+	if err = this.model.Getter(this.statement.Updater, &this.dataset, keys); err == nil {
 		this.statement.date()
 	}
 	return
@@ -185,7 +166,7 @@ func (this *Hash) Verify() (err error) {
 }
 
 func (this *Hash) submit() (err error) {
-	defer this.statement.done()
+	//defer this.statement.done()
 	if err = this.Updater.Error; err != nil {
 		return
 	}
@@ -193,8 +174,8 @@ func (this *Hash) submit() (err error) {
 	for _, op := range this.statement.cache {
 		if op.Type.IsValid() {
 			if v, ok := op.Result.(int64); ok {
-				this.dirty[op.IID] = v
-				this.dataset[op.IID] = v
+				this.dataset.Dirty(op.IID)
+				this.dataset.Set(op.IID, v)
 			} else {
 				fmt.Printf("hash save error:%+v\n", op)
 			}
@@ -209,14 +190,14 @@ func (this *Hash) submit() (err error) {
 }
 
 func (this *Hash) Range(f func(int32, int64) bool) {
-	for k, v := range this.dataset {
+	for k, v := range this.dataset.Values {
 		if !f(k, v) {
 			return
 		}
 	}
 }
 
-//func (this *Hash) Values() map[int32]int64 {
+//func (this *Hash) data() map[int32]int64 {
 //	return this.dataset
 //}
 

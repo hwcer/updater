@@ -34,7 +34,7 @@ func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 	r, _ := this.val(op.Key)
 	r += op.Value
 	op.Result = r
-	this.values[op.Key] = r
+	this.values.add(op.Key, op.Value)
 	return
 }
 

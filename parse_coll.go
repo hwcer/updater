@@ -40,7 +40,7 @@ func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrOIDEmpty(op.IID)
 	}
-	coll.values[op.OID] = 0 //TODO
+	coll.values.set(op.OID, 0) //TODO
 	return
 }
 
@@ -55,21 +55,24 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 	if _, ok := op.Result.([]any); !ok {
 		return coll.Updater.Errorf("operator[New] Result type must be []any :%+v", op)
 	}
-	coll.values[op.OID] += op.Value
+	coll.values.add(op.OID, op.Value)
 	return
 }
 
 func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
-	if op.OID == "" {
-		return collectionHandleNewEquip(coll, op) //不可以堆叠装备类道具
+	if it := coll.ITypeCollection(op.IID); it != nil && !it.Stacked() {
+		//不可以堆叠装备类道具
+		return collectionHandleNewEquip(coll, op)
 	}
 	//可以叠加的道具
+	if op.OID == "" {
+		return ErrOIDEmpty(op.IID)
+	}
 	if v, ok := coll.val(op.OID); !ok {
 		return collectionHandleNewItem(coll, op)
 	} else {
-		r := op.Value + v
-		op.Result = r
-		coll.values[op.OID] = r
+		op.Result = op.Value + v
+		coll.values.add(op.OID, op.Value)
 	}
 	return
 }
@@ -78,20 +81,12 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrOIDEmpty(op.IID)
 	}
-	d, ok := coll.val(op.OID)
-	if op.Value > d && coll.Updater.strict {
+	d, _ := coll.val(op.OID)
+	if op.Value > d {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
-	if !ok {
-		op.Type = operator.TypesDrop
-	} else {
-		r := d - op.Value
-		if r < 0 {
-			r = 0
-		}
-		op.Result = r
-		coll.values[op.OID] = r
-	}
+	op.Result = d - op.Value
+	coll.values.sub(op.OID, op.Value)
 	return
 }
 
@@ -99,28 +94,27 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrOIDEmpty(op.IID)
 	}
-	if !coll.dirty.Has(op.OID) && !coll.dataset.Has(op.OID) && coll.values[op.OID] == 0 {
-		if upsert, ok := coll.model.(collectionUpsert); ok && upsert.Upsert(coll.Updater, op) {
-			it := coll.ITypeCollection(op.IID)
-			var i any
-			if i, err = it.New(coll.Updater, op); err != nil {
-				return
-			}
-			doc := dataset.NewDocument(i)
-			if err = doc.Update(op.Result.(dataset.Update)); err != nil {
-				return
-			}
-			op.Type = operator.TypesNew
-			op.Value = doc.VAL()
-			op.Result = []any{doc.Interface()}
-			return collectionHandleNew(coll, op)
-		} else {
-			return ErrItemNotExist(op.OID)
+	if _, ok := coll.val(op.OID); !ok && coll.model.Upsert(coll.Updater, op) {
+		it := coll.ITypeCollection(op.IID)
+		var i any
+		if i, err = it.New(coll.Updater, op); err != nil {
+			return
 		}
+		doc := dataset.NewDocument(i)
+		if err = doc.Update(op.Result.(dataset.Update)); err != nil {
+			return
+		}
+		op.Type = operator.TypesNew
+		op.Value = doc.VAL()
+		op.Result = []any{doc.Interface()}
+		return collectionHandleNew(coll, op)
+	} else if !ok {
+		return ErrItemNotExist(op.OID)
 	}
+
 	update, _ := op.Result.(dataset.Update)
 	if v, ok := update[dataset.ItemNameVAL]; ok {
-		coll.values[op.OID] = dataset.ParseInt64(v)
+		coll.values.set(op.OID, dataset.ParseInt64(v))
 	}
 	return
 }
@@ -185,7 +179,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
 	for _, item := range newItem {
 		doc := dataset.NewDocument(item)
 		oid := doc.OID()
-		coll.values[oid] = 1
+		coll.values.add(oid, 1)
 	}
 	op.Result = newItem
 	return nil
@@ -202,7 +196,7 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) error {
 	}
 	if item, err := it.New(coll.Updater, op); err == nil {
 		op.Result = []any{item}
-		coll.values[op.OID] = op.Value
+		coll.values.add(op.OID, op.Value)
 	} else {
 		return err
 	}

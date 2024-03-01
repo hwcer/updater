@@ -17,35 +17,72 @@ type modelIType interface {
 	IType(iid int32) int32
 }
 
-type operatorHandle func(t operator.Types, k any, v int64, r any)
+type stmHandleOptCreate func(t operator.Types, k any, v int64, r any)
+type stmHandleDataExist func(k any) bool
+
+type stmDatasetValues struct {
+	v map[any]int64
+}
+
+func (this *stmDatasetValues) get(k any) (v int64, ok bool) {
+	if this.v != nil {
+		v, ok = this.v[k]
+	}
+	return
+}
+
+func (this *stmDatasetValues) set(k any, v int64) {
+	if this.v == nil {
+		this.v = map[any]int64{}
+	}
+	this.v[k] = v
+}
+
+func (this *stmDatasetValues) add(k any, v int64) {
+	if this.v == nil {
+		this.v = map[any]int64{}
+	}
+	this.v[k] += v
+}
+
+func (this *stmDatasetValues) sub(k any, v int64) {
+	if this.v == nil {
+		this.v = map[any]int64{}
+	}
+	this.v[k] -= v
+}
+
+func (this *stmDatasetValues) release() {
+	this.v = nil
+}
 
 type statement struct {
-	ram      RAMType
-	values   map[any]int64 //执行过程中的数量过程
-	handle   operatorHandle
-	Updater  *Updater
-	operator []*operator.Operator //操作
-	cache    []*operator.Operator
-	keys     Keys
-	history  Keys
+	ram             RAMType
+	keys            Keys
+	cache           []*operator.Operator
+	values          stmDatasetValues //执行过程中的数量过程
+	Updater         *Updater
+	operator        []*operator.Operator //操作
+	handleOptCreate stmHandleOptCreate
+	handleDataExist stmHandleDataExist //查询数据集中是否存在
 }
 
-func NewStatement(u *Updater, ram RAMType, handle operatorHandle) *statement {
-	return &statement{ram: ram, handle: handle, Updater: u}
+func newStatement(u *Updater, ram RAMType, opt stmHandleOptCreate, exist stmHandleDataExist) *statement {
+	return &statement{ram: ram, handleOptCreate: opt, handleDataExist: exist, Updater: u}
 }
 
-func (stmt *statement) done() {
-	//stmt.cache = append(stmt.cache, stmt.operator...)
-	if !stmt.Updater.Async {
-		stmt.keys = nil
-		stmt.values = map[any]int64{}
-	}
-	stmt.operator = nil
-	//stmt.verify = false
-	stmt.Updater.Error = nil
-}
+//func (stmt *statement) done() {
+//	//stmt.cache = append(stmt.cache, stmt.operator...)
+//	if !stmt.Updater.Async {
+//		stmt.keys = nil
+//		stmt.values.release()
+//	}
+//	stmt.operator = nil
+//	//stmt.verify = false
+//	//stmt.Updater.Error = nil
+//}
 
-// Has 查询key(DBName)是否已经初始化  todo
+// Has 查询key(DBName)是否已经初始化
 func (stmt *statement) has(key any) bool {
 	if stmt.ram == RAMTypeAlways {
 		return true
@@ -53,35 +90,29 @@ func (stmt *statement) has(key any) bool {
 	if stmt.keys != nil && stmt.keys.Has(key) {
 		return true
 	}
-	if stmt.history != nil && stmt.history.Has(key) {
-		return true
-	}
-	return false
+	return stmt.handleDataExist(key)
 }
 func (stmt *statement) reset() {
-	if stmt.values == nil {
-		stmt.values = map[any]int64{}
-	}
-	if stmt.keys == nil && stmt.ram != RAMTypeAlways {
-		stmt.keys = Keys{}
-	}
-	if stmt.history == nil && stmt.ram == RAMTypeMaybe {
-		stmt.history = Keys{}
-	}
+	//if stmt.values == nil {
+	//	stmt.values = map[any]int64{}
+	//}
+	//if stmt.keys == nil && stmt.ram != RAMTypeAlways {
+	//	stmt.keys = Keys{}
+	//}
 }
 
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
-	stmt.done()
-	return
+	if !stmt.Updater.Async {
+		stmt.values.release()
+	}
+	stmt.keys = nil
+	stmt.operator = nil
 }
 
 // date 执行Data 后操作
 func (stmt *statement) date() {
-	if stmt.history != nil {
-		stmt.history.Merge(stmt.keys)
-	}
-	stmt.keys = Keys{}
+	stmt.keys = nil
 }
 
 // verify 执行verify后操作
@@ -100,13 +131,14 @@ func (stmt *statement) submit() {
 }
 
 func (stmt *statement) Select(key any) {
-	if stmt.ram == RAMTypeAlways {
+	if stmt.has(key) {
 		return
 	}
-	if !stmt.has(key) {
-		stmt.keys.Select(key)
-		stmt.Updater.changed = true
+	if stmt.keys == nil {
+		stmt.keys = Keys{}
 	}
+	stmt.keys.Select(key)
+	stmt.Updater.changed = true
 }
 
 func (stmt *statement) Errorf(format any, args ...any) error {
@@ -142,26 +174,26 @@ func (stmt *statement) Add(k any, v int32) {
 	if v <= 0 {
 		return
 	}
-	stmt.handle(operator.TypesAdd, k, int64(v), nil)
+	stmt.handleOptCreate(operator.TypesAdd, k, int64(v), nil)
 }
 
 func (stmt *statement) Sub(k any, v int32) {
 	if v <= 0 {
 		return
 	}
-	stmt.handle(operator.TypesSub, k, int64(v), nil)
+	stmt.handleOptCreate(operator.TypesSub, k, int64(v), nil)
 }
 
 func (stmt *statement) Max(k any, v int64) {
-	stmt.handle(operator.TypesMax, k, v, nil)
+	stmt.handleOptCreate(operator.TypesMax, k, v, nil)
 }
 
 func (stmt *statement) Min(k any, v int64) {
-	stmt.handle(operator.TypesMin, k, v, nil)
+	stmt.handleOptCreate(operator.TypesMin, k, v, nil)
 }
 
 func (stmt *statement) Del(k any) {
-	stmt.handle(operator.TypesDel, k, 0, nil)
+	stmt.handleOptCreate(operator.TypesDel, k, 0, nil)
 }
 
 // Set set结果
