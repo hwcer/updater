@@ -6,7 +6,7 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-var hashParseHandle = make(map[operator.Types]func(*Hash, *operator.Operator) error)
+var hashParseHandle = make(map[operator.Types]func(*Values, *operator.Operator) error)
 
 func init() {
 	hashParseHandle[operator.TypesAdd] = hashParseAdd
@@ -19,7 +19,7 @@ func init() {
 	hashParseHandle[operator.TypesResolve] = hashParseResolve
 }
 
-func (this *Hash) Parse(op *operator.Operator) (err error) {
+func (this *Values) Parse(op *operator.Operator) (err error) {
 	if err = overflow(this.Updater, this, op); err != nil {
 		return
 	}
@@ -28,46 +28,45 @@ func (this *Hash) Parse(op *operator.Operator) (err error) {
 	}
 	return fmt.Errorf("hash operator type not exist:%v", op.Type.ToString())
 }
-func hashParseResolve(this *Hash, op *operator.Operator) (err error) {
+func hashParseResolve(this *Values, op *operator.Operator) (err error) {
 	return
 }
 
-func hashParseAdd(this *Hash, op *operator.Operator) (err error) {
-	r, _ := this.val(op.IID)
+func hashParseAdd(this *Values, op *operator.Operator) (err error) {
+	r := this.Val(op.IID)
 	r += op.Value
 	op.Result = r
-	this.values[op.IID] = r
+	this.dataset.Set(op.IID, r)
 	return
 }
 
-func hashParseSub(this *Hash, op *operator.Operator) (err error) {
-	d, _ := this.val(op.IID)
-	if op.Value > d && this.Updater.strict {
-		return ErrItemNotEnough(op.IID, op.Value, d)
-	}
-	r := d - op.Value
-	if r < 0 {
-		r = 0
+func hashParseSub(this *Values, op *operator.Operator) error {
+	d := this.Val(op.IID)
+	r, err := this.Updater.deduct(op.IID, d, op.Value)
+	if err != nil {
+		return err
 	}
 	op.Result = r
-	this.values[op.Key] = r
-	return
+	this.dataset.Set(op.IID, r)
+	return nil
 }
 
-func hashParseSet(this *Hash, op *operator.Operator) (err error) {
+func hashParseSet(this *Values, op *operator.Operator) (err error) {
 	op.Type = operator.TypesSet
-	this.values[op.IID] = dataset.ParseInt64(op.Result)
+	r := dataset.ParseInt64(op.Result)
+	op.Result = r
+	this.dataset.Set(op.IID, r)
 	return
 }
 
-func hashParseDel(this *Hash, op *operator.Operator) (err error) {
+func hashParseDel(this *Values, op *operator.Operator) (err error) {
 	op.Result = 0
-	this.values[op.IID] = 0
+	this.dataset.Set(op.IID, 0)
 	return
 }
 
-func hashParseMax(this *Hash, op *operator.Operator) (err error) {
-	v, _ := this.val(op.IID)
+func hashParseMax(this *Values, op *operator.Operator) (err error) {
+	v := this.Val(op.IID)
 	if op.Value > v {
 		op.Result = op.Value
 		err = hashParseSet(this, op)
@@ -77,8 +76,8 @@ func hashParseMax(this *Hash, op *operator.Operator) (err error) {
 	return
 }
 
-func hashParseMin(this *Hash, op *operator.Operator) (err error) {
-	v, _ := this.val(op.IID)
+func hashParseMin(this *Values, op *operator.Operator) (err error) {
+	v := this.Val(op.IID)
 	if op.Value > v {
 		op.Result = op.Value
 		err = hashParseSet(this, op)

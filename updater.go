@@ -10,18 +10,26 @@ import (
 	"time"
 )
 
+type StrictType int8
+
+const (
+	StrictTypeEnabled StrictType = 0 //启用严格模式，道具不足直接报错
+	StrictTypeDisable StrictType = 1 //关闭严格模式，道具不足扣成负数
+	StrictTypeLoosest StrictType = 2 //关闭严格模式，道具不足扣成零值
+)
+
 type Updater struct {
-	uid     string
-	Time    time.Time
-	Error   error
-	Events  Events
-	Emitter Emitter
-	dirty   []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
-	//strict   bool                 //非严格模式下,扣除道具不足时允许扣成0,而不是报错
-	changed  bool              //数据变动,需要使用Data更新数据
-	operated bool              //新操作需要重执行Verify检查数据
-	handles  map[string]Handle //Handle
-	Async    bool              //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
+	uid      string
+	Time     time.Time
+	Error    error
+	Events   Events
+	Emitter  Emitter
+	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
+	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	changed  bool                 //数据变动,需要使用Data更新数据
+	operated bool                 //新操作需要重执行Verify检查数据
+	handles  map[string]Handle    //Handle
+	Async    bool                 //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
 }
 
 func New(uid string) (u *Updater, err error) {
@@ -57,6 +65,11 @@ func (u *Updater) Save() (err error) {
 	return
 }
 
+// Strict 设置扣道具模式，仅仅生效一个周期
+func (u *Updater) Strict(v StrictType) {
+	u.strict = v
+}
+
 // Reload 重新加载数据,自动关闭异步数据
 func (u *Updater) Reload() (err error) {
 	u.Time = time.Now()
@@ -76,7 +89,7 @@ func (u *Updater) Reload() (err error) {
 // Reset 重置,每次请求开始时调用
 func (u *Updater) Reset() {
 	u.Time = utils.Time.Now()
-	//u.strict = true
+	u.strict = StrictTypeEnabled
 	for _, w := range u.Handles() {
 		w.reset()
 	}
@@ -352,4 +365,18 @@ func (u *Updater) Destroy() (err error) {
 // Dirty 设置脏数据,手动更新到客户端,不进行任何操作
 func (u *Updater) Dirty(opt ...*operator.Operator) {
 	u.dirty = append(u.dirty, opt...)
+}
+
+func (u *Updater) deduct(iid int32, v, sub int64) (r int64, err error) {
+	r = v - sub
+	if r < 0 {
+		if u.strict == StrictTypeDisable {
+
+		} else if u.strict == StrictTypeLoosest {
+			r = 0
+		} else {
+			err = ErrItemNotEnough(iid, sub, v)
+		}
+	}
+	return
 }

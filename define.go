@@ -127,28 +127,28 @@ func (this Keys) Select(ks ...any) {
 
 //type documentKeys map[string]any
 
-type Dirty map[string]any
-
-func (this Dirty) Get(k string) any {
-	return this[k]
-}
-
-func (this Dirty) Has(k string) bool {
-	if _, ok := this[k]; ok {
-		return true
-	}
-	return false
-}
-
-func (this Dirty) Keys() (r []string) {
-	for k, _ := range this {
-		r = append(r, k)
-	}
-	return
-}
-
-func (this Dirty) Merge(src Dirty) {
-	for k, v := range src {
-		this[k] = v
-	}
-}
+//type Dirty map[string]any
+//
+//func (this Dirty) Get(k string) any {
+//	return this[k]
+//}
+//
+//func (this Dirty) Has(k string) bool {
+//	if _, ok := this[k]; ok {
+//		return true
+//	}
+//	return false
+//}
+//
+//func (this Dirty) Keys() (r []string) {
+//	for k, _ := range this {
+//		r = append(r, k)
+//	}
+//	return
+//}
+//
+//func (this Dirty) Merge(src Dirty) {
+//	for k, v := range src {
+//		this[k] = v
+//	}
+//}

@@ -40,7 +40,7 @@ func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrOIDEmpty(op.IID)
 	}
-	coll.values.set(op.OID, 0) //TODO
+	coll.dataset.Delete(op.OID)
 	return
 }
 
@@ -52,10 +52,11 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 	if op.Result == nil {
 		return coll.Updater.Errorf("operator[New] Result empty:%+v", op)
 	}
-	if _, ok := op.Result.([]any); !ok {
+	items, ok := op.Result.([]any)
+	if !ok {
 		return coll.Updater.Errorf("operator[New] Result type must be []any :%+v", op)
 	}
-	coll.values.add(op.OID, op.Value)
+	op.Result, err = collectionHandleInsert(coll, items)
 	return
 }
 
@@ -72,22 +73,23 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 		return collectionHandleNewItem(coll, op)
 	} else {
 		op.Result = op.Value + v
-		coll.values.add(op.OID, op.Value)
+		err = coll.dataset.Set(op.OID, dataset.ItemNameVAL, op.Result)
 	}
 	return
 }
 
-func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
+func collectionHandleSub(coll *Collection, op *operator.Operator) error {
 	if op.OID == "" {
 		return ErrOIDEmpty(op.IID)
 	}
 	d, _ := coll.val(op.OID)
-	if op.Value > d {
-		return ErrItemNotEnough(op.IID, op.Value, d)
+	r, err := coll.Updater.deduct(op.IID, d, op.Value)
+	if err != nil {
+		return err
 	}
-	op.Result = d - op.Value
-	coll.values.sub(op.OID, op.Value)
-	return
+	op.Result = r
+	err = coll.dataset.Set(op.OID, dataset.ItemNameVAL, r)
+	return nil
 }
 
 func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
@@ -100,12 +102,10 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 		if i, err = it.New(coll.Updater, op); err != nil {
 			return
 		}
-		doc := dataset.NewDocument(i)
-		if err = doc.Update(op.Result.(dataset.Update)); err != nil {
-			return
-		}
+		doc := dataset.NewDoc(i)
+		doc.Update(op.Result.(dataset.Update))
 		op.Type = operator.TypesNew
-		op.Value = doc.VAL()
+		op.Value = doc.GetInt64(dataset.ItemNameVAL)
 		op.Result = []any{doc.Interface()}
 		return collectionHandleNew(coll, op)
 	} else if !ok {
@@ -114,7 +114,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 
 	update, _ := op.Result.(dataset.Update)
 	if v, ok := update[dataset.ItemNameVAL]; ok {
-		coll.values.set(op.OID, dataset.ParseInt64(v))
+		err = coll.dataset.Set(op.OID, dataset.ItemNameVAL, dataset.ParseInt64(v))
 	}
 	return
 }
@@ -156,7 +156,7 @@ func collectionHandleMin(coll *Collection, op *operator.Operator) (err error) {
 }
 
 // collectionHandleNewEquip
-func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
+func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err error) {
 	op.Type = operator.TypesNew
 	it := coll.ITypeCollection(op.IID)
 	if it == nil {
@@ -168,24 +168,20 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) error {
 	if op.Result != nil {
 		return nil
 	}
-	var newItem []any
+	var item any
+	var items []any
 	for i := int64(1); i <= op.Value; i++ {
-		if item, err := it.New(coll.Updater, op); err == nil {
-			newItem = append(newItem, item)
+		if item, err = it.New(coll.Updater, op); err != nil {
+			return
 		} else {
-			return err
+			items = append(items, item)
 		}
 	}
-	for _, item := range newItem {
-		doc := dataset.NewDocument(item)
-		oid := doc.OID()
-		coll.values.add(oid, 1)
-	}
-	op.Result = newItem
-	return nil
+	op.Result, err = collectionHandleInsert(coll, items)
+	return
 }
 
-func collectionHandleNewItem(coll *Collection, op *operator.Operator) error {
+func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error) {
 	op.Type = operator.TypesNew
 	it := coll.ITypeCollection(op.IID)
 	if it == nil {
@@ -194,12 +190,22 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) error {
 	if op.Value == 0 {
 		op.Value = 1
 	}
-	if item, err := it.New(coll.Updater, op); err == nil {
-		op.Result = []any{item}
-		coll.values.add(op.OID, op.Value)
-	} else {
-		return err
+	var item any
+	if item, err = it.New(coll.Updater, op); err == nil {
+		op.Result, err = collectionHandleInsert(coll, item)
 	}
+	return
+}
 
-	return nil
+func collectionHandleInsert(coll *Collection, vs ...any) (r []any, err error) {
+	for _, v := range vs {
+		doc := dataset.NewDoc(v)
+		var j dataset.Update
+		if j, err = doc.Json(); err != nil {
+			return
+		}
+		r = append(r, j)
+		err = coll.dataset.Insert(doc)
+	}
+	return
 }

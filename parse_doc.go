@@ -34,28 +34,25 @@ func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 	r, _ := this.val(op.Key)
 	r += op.Value
 	op.Result = r
-	this.values.add(op.Key, op.Value)
+	this.dataset.Set(op.Key, r)
 	return
 }
 
-func documentParseSub(this *Document, op *operator.Operator) (err error) {
+func documentParseSub(this *Document, op *operator.Operator) error {
 	d, _ := this.val(op.Key)
-	if op.Value > d && this.Updater.strict {
-		return ErrItemNotEnough(op.Key, op.Value, d)
-	}
-	r := d - op.Value
-	if r < 0 {
-		r = 0
+	r, err := this.Updater.deduct(op.IID, d, op.Value)
+	if err != nil {
+		return err
 	}
 	op.Result = r
-	this.values[op.Key] = r
-	return
+	this.dataset.Set(op.Key, r)
+	return nil
 }
 
 func documentParseSet(this *Document, op *operator.Operator) (err error) {
 	op.Type = operator.TypesSet
 	if r, ok := dataset.TryParseInt64(op.Result); ok {
-		this.values[op.Key] = r
+		this.dataset.Set(op.Key, r)
 	}
 	return
 }

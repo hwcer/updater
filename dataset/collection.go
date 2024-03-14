@@ -4,189 +4,230 @@ import (
 	"fmt"
 )
 
-func New(rows ...any) *Collection {
+func NewColl(rows ...any) *Collection {
 	coll := &Collection{}
-	coll.rows = map[string]*Document{}
-	coll.Reset(rows)
+	coll.dataset = Dataset{}
+	coll.Reset(rows...)
 	return coll
 }
 
-// Collection
-//
-//	insert ,remove 相互覆盖
+type Dirty map[string]struct{}
+
+func (d Dirty) Set(k string) {
+	d[k] = struct{}{}
+}
+func (d Dirty) Has(k string) (ok bool) {
+	_, ok = d[k]
+	return
+}
+func (d Dirty) Del(k string) {
+	delete(d, k)
+}
+
+type Dataset map[string]*Document
+
+func (d Dataset) Set(k string, doc *Document) {
+	d[k] = doc
+}
+func (d Dataset) Has(k string) (ok bool) {
+	_, ok = d[k]
+	return
+}
+func (d Dataset) Del(k string) {
+	delete(d, k)
+}
+
+func (d Dataset) Get(k string) (doc *Document, ok bool) {
+	doc, ok = d[k]
+	return
+}
+
 type Collection struct {
-	rows   map[string]*Document
-	update map[string]struct{}  //更新
-	insert map[string]*Document //插入
-	remove map[string]struct{}  //标记删除
+	dirty   Dirty   //更新标记
+	remove  Dirty   //删除标记
+	insert  Dataset //插入标记
+	dataset Dataset //数据集
 }
 
 // Has 是否存在记录，包括已经标记为删除记录，主要用来判断是否已经拉取过数据
-func (this *Collection) Has(id string) (ok bool) {
-	if _, ok = this.rows[id]; ok {
+func (coll *Collection) Has(id string) bool {
+	if coll.remove.Has(id) {
+		return false
+	} else if coll.insert.Has(id) {
 		return true
-	}
-	if _, ok = this.insert[id]; ok {
+	} else if coll.dataset.Has(id) {
 		return true
 	}
 	return false
 }
 
-// Exist 是否存在有效数据,排除已经标记为删除的记录
-func (this *Collection) Exist(id string) (ok bool) {
-	if _, ok = this.remove[id]; ok {
-		return false
-	}
-	return this.Has(id)
-}
-
 // Get 获取对象，已经标记为删除的对象被视为不存在
-func (this *Collection) Get(id string) (r *Document, ok bool) {
-	if _, ok = this.remove[id]; ok {
+func (coll *Collection) Get(id string) (*Document, bool) {
+	if coll.remove.Has(id) {
 		return nil, false
 	}
-	if r, ok = this.insert[id]; ok {
-		return
-	}
-	r, ok = this.rows[id]
+	return coll.getter(id)
+}
+
+func (coll *Collection) Val(id string) (r *Document) {
+	r, _ = coll.Get(id)
 	return
 }
 
-func (this *Collection) Val(id string) (r *Document) {
-	r, _ = this.Get(id)
-	return
-}
-
-func (this *Collection) Set(id string, field string, value any) error {
+func (coll *Collection) Set(id string, field string, value any) error {
 	data := Update{}
 	data[field] = value
-	return this.Update(id, data)
+	return coll.Update(id, data)
+}
+func (coll *Collection) New(i ...any) (err error) {
+	for _, v := range i {
+		if err = coll.Insert(v); err != nil {
+			return
+		}
+	}
+	return
 }
 
-// Update 批量更新
-func (this *Collection) Update(id string, data Update) error {
-	doc, ok := this.Get(id)
+// Update 批量更新,对象必须已经存在
+func (coll *Collection) Update(id string, data Update) error {
+	doc, ok := coll.Get(id)
 	if !ok {
 		return fmt.Errorf("item not exist:%v", id)
 	}
-	this.setter(id, doc, data)
+	coll.setter(id, doc, data)
 	return nil
 }
 
-// Insert 如果已经存在转换成更新
-func (this *Collection) Insert(i any) error {
+// Insert 如果已经存在转换成覆盖
+func (coll *Collection) Insert(i any) (err error) {
 	doc := NewDoc(i)
 	id := doc.GetString(ItemNameOID)
 	if id == "" {
 		return fmt.Errorf("item id emtpy:%v", i)
 	}
-
-	if this.Has(id) {
-		data, err := doc.Json()
-		if err != nil {
-			return err
+	defer func() {
+		if err == nil {
+			delete(coll.remove, id)
 		}
-		this.setter(id, doc, data)
-		delete(this.remove, id)
+	}()
+
+	if v, ok := coll.insert.Get(id); ok {
+		v.Reset(i)
+	} else if v, ok = coll.dataset.Get(id); ok {
+		var data Update
+		if data, err = doc.Json(); err == nil {
+			coll.setter(id, v, data)
+		}
 	} else {
-		if this.insert == nil {
-			this.insert = make(map[string]*Document)
+		if coll.insert == nil {
+			coll.insert = Dataset{}
 		}
-		this.insert[id] = doc
+		coll.insert.Set(id, doc)
 	}
-	return nil
+	return
 }
 
-func (this *Collection) Remove(id string) {
-	if !this.Exist(id) {
-		return
+func (coll *Collection) Delete(id string) {
+	coll.dirty.Del(id)
+	coll.insert.Del(id)
+	if coll.remove == nil {
+		coll.remove = Dirty{}
 	}
-	if this.remove == nil {
-		this.remove = map[string]struct{}{}
-	}
-	delete(this.insert, id)
-	this.remove[id] = struct{}{}
+	coll.remove.Set(id)
 }
 
-func (this *Collection) Save(bulkWrite BulkWrite) (err error) {
-	defer this.Release()
-	for k, _ := range this.remove {
-		bulkWrite.Delete(k)
+// Dirty 外部直接修改doc后用来标记修改
+func (coll *Collection) Dirty(id ...string) {
+	for _, k := range id {
+		coll.setter(k, nil, nil)
 	}
-	for _, doc := range this.insert {
-		bulkWrite.Insert(doc.Interface())
+}
+
+func (coll *Collection) Save(bulkWrite BulkWrite) error {
+	for k, _ := range coll.remove {
+		coll.dataset.Del(k)
+		if bulkWrite != nil {
+			bulkWrite.Delete(k)
+		}
 	}
-	for k, _ := range this.update {
-		if doc, ok := this.rows[k]; ok {
-			if v, e := doc.Save(); e == nil {
+	for k, doc := range coll.insert {
+		if err := doc.Save(nil); err == nil {
+			coll.dataset.Set(k, doc)
+			if bulkWrite != nil {
+				bulkWrite.Insert(doc.Interface())
+			}
+		}
+	}
+	for k, _ := range coll.dirty {
+		if doc, ok := coll.dataset.Get(k); ok {
+			v := Update{}
+			if err := doc.Save(v); err == nil && len(v) > 0 && bulkWrite != nil {
 				bulkWrite.Update(v, k)
 			}
 		}
 	}
-	return err
+	return nil
 }
 
-// Update 更新信息
-//func (this Collection) Update(op *operator.Operator) (err error) {
-//	switch op.Type {
-//	case operator.TypesDel:
-//		delete(this, op.OID)
-//	case operator.TypesNew:
-//		if values, ok := op.Result.([]any); ok {
-//			for _, v := range values {
-//				err = this.create(v)
-//			}
-//		} else {
-//			err = fmt.Errorf("OperatorTypeNew Error:%v", op.Value)
-//		}
-//	case operator.TypesSet:
-//		update, _ := op.Result.(Update)
-//		err = this.update(op.OID, update)
-//	case operator.TypesAdd, operator.TypesSub:
-//		update := NewUpdate(ItemNameVAL, op.Result)
-//		err = this.update(op.OID, update)
-//	}
-//	return
-//}
-//
-//func (this Collection) update(id string, src Update) error {
-//	data := this.Get(id)
-//	if data == nil {
-//		return fmt.Errorf("data not exist:%v", id)
-//	}
-//	return data.Update(src)
-//}
+func (coll *Collection) Range(handle func(string, *Document) bool) {
+	for k, v := range coll.dataset {
+		if !handle(k, v) {
+			return
+		}
+	}
+}
 
-func (this *Collection) create(i any) (err error) {
+func (coll *Collection) Reset(rows ...any) {
+	coll.dataset = make(Dataset, len(rows))
+	coll.dirty = nil
+	coll.insert = nil
+	coll.remove = nil
+	for _, i := range rows {
+		_ = coll.create(i)
+	}
+}
+
+// Release 释放执行过程
+func (coll *Collection) Release() {
+	for k, _ := range coll.dirty {
+		if doc, ok := coll.dataset[k]; ok {
+			doc.Release()
+		}
+	}
+	for _, doc := range coll.insert {
+		doc.Release()
+	}
+
+	coll.dirty = nil
+	coll.insert = nil
+	coll.remove = nil
+}
+
+// Receive 接收器，接收外部对象放入列表，不进行任何操作，一般用于初始化
+func (coll *Collection) Receive(id string, data any) {
+	coll.dataset.Set(id, NewDoc(data))
+}
+func (coll *Collection) create(i any) (err error) {
 	doc := NewDoc(i)
 	if id := doc.GetString(ItemNameOID); id != "" {
-		this.rows[id] = doc
+		coll.dataset.Set(id, doc)
 	} else {
 		err = fmt.Errorf("item id empty:%+v", i)
 	}
 	return
 }
-func (this *Collection) setter(id string, doc *Document, data Update) {
-	if this.update == nil {
-		this.update = make(map[string]struct{})
+func (coll *Collection) setter(id string, doc *Document, data Update) {
+	if coll.dirty == nil {
+		coll.dirty = Dirty{}
 	}
-	doc.Update(data)
-	this.update[id] = struct{}{}
-}
-
-func (this *Collection) Reset(rows ...any) {
-	this.rows = make(map[string]*Document, len(rows))
-	this.update = nil
-	this.insert = nil
-	this.remove = nil
-	for _, i := range rows {
-		_ = this.create(i)
+	if doc != nil && data != nil {
+		doc.Update(data)
 	}
+	coll.dirty.Set(id)
 }
-
-// Release 释放
-func (this *Collection) Release() {
-	this.update = nil
-	this.insert = nil
-	this.remove = nil
+func (coll *Collection) getter(id string) (r *Document, ok bool) {
+	if r, ok = coll.insert.Get(id); ok {
+		return
+	}
+	return coll.dataset.Get(id)
 }

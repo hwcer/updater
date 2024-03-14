@@ -6,14 +6,16 @@ import (
 )
 
 func NewDoc(i any) *Document {
-	d := &Document{data: i}
-	return d
+	if r, ok := i.(*Document); ok {
+		return r
+	}
+	return &Document{data: i}
 }
 
 type Document struct {
 	sch   *schema.Schema
 	data  any
-	dirty map[string]any
+	dirty Update
 }
 
 // Has 是否存在字段
@@ -32,14 +34,12 @@ func (doc *Document) Val(k string) (r any) {
 	r, _ = doc.Get(k)
 	return
 }
-func (doc *Document) Get(key string) (r any, ok bool) {
-	if doc.dirty != nil {
-		if r = doc.dirty[key]; r != nil {
-			return r, true
-		}
+func (doc *Document) Get(k string) (r any, ok bool) {
+	if r, ok = doc.dirty.Get(k); ok {
+		return
 	}
 	if m, exist := doc.data.(ModelGet); exist {
-		if r, ok = m.Get(key); ok {
+		if r, ok = m.Get(k); ok {
 			return
 		}
 	}
@@ -47,8 +47,8 @@ func (doc *Document) Get(key string) (r any, ok bool) {
 	if err != nil {
 		return
 	}
-	logger.Debug("建议给%v.%v添加Get接口提升性能", sch.Name, key)
-	r = sch.GetValue(doc.data, key)
+	logger.Debug("建议给%v.%v添加Get接口提升性能", sch.Name, k)
+	r = sch.GetValue(doc.data, k)
 	ok = r != nil
 	return
 }
@@ -68,16 +68,16 @@ func (doc *Document) GetString(key string) string {
 }
 
 func (doc *Document) Set(k string, v any) {
-	if exist := doc.Has(k); !exist {
+	if !doc.Has(k) {
 		if sch, err := doc.Schema(); err != nil {
 			logger.Alert("Document[%v] field not exist:%v", sch.Name, k)
 		}
 		return
 	}
 	if doc.dirty == nil {
-		doc.dirty = make(map[string]any)
+		doc.dirty = Update{}
 	}
-	doc.dirty[k] = v
+	doc.dirty.Set(k, v)
 }
 
 func (doc *Document) Add(k string, v int64) (r int64) {
@@ -99,20 +99,18 @@ func (doc *Document) Update(data Update) {
 	}
 }
 
-func (doc *Document) Save() (map[string]any, error) {
+func (doc *Document) Save(dirty Update) error {
 	if len(doc.dirty) == 0 {
-		return nil, nil
+		return nil
 	}
-	defer doc.Release()
-	dirty := make(map[string]any, len(doc.dirty))
 	for k, v := range doc.dirty {
-		if err := doc.write(k, v); err == nil {
-			dirty[k] = v
-		} else {
+		if err := doc.write(k, v); err != nil {
 			logger.Alert("Document Save:%", err)
+		} else if dirty != nil {
+			dirty.Set(k, v)
 		}
 	}
-	return dirty, nil
+	return nil
 }
 
 // write 跳过缓存直接修改数据
@@ -165,6 +163,21 @@ func (doc *Document) Reset(v any) {
 func (doc *Document) Release() {
 	doc.dirty = nil
 }
+
+func (doc *Document) Range(handle func(string, any) bool) {
+	sch, err := doc.Schema()
+	if err != nil {
+		return
+	}
+	for _, field := range sch.Fields {
+		k := field.Name
+		v := sch.GetValue(doc.data, k)
+		if !handle(k, v) {
+			return
+		}
+	}
+}
+
 func (doc *Document) Interface() any {
 	return doc.data
 }

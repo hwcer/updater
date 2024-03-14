@@ -7,11 +7,9 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-type Receive func(oid string, doc any)
-
 type collectionModel interface {
 	Upsert(update *Updater, op *operator.Operator) bool
-	Getter(update *Updater, keys []string, fn Receive) error //keys==nil 初始化所有
+	Getter(update *Updater, keys []string, data *dataset.Collection) error //keys==nil 初始化所有
 	Setter(update *Updater, bulkWrite dataset.BulkWrite) error
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
@@ -23,10 +21,10 @@ type collectionModel interface {
 
 type Collection struct {
 	statement
-	model   collectionModel
-	dirty   dataset.Dirty
-	remove  []string //需要移除内存的数据,仅仅RAMMaybe有效
-	dataset dataset.Collection
+	model collectionModel
+	//remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
+	dataset   *dataset.Collection
+	bulkWrite dataset.BulkWrite
 }
 
 func NewCollection(u *Updater, model any, ram RAMType) Handle {
@@ -44,46 +42,48 @@ func (this *Collection) Parser() Parser {
 //}
 
 func (this *Collection) val(id string) (r int64, ok bool) {
-	if r, ok = this.values.get(id); ok {
-		return
-	} else {
-		r, ok = this.dataset.Val(id)
+	var i *dataset.Document
+	if i, ok = this.dataset.Get(id); ok {
+		r = i.GetInt64(dataset.ItemNameVAL)
 	}
 	return
 }
 
 func (this *Collection) save() (err error) {
-	if this.Updater.Async || len(this.dirty) == 0 {
+	if this.Updater.Async {
 		return
 	}
-	bulkWrite := this.model.BulkWrite(this.Updater)
-	if err = this.model.Setter(this.statement.Updater, this.dirty.BulkWrite(bulkWrite)); err == nil {
-		this.dirty = nil
+	bulkWrite := this.BulkWrite()
+	if err = this.dataset.Save(bulkWrite); err != nil {
+		return
+	}
+	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
+		this.bulkWrite = nil
 	}
 	return
 }
 
 func (this *Collection) reset() {
 	this.statement.reset()
-	if this.dirty == nil {
-		this.dirty = dataset.NewDirty()
-	}
 	if this.dataset == nil {
-		this.dataset = dataset.New()
+		this.dataset = dataset.NewColl()
 	}
 }
 
 func (this *Collection) release() {
 	this.statement.release()
-	if !this.Updater.Async && this.statement.ram == RAMTypeNone {
-		this.dirty = nil
-		this.dataset = nil
+	if !this.Updater.Async {
+		if this.statement.ram == RAMTypeNone {
+			this.dataset = nil
+		} else {
+			this.dataset.Release()
+		}
 	}
 }
 func (this *Collection) init() error {
-	this.dataset = dataset.New()
+	this.dataset = dataset.NewColl()
 	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
-		this.Updater.Error = this.model.Getter(this.Updater, nil, this.Receive)
+		this.Updater.Error = this.model.Getter(this.Updater, nil, this.dataset)
 	}
 	return this.Updater.Error
 }
@@ -105,7 +105,7 @@ func (this *Collection) Has(id any) (r bool) {
 // Get 返回item,不可叠加道具只能使用oid获取
 func (this *Collection) Get(key any) (r any) {
 	if oid, err := this.ObjectId(key); err == nil {
-		if i := this.dataset.Get(oid); i != nil {
+		if i := this.dataset.Val(oid); i != nil {
 			r = i.Interface()
 		}
 	} else {
@@ -147,20 +147,11 @@ func (this *Collection) Set(k any, v ...any) {
 // New 使用全新的模型插入
 func (this *Collection) New(v dataset.Model) (err error) {
 	op := &operator.Operator{OID: v.GetOID(), IID: v.GetIID(), Type: operator.TypesNew, Result: []any{v}}
-	if i, ok := v.(dataset.ModelVal); ok {
-		op.Value = i.GetVal()
-	} else {
-		op.Value = 1
-	}
+	op.Value = 1
 	if err = this.mayChange(op); err != nil {
 		return this.Updater.Errorf(err)
 	}
 	this.statement.Operator(op)
-	//if this.verify {
-	//	if err = this.Parse(op); err != nil {
-	//		return this.Updater.Errorf(err)
-	//	}
-	//}
 	return
 }
 
@@ -182,7 +173,7 @@ func (this *Collection) Data() (err error) {
 		return nil
 	}
 	keys := this.keys.ToString()
-	if err = this.model.Getter(this.Updater, keys, this.Receive); err == nil {
+	if err = this.model.Getter(this.Updater, keys, this.dataset); err == nil {
 		this.statement.date()
 	}
 	return
@@ -208,43 +199,38 @@ func (this *Collection) submit() (err error) {
 	}
 	//r = this.statement.operator
 	//同步到内存
-	for _, op := range this.statement.cache {
-		if op.Type.IsValid() {
-			if err = this.dataset.Update(op); err == nil {
-				this.dirty.Update(op)
-			} else {
-				logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v", err, op)
-				err = nil
-			}
-		}
-	}
+	//for _, op := range this.statement.cache {
+	//	if op.Type.IsValid() {
+	//		if err = this.dataset.Update(op); err == nil {
+	//			this.dirty.Update(op)
+	//		} else {
+	//			logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v", err, op)
+	//			err = nil
+	//		}
+	//	}
+	//}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
-	if len(this.remove) > 0 {
-		for _, k := range this.remove {
-			this.dataset.Del(k)
-			//this.statement.history.Remove(k)
-		}
-		this.remove = nil
-	}
+	//if len(this.remove) > 0 {
+	//	for _, k := range this.remove {
+	//		this.dataset.Del(k)
+	//	}
+	//	this.remove = nil
+	//}
 
 	return
 }
 
 // Len 总记录数
-func (this *Collection) Len() int {
-	return len(this.dataset)
-}
+//func (this *Collection) Len() int {
+//	return len(this.dataset)
+//}
 
-func (this *Collection) Range(h func(id string, val any) bool) {
-	for id, dt := range this.dataset {
-		if !h(id, dt.Interface()) {
-			return
-		}
-	}
+func (this *Collection) Range(h func(id string, doc *dataset.Document) bool) {
+	this.dataset.Range(h)
 }
 
 func (this *Collection) IType(iid int32) IType {
@@ -261,6 +247,13 @@ func (this *Collection) ITypeCollection(iid int32) (r ITypeCollection) {
 		r, _ = it.(ITypeCollection)
 	}
 	return
+}
+
+func (this *Collection) BulkWrite() dataset.BulkWrite {
+	if this.bulkWrite == nil {
+		this.bulkWrite = this.model.BulkWrite(this.Updater)
+	}
+	return this.bulkWrite
 }
 
 func (this *Collection) mayChange(op *operator.Operator) (err error) {
@@ -313,11 +306,6 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	this.statement.Operator(op)
 }
 
-// Receive 接收业务逻辑层数据
-func (this *Collection) Receive(id string, data any) {
-	this.dataset.Set(id, data)
-}
-
 func (this *Collection) ObjectId(key any) (oid string, err error) {
 	if v, ok := key.(string); ok {
 		return v, nil
@@ -338,16 +326,4 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 		err = ErrUnableUseIIDOperation
 	}
 	return
-}
-
-// Remove 从内存中移除可能近期不在需要的数据,仅在RAMTypeMaybe模式下生效
-func (this *Collection) Remove(keys ...any) {
-	if this.ram != RAMTypeMaybe {
-		return
-	}
-	for _, k := range keys {
-		if oid, err := this.ObjectId(k); err == nil {
-			this.remove = append(this.remove, oid)
-		}
-	}
 }

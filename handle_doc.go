@@ -17,18 +17,18 @@ import (
 	Set(k string, v any) error    //设置k值的为v
 */
 type documentModel interface {
-	New(update *Updater) any                                      //初始化对象
-	Field(update *Updater, iid int32) (string, error)             //使用IID映射字段名
-	Getter(update *Updater, data any, keys []string) error        //获取数据接口,需要对data进行赋值,keys==nil 获取所有
-	Setter(update *Updater, model any, data map[string]any) error //保存数据接口
+	New(update *Updater) any                                             //初始化对象
+	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
+	Getter(update *Updater, keys []string, data *dataset.Document) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
+	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
 }
 
 // Document 文档存储
 type Document struct {
 	statement
-	dirty   Dirty            //数据缓存
-	model   documentModel    //handle model
-	dataset dataset.Document //数据
+	dirty   dataset.Update    //数据缓存
+	model   documentModel     //handle model
+	dataset *dataset.Document //数据
 }
 
 func NewDocument(u *Updater, model any, ram RAMType) Handle {
@@ -37,39 +37,23 @@ func NewDocument(u *Updater, model any, ram RAMType) Handle {
 	r.statement = *newStatement(u, ram, r.operator, r.has)
 	return r
 }
-func (this *Document) Parser() Parser {
-	return ParserTypeDocument
-}
-
-//func (this *Document) set(k string, v any) (err error) {
-//	if this.dataset != nil {
-//		return this.dataset.Set(k, v)
-//	}
-//	return errors.New("dataset is nil")
-//}
-
-//func (this *Document) get(k string) (r any) {
-//
-//	if this.statement.has(k) && this.dataset != nil {
-//		return this.dataset.Get(k)
-//	}
-//	return nil
-//}
 
 func (this *Document) val(k string) (r int64, ok bool) {
-	if r, ok = this.values.get(k); ok {
-		return
-	} else if v := this.dataset.Get(k); v != nil {
+	if v := this.dataset.Val(k); v != nil {
 		r, ok = dataset.TryParseInt64(v)
 	}
 	return
 }
 
 func (this *Document) save() (err error) {
-	if this.Updater.Async || len(this.dirty) == 0 {
+	if this.Updater.Async {
 		return
 	}
-	if err = this.model.Setter(this.statement.Updater, this.dataset.Interface(), this.dirty); err == nil {
+	dirty := this.Dirty()
+	if err = this.dataset.Save(dirty); err != nil {
+		return
+	}
+	if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
 		this.dirty = nil
 	}
 	return
@@ -78,21 +62,21 @@ func (this *Document) save() (err error) {
 // reset 运行时开始时
 func (this *Document) reset() {
 	this.statement.reset()
-	if this.dirty == nil {
-		this.dirty = Dirty{}
+	if this.dataset == nil {
+		i := this.model.New(this.Updater)
+		this.dataset = dataset.NewDoc(i)
 	}
-	//if this.dataset == nil {
-	//	i := this.model.New(this.Updater)
-	//	this.dataset = dataset.NewDocument(i)
-	//}
 }
 
 // release 运行时释放
 func (this *Document) release() {
 	this.statement.release()
-	if !this.Updater.Async && this.statement.ram == RAMTypeNone {
-		this.dirty = nil
-		this.dataset = nil
+	if !this.Updater.Async {
+		if this.statement.ram == RAMTypeNone {
+			this.dataset = nil
+		} else {
+			this.dataset.Release()
+		}
 	}
 }
 func (this *Document) init() (err error) {
@@ -102,8 +86,8 @@ func (this *Document) init() (err error) {
 	}
 	if this.statement.ram == RAMTypeAlways {
 		i := this.model.New(this.Updater)
-		this.dataset = dataset.NewDocument(i)
-		err = this.model.Getter(this.Updater, this.dataset.Interface(), nil)
+		this.dataset = dataset.NewDoc(i)
+		err = this.model.Getter(this.Updater, nil, this.dataset)
 	}
 	return
 }
@@ -121,7 +105,7 @@ func (this *Document) Has(k any) bool {
 // 不建议使用GET获取特定字段值
 func (this *Document) Get(k any) (r any) {
 	if key, err := this.ObjectId(k); err == nil {
-		r = this.get(key)
+		r = this.dataset.Val(key)
 	}
 	return
 }
@@ -163,7 +147,7 @@ func (this *Document) Data() (err error) {
 		return nil
 	}
 	keys := this.keys.ToString()
-	if err = this.model.Getter(this.Updater, this.dataset.Interface(), keys); err == nil {
+	if err = this.model.Getter(this.Updater, keys, this.dataset); err == nil {
 		this.statement.date()
 	}
 	return
@@ -197,6 +181,9 @@ func (this *Document) Schema() *schema.Schema {
 	}
 	return sch
 }
+func (this *Document) Parser() Parser {
+	return ParserTypeDocument
+}
 
 func (this *Document) submit() (err error) {
 	//defer this.statement.done()
@@ -205,15 +192,15 @@ func (this *Document) submit() (err error) {
 	}
 	//同步到内存
 	//r = this.statement.operator
-	for _, op := range this.statement.cache {
-		if op.Type.IsValid() {
-			if e := this.set(op.Key, op.Result); e != nil {
-				logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.Table(), op.Key, op.Result)
-			} else {
-				this.dirty[op.Key] = op.Result
-			}
-		}
-	}
+	//for _, op := range this.statement.cache {
+	//	if op.Type.IsValid() {
+	//		if e := this.set(op.Key, op.Result); e != nil {
+	//			logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.Table(), op.Key, op.Result)
+	//		} else {
+	//			this.dirty[op.Key] = op.Result
+	//		}
+	//	}
+	//}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
@@ -223,8 +210,15 @@ func (this *Document) submit() (err error) {
 }
 
 // Dirty 设置脏数据,手动修改内存后置脏同步到数据库
-func (this *Document) Dirty(k string, v any) {
-	this.dirty[k] = v
+func (this *Document) Dirty() dataset.Update {
+	if this.dirty == nil {
+		this.dirty = dataset.Update{}
+	}
+	return dataset.Update{}
+}
+
+func (this *Document) Range(f func(k string, v any) bool) {
+	this.dataset.Range(f)
 }
 
 func (this *Document) Interface() any {
@@ -279,15 +273,15 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	if this.Updater.Error != nil {
 		return
 	}
-	sch, err := this.dataset.Schema()
-	if err != nil {
-		this.Updater.Error = err
-		return
-	}
-	op.OID = sch.Table
-	if this.Updater.Error != nil {
-		return
-	}
+	//sch, err := this.dataset.Schema()
+	//if err != nil {
+	//	this.Updater.Error = err
+	//	return
+	//}
+	//op.OID = sch.Table
+	//if this.Updater.Error != nil {
+	//	return
+	//}
 	this.statement.Select(op.Key)
 	it := this.IType(op.IID)
 	if it != nil {

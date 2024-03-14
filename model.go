@@ -8,7 +8,7 @@ import (
 type Parser int8
 
 const (
-	ParserTypeHash       Parser = iota //Map[string]int64模式
+	ParserTypeValues     Parser = iota //Map[string]int64模式
 	ParserTypeDocument                 //Document 单文档模式
 	ParserTypeCollection               //Collection 文档集合模式
 )
@@ -18,7 +18,7 @@ type handleFunc func(updater *Updater, model any, ram RAMType) Handle
 var handles = make(map[Parser]handleFunc)
 
 func init() {
-	NewHandle(ParserTypeHash, NewHash)
+	NewHandle(ParserTypeValues, NewValues)
 	NewHandle(ParserTypeDocument, NewDocument)
 	NewHandle(ParserTypeCollection, NewCollection)
 }

@@ -20,47 +20,48 @@ type modelIType interface {
 type stmHandleOptCreate func(t operator.Types, k any, v int64, r any)
 type stmHandleDataExist func(k any) bool
 
-type stmDatasetValues struct {
-	v map[any]int64
-}
-
-func (this *stmDatasetValues) get(k any) (v int64, ok bool) {
-	if this.v != nil {
-		v, ok = this.v[k]
-	}
-	return
-}
-
-func (this *stmDatasetValues) set(k any, v int64) {
-	if this.v == nil {
-		this.v = map[any]int64{}
-	}
-	this.v[k] = v
-}
-
-func (this *stmDatasetValues) add(k any, v int64) {
-	if this.v == nil {
-		this.v = map[any]int64{}
-	}
-	this.v[k] += v
-}
-
-func (this *stmDatasetValues) sub(k any, v int64) {
-	if this.v == nil {
-		this.v = map[any]int64{}
-	}
-	this.v[k] -= v
-}
-
-func (this *stmDatasetValues) release() {
-	this.v = nil
-}
+//
+//type stmDatasetValues struct {
+//	v map[any]int64
+//}
+//
+//func (this *stmDatasetValues) get(k any) (v int64, ok bool) {
+//	if this.v != nil {
+//		v, ok = this.v[k]
+//	}
+//	return
+//}
+//
+//func (this *stmDatasetValues) set(k any, v int64) {
+//	if this.v == nil {
+//		this.v = map[any]int64{}
+//	}
+//	this.v[k] = v
+//}
+//
+//func (this *stmDatasetValues) add(k any, v int64) {
+//	if this.v == nil {
+//		this.v = map[any]int64{}
+//	}
+//	this.v[k] += v
+//}
+//
+//func (this *stmDatasetValues) sub(k any, v int64) {
+//	if this.v == nil {
+//		this.v = map[any]int64{}
+//	}
+//	this.v[k] -= v
+//}
+//
+//func (this *stmDatasetValues) release() {
+//	this.v = nil
+//}
 
 type statement struct {
-	ram             RAMType
-	keys            Keys
-	cache           []*operator.Operator
-	values          stmDatasetValues //执行过程中的数量过程
+	ram   RAMType
+	keys  Keys
+	cache []*operator.Operator
+	//values          stmDatasetValues //执行过程中的数量过程
 	Updater         *Updater
 	operator        []*operator.Operator //操作
 	handleOptCreate stmHandleOptCreate
@@ -103,9 +104,9 @@ func (stmt *statement) reset() {
 
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
-	if !stmt.Updater.Async {
-		stmt.values.release()
-	}
+	//if !stmt.Updater.Async {
+	//	stmt.values.release()
+	//}
 	stmt.keys = nil
 	stmt.operator = nil
 }
