@@ -136,6 +136,15 @@ func (coll *Collection) Delete(id string) {
 	coll.remove.Set(id)
 }
 
+// Remove 从内存中清理，不会触发持久化操作
+func (coll *Collection) Remove(id ...string) {
+	for _, k := range id {
+		delete(coll.dirty, k)
+		delete(coll.insert, k)
+		delete(coll.dataset, k)
+	}
+}
+
 // Dirty 外部直接修改doc后用来标记修改
 func (coll *Collection) Dirty(id ...string) {
 	for _, k := range id {
@@ -154,7 +163,7 @@ func (coll *Collection) Save(bulkWrite BulkWrite) error {
 		if err := doc.Save(nil); err == nil {
 			coll.dataset.Set(k, doc)
 			if bulkWrite != nil {
-				bulkWrite.Insert(doc.Interface())
+				bulkWrite.Insert(doc.Any())
 			}
 		}
 	}
@@ -201,6 +210,10 @@ func (coll *Collection) Release() {
 	coll.dirty = nil
 	coll.insert = nil
 	coll.remove = nil
+}
+
+func (coll *Collection) Length() int {
+	return len(coll.dataset)
 }
 
 // Receive 接收器，接收外部对象放入列表，不进行任何操作，一般用于初始化

@@ -106,7 +106,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 		doc.Update(op.Result.(dataset.Update))
 		op.Type = operator.TypesNew
 		op.Value = doc.GetInt64(dataset.ItemNameVAL)
-		op.Result = []any{doc.Interface()}
+		op.Result = []any{doc.Any()}
 		return collectionHandleNew(coll, op)
 	} else if !ok {
 		return ErrItemNotExist(op.OID)

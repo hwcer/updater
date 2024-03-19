@@ -9,7 +9,7 @@ import (
 
 type collectionModel interface {
 	Upsert(update *Updater, op *operator.Operator) bool
-	Getter(update *Updater, keys []string, data *dataset.Collection) error //keys==nil 初始化所有
+	Getter(update *Updater, data *dataset.Collection, keys []string) error //keys==nil 初始化所有
 	Setter(update *Updater, bulkWrite dataset.BulkWrite) error
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
@@ -21,8 +21,8 @@ type collectionModel interface {
 
 type Collection struct {
 	statement
-	model collectionModel
-	//remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
+	model     collectionModel
+	remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset   *dataset.Collection
 	bulkWrite dataset.BulkWrite
 }
@@ -83,7 +83,7 @@ func (this *Collection) release() {
 func (this *Collection) init() error {
 	this.dataset = dataset.NewColl()
 	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
-		this.Updater.Error = this.model.Getter(this.Updater, nil, this.dataset)
+		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
 	}
 	return this.Updater.Error
 }
@@ -106,7 +106,7 @@ func (this *Collection) Has(id any) (r bool) {
 func (this *Collection) Get(key any) (r any) {
 	if oid, err := this.ObjectId(key); err == nil {
 		if i := this.dataset.Val(oid); i != nil {
-			r = i.Interface()
+			r = i.Any()
 		}
 	} else {
 		logger.Debug(err)
@@ -144,6 +144,11 @@ func (this *Collection) Set(k any, v ...any) {
 	}
 }
 
+// Remove 从内存中移除，用于清理不常用数据，不会改变数据库
+func (this *Collection) Remove(id ...string) {
+	this.remove = append(this.remove, id...)
+}
+
 // New 使用全新的模型插入
 func (this *Collection) New(v dataset.Model) (err error) {
 	op := &operator.Operator{OID: v.GetOID(), IID: v.GetIID(), Type: operator.TypesNew, Result: []any{v}}
@@ -173,7 +178,7 @@ func (this *Collection) Data() (err error) {
 		return nil
 	}
 	keys := this.keys.ToString()
-	if err = this.model.Getter(this.Updater, keys, this.dataset); err == nil {
+	if err = this.model.Getter(this.Updater, this.dataset, keys); err == nil {
 		this.statement.date()
 	}
 	return
@@ -214,12 +219,10 @@ func (this *Collection) submit() (err error) {
 		logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
-	//if len(this.remove) > 0 {
-	//	for _, k := range this.remove {
-	//		this.dataset.Del(k)
-	//	}
-	//	this.remove = nil
-	//}
+	if len(this.remove) > 0 {
+		this.dataset.Remove(this.remove...)
+		this.remove = nil
+	}
 
 	return
 }
@@ -247,6 +250,10 @@ func (this *Collection) ITypeCollection(iid int32) (r ITypeCollection) {
 		r, _ = it.(ITypeCollection)
 	}
 	return
+}
+
+func (this *Collection) Length() int {
+	return this.dataset.Length()
 }
 
 func (this *Collection) BulkWrite() dataset.BulkWrite {

@@ -178,6 +178,6 @@ func (doc *Document) Range(handle func(string, any) bool) {
 	}
 }
 
-func (doc *Document) Interface() any {
+func (doc *Document) Any() any {
 	return doc.data
 }

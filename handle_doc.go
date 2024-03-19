@@ -19,7 +19,7 @@ import (
 type documentModel interface {
 	New(update *Updater) any                                             //初始化对象
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
-	Getter(update *Updater, keys []string, data *dataset.Document) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
+	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
 }
 
@@ -87,7 +87,7 @@ func (this *Document) init() (err error) {
 	if this.statement.ram == RAMTypeAlways {
 		i := this.model.New(this.Updater)
 		this.dataset = dataset.NewDoc(i)
-		err = this.model.Getter(this.Updater, nil, this.dataset)
+		err = this.model.Getter(this.Updater, this.dataset, nil)
 	}
 	return
 }
@@ -147,7 +147,7 @@ func (this *Document) Data() (err error) {
 		return nil
 	}
 	keys := this.keys.ToString()
-	if err = this.model.Getter(this.Updater, keys, this.dataset); err == nil {
+	if err = this.model.Getter(this.Updater, this.dataset, keys); err == nil {
 		this.statement.date()
 	}
 	return
@@ -222,7 +222,7 @@ func (this *Document) Range(f func(k string, v any) bool) {
 }
 
 func (this *Document) Interface() any {
-	return this.dataset.Interface()
+	return this.dataset.Any()
 }
 
 func (this *Document) ObjectId(k any) (key string, err error) {

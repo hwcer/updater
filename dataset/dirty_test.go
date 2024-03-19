@@ -23,7 +23,7 @@ func TestName(t *testing.T) {
 	}
 	k := "1"
 	doc, _ := player.Get(k)
-	t.Logf("%+v", doc.Interface())
+	t.Logf("%+v", doc.Any())
 	if err := player.Update(k, Update{"lv": 100}); err != nil {
 		t.Logf("Update Err:%v", err)
 	}
@@ -31,6 +31,6 @@ func TestName(t *testing.T) {
 	if err := player.Save(nil); err != nil {
 		t.Logf("Save Err:%v", err)
 	}
-	t.Logf("修改结果：%+v", doc.Interface())
+	t.Logf("修改结果：%+v", doc.Any())
 	player.Release()
 }
