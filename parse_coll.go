@@ -56,7 +56,7 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 	if !ok {
 		return coll.Updater.Errorf("operator[New] Result type must be []any :%+v", op)
 	}
-	op.Result, err = collectionHandleInsert(coll, items)
+	op.Result, err = collectionHandleInsert(coll, items...)
 	return
 }
 
@@ -177,7 +177,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 			items = append(items, item)
 		}
 	}
-	op.Result, err = collectionHandleInsert(coll, items)
+	op.Result, err = collectionHandleInsert(coll, items...)
 	return
 }
 
@@ -200,11 +200,11 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error
 func collectionHandleInsert(coll *Collection, vs ...any) (r []any, err error) {
 	for _, v := range vs {
 		doc := dataset.NewDoc(v)
-		var j dataset.Update
-		if j, err = doc.Json(); err != nil {
-			return
-		}
-		r = append(r, j)
+		//var j dataset.Update
+		//if j, err = doc.Json(); err != nil {
+		//	return
+		//}
+		r = append(r, v)
 		err = coll.dataset.Insert(doc)
 	}
 	return

@@ -135,8 +135,10 @@ func (doc *Document) Schema() (sch *schema.Schema, err error) {
 		} else {
 			logger.Error(err)
 		}
+	} else {
+		sch = doc.sch
 	}
-	return doc.sch, nil
+	return
 }
 
 // Json 转换成json 不包含主键
