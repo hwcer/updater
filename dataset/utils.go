@@ -59,21 +59,17 @@ func Format(s ...string) string {
 	return strings.Join(s, ".")
 }
 
-// TODO
-func ParseMap(k string, i any) (r map[string]any) {
-	if k != "*" {
-		r = make(map[string]any)
-		r[k] = i
-		return r
-	}
-	switch i.(type) {
-	case map[string]interface{}:
-		r, _ = i.(map[string]interface{})
+func ParseMap(i any) (r map[string]any, ok bool) {
+	ok = true
+	switch v := i.(type) {
+	case map[string]any:
+		r = v
 	case bson.M:
-		r, _ = i.(bson.M)
+		r = v
+	case Update:
+		r = v
 	default:
-		r = make(map[string]interface{})
-		r[ItemNameVAL] = i
+		ok = false
 	}
 	return
 }

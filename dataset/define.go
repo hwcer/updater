@@ -26,3 +26,9 @@ type ModelSet interface {
 //type ModelClone interface {
 //	Clone() any
 //}
+
+type BulkWrite interface {
+	Update(data any, where ...any)
+	Insert(documents ...any)
+	Delete(where ...any)
+}

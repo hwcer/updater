@@ -273,18 +273,12 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 			op.Key, this.Updater.Error = this.model.Field(this.Updater, op.IID)
 		}
 	}
+	if this.Updater.Error == nil && op.Key == "" {
+		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
+	}
 	if this.Updater.Error != nil {
 		return
 	}
-	//sch, err := this.dataset.Schema()
-	//if err != nil {
-	//	this.Updater.Error = err
-	//	return
-	//}
-	//op.OID = sch.Table
-	//if this.Updater.Error != nil {
-	//	return
-	//}
 	this.statement.Select(op.Key)
 	it := this.IType(op.IID)
 	if it != nil {

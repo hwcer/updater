@@ -1,10 +1,5 @@
 package dataset
 
-type BulkWrite interface {
-	Update(data any, where ...any)
-	Insert(documents ...any)
-	Delete(where ...any)
-}
 type bulkWriteType int8
 
 const (

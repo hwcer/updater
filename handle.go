@@ -14,7 +14,7 @@ const (
 
 // 通过MODEL直接获取IType
 type modelIType interface {
-	IType(iid int32) int32
+	IType(iid any) int32
 }
 
 type stmHandleOptCreate func(t operator.Types, k any, v int64, r any)
