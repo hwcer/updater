@@ -53,6 +53,9 @@ func (this *Document) save() (err error) {
 	if err = this.dataset.Save(dirty); err != nil {
 		return
 	}
+	if len(dirty) == 0 {
+		return nil
+	}
 	if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
 		this.dirty = nil
 	}

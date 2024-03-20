@@ -46,11 +46,14 @@ func (this *Values) init() error {
 }
 
 func (this *Values) save() (err error) {
-	if this.Updater.Async || len(this.dirty) == 0 {
+	if this.Updater.Async {
 		return
 	}
 	dirty := this.Dirty()
-	expire := this.dataset.Expire()
+	expire := this.dataset.Save(dirty)
+	if len(dirty) == 0 {
+		return nil
+	}
 	if err = this.model.Setter(this.statement.Updater, dirty, expire); err == nil {
 		this.dirty = nil
 	}
