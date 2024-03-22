@@ -2,7 +2,6 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -51,9 +50,7 @@ func documentParseSub(this *Document, op *operator.Operator) error {
 
 func documentParseSet(this *Document, op *operator.Operator) (err error) {
 	op.Type = operator.TypesSet
-	if r, ok := dataset.TryParseInt64(op.Result); ok {
-		this.dataset.Set(op.Key, r)
-	}
+	this.dataset.Set(op.Key, op.Result)
 	return
 }
 

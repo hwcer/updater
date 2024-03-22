@@ -3,6 +3,7 @@ package dataset
 import (
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
+	"strings"
 )
 
 func NewDoc(i any) *Document {
@@ -23,6 +24,9 @@ func (doc *Document) Has(k string) bool {
 	sch, err := doc.Schema()
 	if err != nil {
 		return false
+	}
+	if i := strings.Index(k, "."); i > 0 {
+		k = k[0:i]
 	}
 	if field := sch.LookUpField(k); field != nil {
 		return true
@@ -69,9 +73,6 @@ func (doc *Document) GetString(key string) string {
 
 func (doc *Document) Set(k string, v any) {
 	if !doc.Has(k) {
-		if sch, err := doc.Schema(); err != nil {
-			logger.Alert("Document[%v] field not exist:%v", sch.Name, k)
-		}
 		return
 	}
 	if doc.dirty == nil {
