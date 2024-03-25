@@ -171,7 +171,7 @@ func (coll *Collection) Save(bulkWrite BulkWrite) error {
 		if doc, ok := coll.dataset.Get(k); ok {
 			v := Update{}
 			if err := doc.Save(v); err == nil && len(v) > 0 && bulkWrite != nil {
-				bulkWrite.Update(v, k)
+				bulkWrite.Update(map[string]any(v), k)
 			}
 		}
 	}

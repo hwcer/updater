@@ -104,6 +104,9 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 		}
 		doc := dataset.NewDoc(i)
 		doc.Update(op.Result.(dataset.Update))
+		if err = doc.Save(nil); err != nil {
+			return
+		}
 		op.Type = operator.TypesNew
 		op.Value = doc.GetInt64(dataset.ItemNameVAL)
 		op.Result = []any{doc.Any()}
@@ -113,9 +116,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	}
 
 	update, _ := op.Result.(dataset.Update)
-	if v, ok := update[dataset.ItemNameVAL]; ok {
-		err = coll.dataset.Set(op.OID, dataset.ItemNameVAL, dataset.ParseInt64(v))
-	}
+	err = coll.dataset.Update(op.OID, update)
 	return
 }
 
