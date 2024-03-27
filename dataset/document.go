@@ -1,8 +1,8 @@
 package dataset
 
 import (
-	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
+	"github.com/hwcer/schema"
 	"strings"
 )
 

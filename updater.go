@@ -3,7 +3,6 @@ package updater
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/cosgo/utils"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
@@ -87,8 +86,12 @@ func (u *Updater) Reload() (err error) {
 }
 
 // Reset 重置,每次请求开始时调用
-func (u *Updater) Reset() {
-	u.Time = utils.Time.Now()
+func (u *Updater) Reset(t ...time.Time) {
+	if len(t) > 0 {
+		u.Time = t[0]
+	} else {
+		u.Time = time.Now()
+	}
 	u.strict = StrictTypeEnabled
 	for _, w := range u.Handles() {
 		w.reset()

@@ -2,8 +2,8 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
+	"github.com/hwcer/schema"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 	"strings"
