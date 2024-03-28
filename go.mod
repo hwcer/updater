@@ -4,7 +4,7 @@ go 1.21.0
 
 require (
 	github.com/hwcer/logger v0.0.5
-	github.com/hwcer/schema v0.0.2
+	github.com/hwcer/schema v0.0.3
 	go.mongodb.org/mongo-driver v1.14.0
 )
 
