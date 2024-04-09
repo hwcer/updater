@@ -290,9 +290,19 @@ func (u *Updater) ParseId(key any) (iid int32, err error) {
 	return
 }
 
-// Handle 根据 name(string)
-func (u *Updater) Handle(name string) Handle {
-	return u.handles[name]
+// Handle 根据 name(string) || itype(int32)
+func (u *Updater) Handle(name any) Handle {
+	switch k := name.(type) {
+	case string:
+		return u.handles[k]
+	case int:
+		return u.handleByIType(int32(k))
+	case int32:
+		return u.handleByIType(int32(k))
+	case int64:
+		return u.handleByIType(int32(k))
+	}
+	return nil
 }
 
 // Handle 根据iid,oid获取模型不支持Hash,Document的字段查询
@@ -309,6 +319,14 @@ func (u *Updater) handle(k any) Handle {
 		return nil
 	}
 	return u.Handle(model.name)
+}
+
+func (u *Updater) handleByIType(id int32) Handle {
+	mod := modelsDict[id]
+	if mod == nil {
+		return nil
+	}
+	return u.handles[mod.name]
 }
 
 func (u *Updater) Handles() (r []Handle) {

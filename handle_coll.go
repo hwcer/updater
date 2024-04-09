@@ -94,6 +94,10 @@ func (this *Collection) destroy() (err error) {
 	return this.save()
 }
 
+func (this *Collection) Len() int {
+	return this.dataset.Len()
+}
+
 func (this *Collection) Has(id any) (r bool) {
 	if oid, err := this.ObjectId(id); err == nil {
 		r = this.dataset.Has(oid)
@@ -251,10 +255,6 @@ func (this *Collection) ITypeCollection(iid int32) (r ITypeCollection) {
 		r, _ = it.(ITypeCollection)
 	}
 	return
-}
-
-func (this *Collection) Length() int {
-	return this.dataset.Length()
 }
 
 func (this *Collection) BulkWrite() dataset.BulkWrite {

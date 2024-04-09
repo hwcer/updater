@@ -91,7 +91,9 @@ func (this *Values) release() {
 func (this *Values) destroy() (err error) {
 	return this.save()
 }
-
+func (this *Values) Len() int {
+	return this.dataset.Len()
+}
 func (this *Values) Has(k any) bool {
 	return this.dataset.Has(dataset.ParseInt32(k))
 }

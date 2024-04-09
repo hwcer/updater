@@ -49,6 +49,10 @@ type Collection struct {
 	dataset Dataset //数据集
 }
 
+func (coll *Collection) Len() int {
+	return len(coll.dataset)
+}
+
 // Has 是否存在记录，包括已经标记为删除记录，主要用来判断是否已经拉取过数据
 func (coll *Collection) Has(id string) bool {
 	if coll.remove.Has(id) {
@@ -210,10 +214,6 @@ func (coll *Collection) Release() {
 	coll.dirty = nil
 	coll.insert = nil
 	coll.remove = nil
-}
-
-func (coll *Collection) Length() int {
-	return len(coll.dataset)
 }
 
 // Receive 接收器，接收外部对象放入列表，不进行任何操作，一般用于初始化

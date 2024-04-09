@@ -27,6 +27,9 @@ type Values struct {
 	expire int64
 }
 
+func (val *Values) Len() int {
+	return len(val.data)
+}
 func (val *Values) Has(k int32) (r bool) {
 	if val.dirty.Has(k) {
 		return true
