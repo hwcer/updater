@@ -6,6 +6,7 @@ import (
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
+	"github.com/hwcer/uuid"
 	"time"
 )
 
@@ -18,7 +19,7 @@ const (
 )
 
 type Updater struct {
-	uid      string
+	uid      uuid.UUID
 	Time     time.Time
 	Error    error
 	Events   Events
@@ -31,7 +32,7 @@ type Updater struct {
 	Async    bool                 //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
 }
 
-func New(uid string) (u *Updater, err error) {
+func New(uid uuid.UUID) (u *Updater, err error) {
 	u = &Updater{uid: uid}
 	err = u.Reload()
 	return
@@ -118,7 +119,7 @@ func (u *Updater) emit(t EventType) {
 	u.Events.emit(u, t)
 }
 
-func (u *Updater) Uid() string {
+func (u *Updater) Uid() uuid.UUID {
 	return u.uid
 }
 

@@ -6,6 +6,7 @@ require (
 	github.com/hwcer/cosgo v1.0.3
 	github.com/hwcer/logger v0.0.5
 	github.com/hwcer/schema v0.0.3
+	github.com/hwcer/uuid v0.0.0-20240414123453-932b02de80b8
 	go.mongodb.org/mongo-driver v1.14.0
 )
 
