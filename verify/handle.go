@@ -46,9 +46,13 @@ func taskTargetHandleNone(u *updater.Updater, target Value) (r int64) {
 	}
 	return
 }
-func taskTargetHandleEvents(u *updater.Updater, target Value) int64 {
-
-	return 0
+func taskTargetHandleEvents(u *updater.Updater, target Value) (r int64) {
+	if d, ok := target.(GetVal); ok {
+		r = d.GetVal()
+	}else {
+		logger.Alert("taskTargetHandleEvents ")
+	}
+	return
 }
 func taskTargetHandleMethod(u *updater.Updater, target Value) int64 {
 	key := target.GetKey()
