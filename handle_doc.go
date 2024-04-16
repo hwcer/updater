@@ -217,7 +217,7 @@ func (this *Document) Dirty() dataset.Update {
 	if this.dirty == nil {
 		this.dirty = dataset.Update{}
 	}
-	return dataset.Update{}
+	return this.dirty
 }
 
 func (this *Document) Range(f func(k string, v any) bool) {
