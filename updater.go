@@ -18,9 +18,9 @@ const (
 )
 
 type Updater struct {
-	uid      any
 	Time     time.Time
 	Error    error
+	Player   any //角色信息
 	Events   Events
 	Emitter  Emitter
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
@@ -31,8 +31,8 @@ type Updater struct {
 	Async    bool                 //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
 }
 
-func New(uid any) (u *Updater, err error) {
-	u = &Updater{uid: uid}
+func New(p any) (u *Updater, err error) {
+	u = &Updater{Player: p}
 	err = u.Reload()
 	return
 }
@@ -116,10 +116,6 @@ func (u *Updater) Release() {
 
 func (u *Updater) emit(t EventType) {
 	u.Events.emit(u, t)
-}
-
-func (u *Updater) Uid() any {
-	return u.uid
 }
 
 // Strict 开启或者关闭严格模式,关闭严格模式道具不足时扣成0,仅当前请求生效
@@ -337,7 +333,7 @@ func (u *Updater) Handles() (r []Handle) {
 	return
 }
 
-// Create 创建一批新对象,仅仅适用于coll类型
+// Create 创建一批新对象,仅仅适用于coll类型，不触发任何事件
 func (u *Updater) Create(data dataset.Model) (err error) {
 	op := &operator.Operator{OID: data.GetOID(), IID: data.GetIID(), Type: operator.TypesNew, Value: 1, Result: []any{data}}
 	return u.Operator(op)
@@ -380,6 +376,7 @@ func (u *Updater) Destroy() (err error) {
 			return
 		}
 	}
+	u.Player = nil
 	return
 }
 
