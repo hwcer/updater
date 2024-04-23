@@ -106,6 +106,7 @@ func (u *Updater) Release() {
 	u.dirty = nil
 	u.changed = false
 	u.operated = false
+	u.Error = nil
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
