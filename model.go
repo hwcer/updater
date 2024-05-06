@@ -3,6 +3,7 @@ package updater
 import (
 	"fmt"
 	"github.com/hwcer/schema"
+	"sort"
 )
 
 type Parser int8
@@ -23,6 +24,10 @@ func init() {
 	NewHandle(ParserTypeCollection, NewCollection)
 }
 
+type TableOrder interface {
+	TableOrder() int32
+}
+
 // NewHandle 注册新解析器
 func NewHandle(name Parser, f handleFunc) {
 	handles[name] = f
@@ -37,6 +42,7 @@ type Model struct {
 	name   string
 	model  any
 	parser Parser
+	order  int32 //倒序排列
 }
 
 func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
@@ -49,7 +55,16 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 	} else {
 		mod.name = schema.Kind(model).Name()
 	}
+	if o, ok := model.(TableOrder); ok {
+		mod.order = o.TableOrder()
+	} else {
+		mod.order = -1
+	}
 	modelsRank = append(modelsRank, mod)
+	sort.SliceStable(modelsRank, func(i, j int) bool {
+		return modelsRank[i].order > modelsRank[j].order
+	})
+
 	for _, it := range itypes {
 		if parser == ParserTypeCollection {
 			it = it.(ITypeCollection)

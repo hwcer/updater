@@ -26,10 +26,22 @@ func (opt *Operator) SetOID(id string) {
 
 	公共字段，所有模式下都存在，且意义相同：Bag,Type
 
-	ParserTypeValues :  IID (int32),Value (int32),Result (int32)
+	ParserTypeValues :
+		ADD : IID (int32),Value (int32),Result (int32)
+		SUB : IID (int32),Value (int32),Result (int32)
+		SET : IID (int32),Result (int32)
+		DEL : IID (int32)
 
-    ParserTypeDocument :   Key(string),Value(any),Result(any)
 
-	ParserTypeCollection: OID,IID,Value,Result
+    ParserTypeDocument :
+		ADD : Key(string),Value(any),Result(any)
+		SUB : Key(string),Value(any),Result(any)
+		SET : Key(string),Result(any) {b=10  t = set  k=lv r=10}
 
+	ParserTypeCollection:
+		ADD : OID(string),IID(int32),Value(int32),Result(int32)
+		SUB : OID(string),IID(int32),Value(int32),Result(int32)
+		DEL : OID(string),IID(int32)
+		SET : OID(string),IID(int32),Result(map(string)any)
+		NEW : OID(string),IID(int32),Result(any)
 */
