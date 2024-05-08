@@ -377,7 +377,7 @@ func (u *Updater) Destroy() (err error) {
 			return
 		}
 	}
-	u.Player = nil
+	//u.Player = nil
 	return
 }
 

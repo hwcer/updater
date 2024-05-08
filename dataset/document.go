@@ -106,7 +106,7 @@ func (doc *Document) Save(dirty Update) error {
 	}
 	for k, v := range doc.dirty {
 		if err := doc.write(k, v); err != nil {
-			logger.Alert("Document Save:%", err)
+			logger.Alert("Document Save:%v", err)
 		} else if dirty != nil {
 			dirty.Set(k, v)
 		}
