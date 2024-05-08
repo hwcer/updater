@@ -50,7 +50,7 @@ func (this *Collection) val(id string) (r int64, ok bool) {
 }
 
 func (this *Collection) save() (err error) {
-	if this.Updater.Async {
+	if this.Updater.Async || this.dataset == nil {
 		return
 	}
 	bulkWrite := this.BulkWrite()
