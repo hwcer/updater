@@ -38,7 +38,7 @@ func collectionHandleResolve(coll *Collection, op *operator.Operator) error {
 
 func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
-		return ErrOIDEmpty(op.IID)
+		return ErrObjectIdEmpty(op.IID)
 	}
 	coll.dataset.Delete(op.OID)
 	return
@@ -67,7 +67,7 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 	}
 	//可以叠加的道具
 	if op.OID == "" {
-		return ErrOIDEmpty(op.IID)
+		return ErrObjectIdEmpty(op.IID)
 	}
 	if v, ok := coll.val(op.OID); !ok {
 		return collectionHandleNewItem(coll, op)
@@ -80,7 +80,7 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 
 func collectionHandleSub(coll *Collection, op *operator.Operator) error {
 	if op.OID == "" {
-		return ErrOIDEmpty(op.IID)
+		return ErrObjectIdEmpty(op.IID)
 	}
 	d, _ := coll.val(op.OID)
 	r, err := coll.Updater.deduct(op.IID, d, op.Value)
@@ -94,7 +94,7 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) error {
 
 func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
-		return ErrOIDEmpty(op.IID)
+		return ErrObjectIdEmpty(op.IID)
 	}
 	if _, ok := coll.val(op.OID); !ok && coll.model.Upsert(coll.Updater, op) {
 		it := coll.ITypeCollection(op.IID)
@@ -134,7 +134,7 @@ func collectionCompareTransform(coll *Collection, op *operator.Operator, ok bool
 }
 func collectionHandleMax(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
-		return ErrOIDEmpty(op.IID)
+		return ErrObjectIdEmpty(op.IID)
 	}
 	if v, ok := coll.val(op.OID); op.Value > v {
 		err = collectionCompareTransform(coll, op, ok)
@@ -146,7 +146,7 @@ func collectionHandleMax(coll *Collection, op *operator.Operator) (err error) {
 
 func collectionHandleMin(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
-		return ErrOIDEmpty(op.IID)
+		return ErrObjectIdEmpty(op.IID)
 	}
 	if v, ok := coll.val(op.OID); op.Value < v {
 		err = collectionCompareTransform(coll, op, ok)

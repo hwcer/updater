@@ -327,7 +327,7 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 		return "", fmt.Errorf("IType unknown:%v", iid)
 	}
 	if !it.Stacked() {
-		return "", ErrOIDEmpty(iid)
+		return "", ErrObjectIdEmpty(iid)
 	}
 	oid, err = it.ObjectId(this.Updater, iid)
 	if err == nil && oid == "" {
