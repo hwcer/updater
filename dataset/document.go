@@ -30,6 +30,8 @@ func (doc *Document) Has(k string) bool {
 	}
 	if field := sch.LookUpField(k); field != nil {
 		return true
+	} else {
+		logger.Alert("document[%v] does not have field:%v ", sch.Name, k)
 	}
 	return false
 }
