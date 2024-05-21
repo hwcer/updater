@@ -96,7 +96,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrObjectIdEmpty(op.IID)
 	}
-	if _, ok := coll.val(op.OID); !ok && coll.model.Upsert(coll.Updater, op) {
+	if ok := coll.Has(op.OID); !ok && coll.model.Upsert(coll.Updater, op) {
 		it := coll.ITypeCollection(op.IID)
 		var i any
 		if i, err = it.New(coll.Updater, op); err != nil {

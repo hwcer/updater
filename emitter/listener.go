@@ -1,20 +1,18 @@
 package emitter
 
+import "github.com/hwcer/cosgo/values"
+
 type Handle func(l *Listener, val int32) bool //满足条件后的更新器,返回false移除监听
 
 type Listener struct {
-	key    any     //任务标识
 	args   []int32 //任务匹配参数
 	handle Handle  //回调信息
 	Filter Filter  //过滤函数
+	Attach values.Values
 }
 
-func New(k any, args []int32, handle Handle) *Listener {
-	return &Listener{key: k, args: args, handle: handle}
-}
-
-func (l *Listener) GetKey() any {
-	return l.key
+func New(args []int32, handle Handle) *Listener {
+	return &Listener{args: args, handle: handle, Attach: values.Values{}}
 }
 
 func (l *Listener) GetArgs() (r []int32) {

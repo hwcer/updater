@@ -50,8 +50,8 @@ func (e *Emitter) Emit(name int32, v int32, args ...int32) {
 // Listener 监听事件,并比较args 如果成功,则回调handle更新val
 //
 // 可以通过 emitter.Register 注册全局过滤器,默认参数一致通过比较
-func (e *Emitter) Listener(k any, t int32, args []int32, handle emitter.Handle) (r *emitter.Listener) {
-	r = emitter.New(k, args, handle)
+func (e *Emitter) Listener(t int32, args []int32, handle emitter.Handle) (r *emitter.Listener) {
+	r = emitter.New(args, handle)
 	if e.events == nil {
 		e.events = map[int32][]*emitter.Listener{}
 	}
