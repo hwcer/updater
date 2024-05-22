@@ -18,7 +18,7 @@ func value(u *updater.Updater, target Value) (r int64) {
 	if f, ok := verifyCondition[target.GetCondition()]; ok {
 		r = f(u, target)
 	} else {
-		logger.Error("Condition unknown：%v", target.GetCondition())
+		logger.Alert("Condition unknown,Condition:%v,Key:%v", target.GetCondition(),target.GetKey())
 	}
 	return
 }

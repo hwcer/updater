@@ -143,6 +143,12 @@ func (doc *Document) Schema() (sch *schema.Schema, err error) {
 	}
 	return
 }
+func (doc *Document) Clone() *Document {
+	if i, ok := doc.data.(ModelClone); ok {
+		return &Document{data: i.Clone()}
+	}
+	return doc //TODO
+}
 
 // Json 转换成json 不包含主键
 func (doc *Document) Json() (Update, error) {

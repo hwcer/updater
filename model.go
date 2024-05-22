@@ -45,6 +45,14 @@ type Model struct {
 	order  int32 //倒序排列
 }
 
+func ITypes(f func(k int32, it IType) bool) {
+	for k, it := range itypesDict {
+		if !f(k, it) {
+			break
+		}
+	}
+}
+
 func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 	if _, ok := handles[parser]; !ok {
 		return fmt.Errorf("parser unknown:%v", parser)

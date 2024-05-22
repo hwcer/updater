@@ -62,8 +62,7 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 
 func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 	if it := coll.ITypeCollection(op.IID); it != nil && !it.Stacked() {
-		//不可以堆叠装备类道具
-		return collectionHandleNewEquip(coll, op)
+		return collectionHandleNewEquip(coll, op) //不可以堆叠装备类道具
 	}
 	//可以叠加的道具
 	if op.OID == "" {
@@ -97,24 +96,10 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 		return ErrObjectIdEmpty(op.IID)
 	}
 	if ok := coll.Has(op.OID); !ok && coll.model.Upsert(coll.Updater, op) {
-		it := coll.ITypeCollection(op.IID)
-		var i any
-		if i, err = it.New(coll.Updater, op); err != nil {
-			return
-		}
-		doc := dataset.NewDoc(i)
-		doc.Update(op.Result.(dataset.Update))
-		if err = doc.Save(nil); err != nil {
-			return
-		}
-		op.Type = operator.TypesNew
-		op.Value = doc.GetInt64(dataset.ItemNameVAL)
-		op.Result = []any{doc.Any()}
-		return collectionHandleNew(coll, op)
+		return collectionHandleNewItem(coll, op)
 	} else if !ok {
 		return ErrItemNotExist(op.OID)
 	}
-
 	update, _ := op.Result.(dataset.Update)
 	err = coll.dataset.Update(op.OID, update)
 	return
@@ -183,28 +168,33 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 }
 
 func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error) {
-	op.Type = operator.TypesNew
 	it := coll.ITypeCollection(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
-	if op.Value == 0 {
-		op.Value = 1
+	var i any
+	i, err = it.New(coll.Updater, op)
+	if err != nil {
+		return err
 	}
-	var item any
-	if item, err = it.New(coll.Updater, op); err == nil {
-		op.Result, err = collectionHandleInsert(coll, item)
+
+	if op.Type == operator.TypesSet {
+		doc := dataset.NewDoc(i)
+		doc.Update(op.Result.(dataset.Update))
+		if err = doc.Save(nil); err != nil {
+			return
+		}
+		op.Value = doc.GetInt64(dataset.ItemNameVAL)
 	}
+
+	op.Type = operator.TypesNew
+	op.Result, err = collectionHandleInsert(coll, i)
 	return
 }
 
 func collectionHandleInsert(coll *Collection, vs ...any) (r []any, err error) {
 	for _, v := range vs {
 		doc := dataset.NewDoc(v)
-		//var j dataset.Update
-		//if j, err = doc.Json(); err != nil {
-		//	return
-		//}
 		r = append(r, v)
 		err = coll.dataset.Insert(doc)
 	}
