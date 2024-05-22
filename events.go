@@ -9,10 +9,12 @@ const (
 	OnPreRelease                  //Release 释放前
 )
 
-type Listener func(u *Updater) bool
+// Listener 监听任务,返回true表示继续监听,false 从监听列表中移除
+type Listener func(u *Updater) (next bool)
 
+// Middleware 监听中间件，所有EventType都会调用 Emit 直到返回false从列表中移除
 type Middleware interface {
-	Emit(u *Updater, t EventType) bool
+	Emit(u *Updater, t EventType) (next bool)
 }
 
 type Events struct {
