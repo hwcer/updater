@@ -11,12 +11,12 @@ const (
 	collOperatorDelete int = 3
 )
 
-type DirtyOperator struct {
+type Operator struct {
 	op  values.Byte
 	doc *Document
 }
 
-type Dirty map[string]*DirtyOperator
+type Dirty map[string]*Operator
 
 func (c Dirty) Has(k string) (ok, exist bool) {
 	v, ok := c[k]
@@ -37,24 +37,22 @@ func (c Dirty) Get(k string) *Document {
 	}
 	return nil
 }
+
 func (c Dirty) Remove(k string) {
 	delete(c, k)
 }
 
 // Delete 标记为删除
 func (c Dirty) Delete(k string) {
-	i := &DirtyOperator{}
-	i.op.Set(collOperatorDelete)
-	c[k] = i
+	d := c.Operator(k)
+	d.op = 0
+	d.doc = nil
+	d.op.Set(collOperatorDelete)
 }
 
 // Update 标记为更新
 func (c Dirty) Update(k string) {
-	d, ok := c[k]
-	if !ok {
-		d = &DirtyOperator{}
-		c[k] = d
-	}
+	d := c.Operator(k)
 	if d.op.Has(collOperatorDelete) && !d.op.Has(collOperatorInsert) {
 		logger.Alert("已经标记为删除的记录无法直接再次使用Update操作:%v", k)
 		return
@@ -64,11 +62,7 @@ func (c Dirty) Update(k string) {
 
 // Insert 临时缓存新对象
 func (c Dirty) Insert(k string, doc *Document) {
-	d, ok := c[k]
-	if !ok {
-		d = &DirtyOperator{}
-		c[k] = d
-	}
+	d := c.Operator(k)
 	d.doc = doc
 	d.op.Set(collOperatorInsert)
 	d.op.Delete(collOperatorUpdate) //Insert取消Update操作
@@ -80,4 +74,13 @@ func (c Dirty) Release() {
 			v.doc.Release()
 		}
 	}
+}
+
+func (c Dirty) Operator(k string) (r *Operator) {
+	r, ok := c[k]
+	if !ok {
+		r = &Operator{}
+		c[k] = r
+	}
+	return
 }
