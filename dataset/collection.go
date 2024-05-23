@@ -103,7 +103,8 @@ func (coll *Collection) Insert(i any) (err error) {
 }
 
 func (coll *Collection) Delete(id string) {
-	coll.dirty.Delete(id)
+	dirty := coll.Dirty()
+	dirty.Delete(id)
 }
 
 // Remove 从内存中清理，不会触发持久化操作
