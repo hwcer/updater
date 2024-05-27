@@ -227,7 +227,9 @@ func (this *Document) Range(f func(k string, v any) bool) {
 func (this *Document) Interface() any {
 	return this.dataset.Any()
 }
-
+func (this *Document) Any() any {
+	return this.dataset.Any()
+}
 func (this *Document) ObjectId(k any) (key string, err error) {
 	switch v := k.(type) {
 	case string:
