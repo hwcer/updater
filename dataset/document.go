@@ -128,7 +128,7 @@ func (doc *Document) write(k string, v any) error {
 		return err
 	}
 	logger.Debug("建议给%v.%v添加Set接口提升性能", sch.Name, k)
-	return sch.SetValue(doc.data, k, v)
+	return sch.SetValue(doc.data, v, k)
 }
 
 func (doc *Document) Schema() (sch *schema.Schema, err error) {
