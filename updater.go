@@ -20,21 +20,22 @@ const (
 type Updater struct {
 	Time     time.Time
 	Error    error
-	Player   any //角色信息
+	Async    bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
+	Player   any  //角色信息
 	Events   Events
 	Emitter  Emitter
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	loader   bool                 //数据加载完毕
 	changed  bool                 //数据变动,需要使用Data更新数据
 	operated bool                 //新操作需要重执行Verify检查数据
 	handles  map[string]Handle    //Handle
-	Async    bool                 //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
+
 }
 
-func New(p any) (u *Updater, err error) {
+func New(p any) (u *Updater) {
 	u = &Updater{Player: p}
-	err = u.Reload()
-	return
+	return u
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
@@ -68,21 +69,33 @@ func (u *Updater) Save() (err error) {
 func (u *Updater) Strict(v StrictType) {
 	u.strict = v
 }
+func (u *Updater) Loader() bool {
+	return u.loader
+}
 
 // Reload 重新加载数据,自动关闭异步数据
-func (u *Updater) Reload() (err error) {
-	u.Time = time.Now()
+// nocache 实时读写数据库，修改不在线玩家数据时使用
+func (u *Updater) Reload(nocache ...bool) (err error) {
+	if u.loader {
+		return nil
+	}
+	if len(nocache) == 0 || !nocache[0] {
+		u.loader = true
+	}
 	u.Async = false
 	u.handles = make(map[string]Handle)
 	for _, model := range modelsRank {
-		h := handles[model.parser](u, model.model, model.ram)
+		ram := model.ram
+		if !u.loader {
+			ram = RAMTypeNone
+		}
+		h := handles[model.parser](u, model.model, ram)
 		if err = h.init(); err != nil {
 			return
 		}
 		u.handles[model.name] = h
 	}
-	//u.emit(PlugsTypeInit)
-	return
+	return nil
 }
 
 // Reset 重置,每次请求开始时调用
