@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"errors"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/schema"
 	"strings"
@@ -115,6 +116,9 @@ func (doc *Document) Save(dirty Update) error {
 	}
 	return nil
 }
+func (doc *Document) Loader() bool {
+	return doc.data != nil
+}
 
 // write 跳过缓存直接修改数据
 func (doc *Document) write(k string, v any) error {
@@ -132,6 +136,10 @@ func (doc *Document) write(k string, v any) error {
 }
 
 func (doc *Document) Schema() (sch *schema.Schema, err error) {
+	if doc.data == nil {
+		err = errors.New("document not loader")
+		return
+	}
 	if doc.sch == nil {
 		if sch, err = schema.Parse(doc.data); err == nil {
 			doc.sch = sch

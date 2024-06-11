@@ -66,8 +66,7 @@ func (this *Document) save() (err error) {
 func (this *Document) reset() {
 	this.statement.reset()
 	if this.dataset == nil {
-		i := this.model.New(this.Updater)
-		this.dataset = dataset.NewDoc(i)
+		this.dataset = dataset.NewDoc(nil)
 	}
 }
 
@@ -83,16 +82,15 @@ func (this *Document) release() {
 	}
 }
 func (this *Document) init() (err error) {
+	if this.dataset == nil {
+		this.dataset = dataset.NewDoc(nil)
+	}
 	if this.statement.ram == RAMTypeMaybe {
 		this.statement.ram = RAMTypeNone
 		logger.Alert("updater Document模型不支持RAMTypeMaybe已经自动转换为RAMTypeNone")
 	}
-	if this.statement.ram == RAMTypeAlways {
-		this.dataset = dataset.NewDoc(nil)
+	if this.statement.ram == RAMTypeAlways && !this.dataset.Loader() {
 		err = this.model.Getter(this.Updater, this.dataset, nil)
-	} else {
-		i := this.model.New(this.Updater)
-		this.dataset = dataset.NewDoc(i)
 	}
 	return
 }
@@ -191,21 +189,9 @@ func (this *Document) Parser() Parser {
 }
 
 func (this *Document) submit() (err error) {
-	//defer this.statement.done()
 	if err = this.Updater.Error; err != nil {
 		return
 	}
-	//同步到内存
-	//r = this.statement.operator
-	//for _, op := range this.statement.cache {
-	//	if op.Type.IsValid() {
-	//		if e := this.set(op.Key, op.Result); e != nil {
-	//			logger.Debug("数据保存失败可能是类型不匹配已经丢弃,table:%v,field:%v,result:%v", this.Table(), op.Key, op.Result)
-	//		} else {
-	//			this.dirty[op.Key] = op.Result
-	//		}
-	//	}
-	//}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
