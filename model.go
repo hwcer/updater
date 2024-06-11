@@ -28,6 +28,10 @@ type TableOrder interface {
 	TableOrder() int32
 }
 
+type ModelLoading interface {
+	Loading() RAMType
+}
+
 // NewHandle 注册新解析器
 func NewHandle(name Parser, f handleFunc) {
 	handles[name] = f
@@ -38,11 +42,12 @@ var modelsDict = make(map[int32]*Model)
 var itypesDict = make(map[int32]IType) //ITypeId = IType
 
 type Model struct {
-	ram    RAMType
-	name   string
-	model  any
-	parser Parser
-	order  int32 //倒序排列
+	ram     RAMType
+	name    string
+	model   any
+	parser  Parser
+	order   int32   //倒序排列
+	loading RAMType //加载时内存模式
 }
 
 func ITypes(f func(k int32, it IType) bool) {
@@ -68,6 +73,12 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 	} else {
 		mod.order = -1
 	}
+	if o, ok := model.(ModelLoading); ok {
+		mod.loading = o.Loading()
+	} else {
+		mod.loading = RAMTypeNone
+	}
+
 	modelsRank = append(modelsRank, mod)
 	sort.SliceStable(modelsRank, func(i, j int) bool {
 		return modelsRank[i].order > modelsRank[j].order

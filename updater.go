@@ -87,7 +87,7 @@ func (u *Updater) Reload(nocache ...bool) (err error) {
 	for _, model := range modelsRank {
 		ram := model.ram
 		if !u.loader {
-			ram = RAMTypeNone
+			ram = model.loading
 		}
 		h := handles[model.parser](u, model.model, ram)
 		if err = h.init(); err != nil {

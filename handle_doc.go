@@ -88,9 +88,11 @@ func (this *Document) init() (err error) {
 		logger.Alert("updater Document模型不支持RAMTypeMaybe已经自动转换为RAMTypeNone")
 	}
 	if this.statement.ram == RAMTypeAlways {
+		this.dataset = dataset.NewDoc(nil)
+		err = this.model.Getter(this.Updater, this.dataset, nil)
+	} else {
 		i := this.model.New(this.Updater)
 		this.dataset = dataset.NewDoc(i)
-		err = this.model.Getter(this.Updater, this.dataset, nil)
 	}
 	return
 }
