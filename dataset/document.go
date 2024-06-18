@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/schema"
+	"reflect"
 	"strings"
 )
 
@@ -155,7 +156,23 @@ func (doc *Document) Clone() *Document {
 	if i, ok := doc.data.(ModelClone); ok {
 		return &Document{data: i.Clone()}
 	}
-	return doc //TODO
+	//使用反射获取复制体
+	srcValue := reflect.ValueOf(doc.data)
+	logger.Debug("建议添加Clone()方法提升性能:%v", srcValue.String())
+	// 源对象必须是指针
+	if srcValue.Kind() != reflect.Ptr {
+		logger.Debug("CopyObject needs a pointer as input:%v", srcValue.String())
+		return doc
+	}
+	// 获取源对象的元素（实际的值）
+	srcElement := srcValue.Elem()
+	// 根据源对象的类型创建一个新的对象
+	copiedValue := reflect.New(srcElement.Type()).Elem()
+	// 将源对象的字段复制到新对象中
+	copiedValue.Set(srcElement)
+	// 返回新对象的地址
+	i := copiedValue.Addr().Interface()
+	return NewDoc(i)
 }
 
 // Json 转换成json 不包含主键
