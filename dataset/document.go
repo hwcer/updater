@@ -154,8 +154,9 @@ func (doc *Document) Schema() (sch *schema.Schema, err error) {
 }
 func (doc *Document) Clone() *Document {
 	if i, ok := doc.data.(ModelClone); ok {
-		return &Document{data: i.Clone()}
+		return &Document{dirty: doc.dirty, data: i.Clone()}
 	}
+
 	//使用反射获取复制体
 	srcValue := reflect.ValueOf(doc.data)
 	logger.Debug("建议添加Clone()方法提升性能:%v", srcValue.String())
@@ -171,8 +172,7 @@ func (doc *Document) Clone() *Document {
 	// 将源对象的字段复制到新对象中
 	copiedValue.Set(srcElement)
 	// 返回新对象的地址
-	i := copiedValue.Addr().Interface()
-	return NewDoc(i)
+	return &Document{dirty: doc.dirty, data: copiedValue.Addr().Interface()}
 }
 
 // Json 转换成json 不包含主键

@@ -98,7 +98,7 @@ func (coll *Collection) Insert(i any) (err error) {
 		return fmt.Errorf("item already exist:%v", id)
 	}
 	dirty := coll.Dirty()
-	dirty.Insert(id, doc.Clone())
+	dirty.Insert(id, doc)
 	return
 }
 
@@ -124,10 +124,15 @@ func (coll *Collection) Save(bulkWrite BulkWrite) error {
 			}
 		}
 		if v.op.Has(collOperatorInsert) {
-			if err := v.doc.Save(nil); err == nil {
-				coll.dataset.Set(k, v.doc)
+			doc := v.doc
+			if v.op.Has(collOperatorUpdate) {
+				doc = doc.Clone()
+			}
+			//整合collOperatorUpdate
+			if err := doc.Save(nil); err == nil {
+				coll.dataset.Set(k, doc)
 				if bulkWrite != nil {
-					bulkWrite.Insert(v.doc.Any())
+					bulkWrite.Insert(doc.Any())
 				}
 			}
 		} else if v.op.Has(collOperatorUpdate) {
