@@ -115,8 +115,10 @@ func (doc *Document) Save(dirty Update) error {
 			dirty.Set(k, v)
 		}
 	}
-	if m, ok := doc.data.(ModelSaving); ok {
-		m.Saving(dirty)
+	if dirty != nil {
+		if m, ok := doc.data.(ModelSaving); ok {
+			m.Saving(dirty)
+		}
 	}
 	return nil
 }
