@@ -20,6 +20,9 @@ type ModelSet interface {
 type ModelClone interface {
 	Clone() any
 }
+type ModelSaving interface {
+	Saving(update Update)
+}
 
 type BulkWrite interface {
 	Save() error
