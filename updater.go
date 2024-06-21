@@ -30,7 +30,7 @@ type Updater struct {
 	changed  bool                 //数据变动,需要使用Data更新数据
 	operated bool                 //新操作需要重执行Verify检查数据
 	handles  map[string]Handle    //Handle
-
+	ReadOnly bool                 //只读模式,无法写入
 }
 
 func New(p any) (u *Updater) {
@@ -120,6 +120,7 @@ func (u *Updater) Release() {
 	u.changed = false
 	u.operated = false
 	u.Error = nil
+	u.ReadOnly = false
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
@@ -202,6 +203,9 @@ func (u *Updater) Data() (err error) {
 
 // Verify 手动执行Verify对操作进行检查
 func (u *Updater) Verify() (err error) {
+	if err = u.WriteAble(); err != nil {
+		return err
+	}
 	hs := u.Handles()
 	return u.verify(hs)
 }
@@ -233,7 +237,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 	u.operated = false
 	u.emit(OnPreVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
-		if err = hs[i].Verify(); err != nil {
+		if err = hs[i].verify(); err != nil {
 			return
 		}
 	}
@@ -263,8 +267,8 @@ func (u *Updater) submit(hs []Handle) (err error) {
 
 // Submit 按照MODEL的倒序执行
 func (u *Updater) Submit() (r []*operator.Operator, err error) {
-	if err = u.Error; err != nil {
-		return
+	if err = u.WriteAble(); err != nil {
+		return nil, err
 	}
 	hs := u.Handles()
 	if err = u.submit(hs); err != nil {
@@ -396,7 +400,20 @@ func (u *Updater) Destroy() (err error) {
 
 // Dirty 设置脏数据,手动更新到客户端,不进行任何操作
 func (u *Updater) Dirty(opt ...*operator.Operator) {
+	if u.ReadOnly {
+		return
+	}
 	u.dirty = append(u.dirty, opt...)
+}
+
+func (u *Updater) WriteAble() error {
+	if u.Error != nil {
+		return u.Error
+	}
+	if u.ReadOnly {
+		return Errorf(0, "read only mode")
+	}
+	return nil
 }
 
 func (u *Updater) deduct(iid int32, v, sub int64) (r int64, err error) {

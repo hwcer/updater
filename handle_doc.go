@@ -156,9 +156,9 @@ func (this *Document) Data() (err error) {
 	return
 }
 
-func (this *Document) Verify() (err error) {
-	if this.Updater.Error != nil {
-		return this.Updater.Error
+func (this *Document) verify() (err error) {
+	if err = this.Updater.WriteAble(); err != nil {
+		return
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
@@ -189,7 +189,7 @@ func (this *Document) Parser() Parser {
 }
 
 func (this *Document) submit() (err error) {
-	if err = this.Updater.Error; err != nil {
+	if err = this.Updater.WriteAble(); err != nil {
 		return
 	}
 	this.statement.submit()
@@ -250,6 +250,9 @@ func (this *Document) IType(iid int32) IType {
 	}
 }
 func (this *Document) operator(t operator.Types, k any, v int64, r any) {
+	if err := this.Updater.WriteAble(); err != nil {
+		return
+	}
 	if t == operator.TypesDel {
 		logger.Debug("updater document del is disabled")
 		return

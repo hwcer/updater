@@ -16,7 +16,6 @@ type Handle interface {
 	Data() error                                    //非内存模式获取数据库中的数据
 	Select(keys ...any)                             //非内存模式时获取特定道具
 	Parser() Parser                                 //解析模型
-	Verify() error                                  //验证数据,执行过程的数据开始按顺序生效,但不会修改缓存
 	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator,不会触发任何事件
 	IType(int32) IType                              //根据iid获取IType
 	init() error                                    //构造方法
@@ -25,6 +24,7 @@ type Handle interface {
 	release()                                       //运行时释放缓存信息,并返回所有操作过程
 	destroy() error                                 //同步所有数据到数据库,手动同步,或者销毁时执行
 	submit() error                                  //即时同步,提交所有操作,缓存生效,同步数据库
+	verify() error                                  //验证数据,执行过程的数据开始按顺序生效,但不会修改缓存
 }
 
 //type HandleNew interface {

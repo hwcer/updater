@@ -189,9 +189,9 @@ func (this *Collection) Data() (err error) {
 	return
 }
 
-func (this *Collection) Verify() (err error) {
-	if this.Updater.Error != nil {
-		return this.Updater.Error
+func (this *Collection) verify() (err error) {
+	if err = this.Updater.WriteAble(); err != nil {
+		return
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
@@ -203,22 +203,9 @@ func (this *Collection) Verify() (err error) {
 }
 
 func (this *Collection) submit() (err error) {
-	//defer this.statement.done()
-	if err = this.Updater.Error; err != nil {
+	if err = this.Updater.WriteAble(); err != nil {
 		return
 	}
-	//r = this.statement.operator
-	//同步到内存
-	//for _, op := range this.statement.cache {
-	//	if op.Type.IsValid() {
-	//		if err = this.dataset.Update(op); err == nil {
-	//			this.dirty.Update(op)
-	//		} else {
-	//			logger.Alert("数据保存失败已经丢弃,Error:%v,Operator:%+v", err, op)
-	//			err = nil
-	//		}
-	//	}
-	//}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		logger.Alert("同步数据失败,等待下次同步:%v", err)
@@ -291,7 +278,7 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 }
 
 func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
-	if this.Updater.Error != nil {
+	if err := this.Updater.WriteAble(); err != nil {
 		return
 	}
 	op := operator.New(t, v, r)

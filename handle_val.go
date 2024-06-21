@@ -148,9 +148,9 @@ func (this *Values) Data() (err error) {
 	return
 }
 
-func (this *Values) Verify() (err error) {
-	if this.Updater.Error != nil {
-		return this.Updater.Error
+func (this *Values) verify() (err error) {
+	if err = this.Updater.WriteAble(); err != nil {
+		return
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
@@ -162,21 +162,9 @@ func (this *Values) Verify() (err error) {
 }
 
 func (this *Values) submit() (err error) {
-	//defer this.statement.done()
-	if err = this.Updater.Error; err != nil {
+	if err = this.Updater.WriteAble(); err != nil {
 		return
 	}
-	//r = this.statement.operator
-	//for _, op := range this.statement.cache {
-	//	if op.Type.IsValid() {
-	//		if v, ok := op.Result.(int64); ok {
-	//			this.dataset.Dirty(op.IID)
-	//			this.dataset.Set(op.IID, v)
-	//		} else {
-	//			fmt.Printf("hash save error:%+v\n", op)
-	//		}
-	//	}
-	//}
 	this.statement.submit()
 	if err = this.save(); err != nil && this.ram != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
@@ -206,6 +194,9 @@ func (this *Values) Dirty() (r dataset.Data) {
 }
 
 func (this *Values) operator(t operator.Types, k any, v int64, r any) {
+	if err := this.Updater.WriteAble(); err != nil {
+		return
+	}
 	id, ok := dataset.TryParseInt32(k)
 	if !ok {
 		_ = this.Errorf("updater Hash Operator key must int32:%v", k)
