@@ -69,17 +69,14 @@ func (u *Updater) Save() (err error) {
 func (u *Updater) Strict(v StrictType) {
 	u.strict = v
 }
-func (u *Updater) Loader() bool {
-	return u.loader
-}
 
-// Reload 重新加载数据,自动关闭异步数据
-// nocache 实时读写数据库，修改不在线玩家数据时使用
-func (u *Updater) Reload(nocache ...bool) (err error) {
+// Loading 重新加载数据,自动关闭异步数据
+// init 立即加载玩家所有数据
+func (u *Updater) Loading(init bool) (err error) {
 	if u.loader {
 		return nil
 	}
-	if len(nocache) == 0 || !nocache[0] {
+	if init {
 		u.loader = true
 	}
 	u.Async = false
@@ -99,7 +96,8 @@ func (u *Updater) Reload(nocache ...bool) (err error) {
 }
 
 // Reset 重置,每次请求开始时调用
-func (u *Updater) Reset(t ...time.Time) {
+func (u *Updater) Reset(readOnly bool, t ...time.Time) {
+	u.ReadOnly = readOnly
 	if len(t) > 0 {
 		u.Time = t[0]
 	} else {
