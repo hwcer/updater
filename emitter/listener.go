@@ -11,7 +11,7 @@ type Listener struct {
 	Attach values.Values
 }
 
-func New(args []int32, handle Handle) *Listener {
+func NewListener(args []int32, handle Handle) *Listener {
 	return &Listener{args: args, handle: handle, Attach: values.Values{}}
 }
 

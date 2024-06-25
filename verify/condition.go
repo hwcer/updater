@@ -19,3 +19,32 @@ type verifyConditionHandle func(u *updater.Updater, handle Value) int64
 func register(key int32, handle verifyConditionHandle) {
 	verifyCondition[key] = handle
 }
+
+// Condition 数组形式条件
+type Condition []int32
+
+func (c Condition) GetCondition() (r int32) {
+	if len(c) > 0 {
+		r = c[0]
+	}
+	return
+}
+
+func (c Condition) GetKey() (r int32) {
+	if len(c) > 1 {
+		r = c[1]
+	}
+	return
+}
+func (c Condition) GetGoal() (r int32) {
+	if len(c) > 2 {
+		r = c[2]
+	}
+	return
+}
+func (c Condition) GetArgs() (r []int32) {
+	if len(c) > 3 {
+		r = append(r, c[3:]...)
+	}
+	return
+}

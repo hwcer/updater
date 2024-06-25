@@ -18,12 +18,12 @@ const (
 )
 
 type Updater struct {
-	Time     time.Time
-	Error    error
-	Async    bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
-	Player   any  //角色信息
-	Events   Events
-	Emitter  Emitter
+	Time   time.Time
+	Error  error
+	Async  bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
+	Player any  //角色信息
+	Events Events
+	//Emitter  Emitter
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	loader   bool                 //数据加载完毕
@@ -239,7 +239,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 			return
 		}
 	}
-	u.Emitter.emit(u)
+	//u.Emitter.emit(u)
 	return
 }
 
