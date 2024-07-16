@@ -66,8 +66,6 @@ func ParseMap(i any) (r map[string]any, ok bool) {
 		r = v
 	case bson.M:
 		r = v
-	case Update:
-		r = v
 	default:
 		ok = false
 	}

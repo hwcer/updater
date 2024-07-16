@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"errors"
+	"github.com/hwcer/cosmo/update"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/schema"
 	"reflect"
@@ -18,7 +19,8 @@ func NewDoc(i any) *Document {
 type Document struct {
 	sch   *schema.Schema
 	data  any
-	dirty Update
+	dirty update.Update
+	//unset map[string]struct{} //仅仅针对BSON MAP 或者子对象(a.b)为这些结构
 }
 
 // Has 是否存在字段
@@ -43,7 +45,10 @@ func (doc *Document) Val(k string) (r any) {
 	return
 }
 func (doc *Document) Get(k string) (r any, ok bool) {
-	if r, ok = doc.dirty.Get(k); ok {
+	if doc.dirty.Has(update.UpdateTypeUnset, k) {
+		return nil, true
+	}
+	if r, ok = doc.dirty.Get(update.UpdateTypeSet, k); ok {
 		return
 	}
 	if m, exist := doc.data.(ModelGet); exist {
@@ -80,9 +85,10 @@ func (doc *Document) Set(k string, v any) {
 		return
 	}
 	if doc.dirty == nil {
-		doc.dirty = Update{}
+		doc.dirty = update.New()
 	}
 	doc.dirty.Set(k, v)
+	doc.dirty.Remove(update.UpdateTypeUnset, k)
 }
 
 func (doc *Document) Add(k string, v int64) (r int64) {
@@ -97,37 +103,45 @@ func (doc *Document) Sub(k string, v int64) (r int64) {
 	return
 }
 
+func (doc *Document) Unset(k string) {
+	if !doc.Has(k) {
+		return
+	}
+	if doc.dirty == nil {
+		doc.dirty = update.New()
+	}
+	doc.dirty.Unset(k)
+	doc.dirty.Remove(update.UpdateTypeSet, k)
+}
+
 // Update 批量更新
-func (doc *Document) Update(data Update) {
+func (doc *Document) Update(data map[string]any) {
 	for k, v := range data {
 		doc.Set(k, v)
 	}
 }
 
-func (doc *Document) Save(dirty Update) error {
+func (doc *Document) Save() (dirty update.Update, err error) {
 	if len(doc.dirty) == 0 {
-		return nil
+		return
 	}
-	for k, v := range doc.dirty {
-		if err := doc.write(k, v); err != nil {
-			logger.Alert("Document Save:%v", err)
-		} else if dirty != nil {
-			dirty.Set(k, v)
+	dirty, doc.dirty = doc.dirty, nil
+	if m, ok := doc.data.(ModelSaving); ok {
+		m.Saving(dirty)
+	}
+	for k, v := range doc.dirty[update.UpdateTypeSet] {
+		if err = doc.setter(k, v); err != nil {
+			logger.Alert("Document Save Update:%v,Error:%v,", dirty, err)
 		}
 	}
-	if dirty != nil {
-		if m, ok := doc.data.(ModelSaving); ok {
-			m.Saving(dirty)
-		}
-	}
-	return nil
+	return
 }
 func (doc *Document) Loader() bool {
 	return doc.data != nil
 }
 
 // write 跳过缓存直接修改数据
-func (doc *Document) write(k string, v any) error {
+func (doc *Document) setter(k string, v any) error {
 	if m, ok := doc.data.(ModelSet); ok {
 		if m.Set(k, v) {
 			return nil
@@ -139,6 +153,13 @@ func (doc *Document) write(k string, v any) error {
 	}
 	logger.Debug("建议给%v.%v添加Set接口提升性能", sch.Name, k)
 	return sch.SetValue(doc.data, v, k)
+}
+func (doc *Document) unset(k string) bool {
+	if m, ok := doc.data.(ModelUnset); ok {
+		return m.Unset(k)
+	}
+	logger.Debug("缺少Unset接口,操作无法完成，已经丢弃：%+v", doc.Any())
+	return false
 }
 
 func (doc *Document) Schema() (sch *schema.Schema, err error) {
@@ -181,12 +202,12 @@ func (doc *Document) Clone() *Document {
 }
 
 // Json 转换成json 不包含主键
-func (doc *Document) Json() (Update, error) {
+func (doc *Document) Json() (map[string]any, error) {
 	sch, err := doc.Schema()
 	if err != nil {
 		return nil, err
 	}
-	r := Update{}
+	r := map[string]any{}
 	for _, field := range sch.Fields {
 		if k := field.DBName; k != ItemNameOID {
 			r[k] = sch.GetValue(doc.data, k)

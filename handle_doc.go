@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"github.com/hwcer/cosmo/update"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/schema"
 	"github.com/hwcer/updater/dataset"
@@ -20,13 +21,13 @@ type documentModel interface {
 	New(update *Updater) any                                             //初始化对象
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
 	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
-	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
+	Setter(update *Updater, dirty update.Update) error                   //保存数据接口
 }
 
 // Document 文档存储
 type Document struct {
 	statement
-	dirty   dataset.Update    //数据缓存
+	//dirty   dataset.Update    //数据缓存
 	model   documentModel     //handle model
 	dataset *dataset.Document //数据
 }
@@ -45,21 +46,23 @@ func (this *Document) val(k string) (r int64, ok bool) {
 	return
 }
 
-func (this *Document) save() (err error) {
+func (this *Document) save() error {
 	if this.Updater.Async {
-		return
+		return nil
 	}
-	dirty := this.Dirty()
-	if err = this.dataset.Save(dirty); err != nil {
-		return
+	dirty, err := this.dataset.Save()
+	if err != nil {
+		return err
 	}
 	if len(dirty) == 0 {
 		return nil
 	}
-	if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
-		this.dirty = nil
-	}
-	return
+	err = this.model.Setter(this.statement.Updater, dirty)
+
+	//if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
+	//	this.dirty = nil
+	//}
+	return err
 }
 
 // reset 运行时开始时
@@ -201,12 +204,12 @@ func (this *Document) submit() (err error) {
 }
 
 // Dirty 设置脏数据,手动修改内存后置脏同步到数据库
-func (this *Document) Dirty() dataset.Update {
-	if this.dirty == nil {
-		this.dirty = dataset.Update{}
-	}
-	return this.dirty
-}
+//func (this *Document) Dirty() dataset.Update {
+//	if this.dirty == nil {
+//		this.dirty = dataset.Update{}
+//	}
+//	return this.dirty
+//}
 
 func (this *Document) Range(f func(k string, v any) bool) {
 	this.dataset.Range(f)

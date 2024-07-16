@@ -62,10 +62,11 @@ func (coll *Collection) Val(id string) (r *Document) {
 }
 
 func (coll *Collection) Set(id string, field string, value any) error {
-	data := Update{}
+	data := make(map[string]any)
 	data[field] = value
 	return coll.Update(id, data)
 }
+
 func (coll *Collection) New(i ...any) (err error) {
 	for _, v := range i {
 		if err = coll.Insert(v); err != nil {
@@ -76,7 +77,7 @@ func (coll *Collection) New(i ...any) (err error) {
 }
 
 // Update 批量更新,对象必须已经存在
-func (coll *Collection) Update(id string, data Update) error {
+func (coll *Collection) Update(id string, data map[string]any) error {
 	doc, ok := coll.Get(id)
 	if !ok {
 		return fmt.Errorf("item not exist:%v", id)
@@ -129,17 +130,16 @@ func (coll *Collection) Save(bulkWrite BulkWrite) error {
 				doc = doc.Clone()
 			}
 			//整合collOperatorUpdate
-			if err := doc.Save(nil); err == nil {
+			if _, err := doc.Save(); err == nil {
 				coll.dataset.Set(k, doc)
 				if bulkWrite != nil {
 					bulkWrite.Insert(doc.Any())
 				}
 			}
 		} else if v.op.Has(collOperatorUpdate) {
-			u := Update{}
 			doc, _ := coll.dataset.Get(k)
-			if err := doc.Save(u); err == nil && len(u) > 0 && bulkWrite != nil {
-				bulkWrite.Update(map[string]any(u), k)
+			if data, err := doc.Save(); err == nil && len(data) > 0 && bulkWrite != nil {
+				bulkWrite.Update(data, k)
 			}
 		}
 	}

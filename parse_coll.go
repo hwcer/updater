@@ -181,7 +181,7 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error
 	if op.Type == operator.TypesSet {
 		doc := dataset.NewDoc(i)
 		doc.Update(op.Result.(dataset.Update))
-		if err = doc.Save(nil); err != nil {
+		if _, err = doc.Save(); err != nil {
 			return
 		}
 		op.Value = doc.GetInt64(dataset.ItemNameVAL)

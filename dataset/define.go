@@ -1,5 +1,7 @@
 package dataset
 
+import "github.com/hwcer/cosmo/update"
+
 const (
 	ItemNameOID = "_id"
 	ItemNameVAL = "val"
@@ -16,12 +18,15 @@ type ModelGet interface {
 type ModelSet interface {
 	Set(k string, v any) (ok bool)
 }
+type ModelUnset interface {
+	Unset(k string) (ok bool)
+}
 
 type ModelClone interface {
 	Clone() any
 }
 type ModelSaving interface {
-	Saving(update Update)
+	Saving(update.Update)
 }
 
 type BulkWrite interface {
