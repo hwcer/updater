@@ -163,7 +163,7 @@ func (coll *Collection) Reset(rows ...any) {
 }
 
 // Release 释放执行过程
-func (coll *Collection) Release() {
+func (coll *Collection) Release(empty bool) {
 	for k, _ := range coll.dirty {
 		if doc, ok := coll.dataset[k]; ok {
 			doc.Release()
@@ -171,6 +171,9 @@ func (coll *Collection) Release() {
 	}
 	coll.dirty.Release()
 	coll.dirty = nil
+	if empty {
+		coll.dataset = Dataset{}
+	}
 }
 
 // Receive 接收器，接收外部对象放入列表，不进行任何操作，一般用于初始化

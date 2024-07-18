@@ -75,9 +75,9 @@ func (this *Collection) release() {
 	this.statement.release()
 	if !this.Updater.Async {
 		if this.statement.ram == RAMTypeNone {
-			this.dataset = nil
+			this.dataset.Release(true)
 		} else {
-			this.dataset.Release()
+			this.dataset.Release(false)
 		}
 	}
 }
