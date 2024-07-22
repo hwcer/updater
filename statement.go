@@ -72,16 +72,20 @@ func newStatement(u *Updater, ram RAMType, opt stmHandleOptCreate, exist stmHand
 	return &statement{ram: ram, handleOptCreate: opt, handleDataExist: exist, Updater: u}
 }
 
-//func (stmt *statement) done() {
-//	//stmt.cache = append(stmt.cache, stmt.operator...)
-//	if !stmt.Updater.Async {
-//		stmt.keys = nil
-//		stmt.values.release()
+//	func (stmt *statement) done() {
+//		//stmt.cache = append(stmt.cache, stmt.operator...)
+//		if !stmt.Updater.Async {
+//			stmt.keys = nil
+//			stmt.values.release()
+//		}
+//		stmt.operator = nil
+//		//stmt.verify = false
+//		//stmt.Updater.Error = nil
 //	}
-//	stmt.operator = nil
-//	//stmt.verify = false
-//	//stmt.Updater.Error = nil
-//}
+
+func (stmt *statement) stmt() *statement {
+	return stmt
+}
 
 // Has 查询key(DBName)是否已经初始化
 func (stmt *statement) has(key any) bool {
@@ -93,6 +97,7 @@ func (stmt *statement) has(key any) bool {
 	}
 	return stmt.handleDataExist(key)
 }
+
 func (stmt *statement) reset() {
 	//if stmt.values == nil {
 	//	stmt.values = map[any]int64{}

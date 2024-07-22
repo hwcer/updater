@@ -74,25 +74,38 @@ func (u *Updater) Strict(v StrictType) {
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(init bool) (err error) {
 	if u.loader {
-		return nil
-	}
-	if init {
-		u.loader = true
+		return
 	}
 	u.Async = false
-	u.handles = make(map[string]Handle)
-	for _, model := range modelsRank {
-		ram := model.ram
-		if !u.loader {
-			ram = model.loading
+	if u.handles == nil {
+		u.handles = make(map[string]Handle)
+		for _, model := range modelsRank {
+			ram := model.ram
+			if !init {
+				ram = model.loading
+			}
+			h := handles[model.parser](u, model.model, ram)
+			u.handles[model.name] = h
+			if err = h.init(); err != nil {
+				return
+			}
 		}
-		h := handles[model.parser](u, model.model, ram)
-		if err = h.init(); err != nil {
-			return
-		}
-		u.handles[model.name] = h
 	}
-	return nil
+	if init {
+		for _, model := range modelsRank {
+			h := u.handles[model.name]
+			stmt := h.stmt()
+			if stmt.ram == model.ram {
+				continue
+			}
+			stmt.ram = model.ram
+			if err = h.init(); err != nil {
+				return
+			}
+		}
+		u.loader = true
+	}
+	return
 }
 
 // Reset 重置,每次请求开始时调用
