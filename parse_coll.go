@@ -28,7 +28,6 @@ func (this *Collection) Parse(op *operator.Operator) (err error) {
 		return f(this, op)
 	}
 	return fmt.Errorf("collection operator type not exist:%v", op.Type.ToString())
-
 }
 
 // hmapHandleResolve 仅仅标记不做任何处理
