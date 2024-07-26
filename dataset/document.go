@@ -129,7 +129,7 @@ func (doc *Document) Save() (dirty update.Update, err error) {
 	if m, ok := doc.data.(ModelSaving); ok {
 		m.Saving(dirty)
 	}
-	for k, v := range doc.dirty[update.UpdateTypeSet] {
+	for k, v := range dirty[update.UpdateTypeSet] {
 		if err = doc.setter(k, v); err != nil {
 			logger.Alert("Document Save Update:%v,Error:%v,", dirty, err)
 		}

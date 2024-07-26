@@ -53,5 +53,8 @@ func (v *Verify) Value(target Value) int64 {
 // 必须已经使用过 Target
 // 必须手动执行过 updater.Data()
 func (v *Verify) Verify(target Target) (err error) {
+	if err = v.u.Data(); err != nil {
+		return err
+	}
 	return verify(v.u, target)
 }
