@@ -1,7 +1,5 @@
 package dataset
 
-import "github.com/hwcer/cosmo/update"
-
 const (
 	ItemNameOID = "_id"
 	ItemNameVAL = "val"
@@ -26,7 +24,7 @@ type ModelClone interface {
 	Clone() any
 }
 type ModelSaving interface {
-	Saving(update.Update)
+	Saving(map[string]any)
 }
 
 type BulkWrite interface {

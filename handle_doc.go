@@ -2,7 +2,6 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosmo/update"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/schema"
 	"github.com/hwcer/updater/dataset"
@@ -21,7 +20,7 @@ type documentModel interface {
 	New(update *Updater) any                                             //初始化对象
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
 	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
-	Setter(update *Updater, dirty update.Update) error                   //保存数据接口
+	Setter(update *Updater, dirty map[string]any) error                  //保存数据接口
 }
 
 // Document 文档存储
