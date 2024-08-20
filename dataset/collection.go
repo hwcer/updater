@@ -130,7 +130,7 @@ func (coll *Collection) Save(bulkWrite BulkWrite) error {
 				doc = doc.Clone()
 			}
 			//整合collOperatorUpdate
-			if _, err := doc.Save(); err == nil {
+			if err := doc.Save(nil); err == nil {
 				coll.dataset.Set(k, doc)
 				if bulkWrite != nil {
 					bulkWrite.Insert(doc.Any())
@@ -138,8 +138,9 @@ func (coll *Collection) Save(bulkWrite BulkWrite) error {
 			}
 		} else if v.op.Has(collOperatorUpdate) {
 			doc, _ := coll.dataset.Get(k)
-			if data, err := doc.Save(); err == nil && len(data) > 0 && bulkWrite != nil {
-				bulkWrite.Update(data, k)
+			dirty := make(map[string]any)
+			if err := doc.Save(dirty); err == nil && len(dirty) > 0 && bulkWrite != nil {
+				bulkWrite.Update(dirty, k)
 			}
 		}
 	}

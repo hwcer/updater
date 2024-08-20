@@ -57,7 +57,6 @@ func (this *Collection) save() (err error) {
 	if err = this.dataset.Save(bulkWrite); err != nil {
 		return
 	}
-
 	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
 		this.bulkWrite = nil
 	}

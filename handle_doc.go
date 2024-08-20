@@ -26,8 +26,9 @@ type documentModel interface {
 // Document 文档存储
 type Document struct {
 	statement
-	//dirty   dataset.Update    //数据缓存
 	model   documentModel     //handle model
+	dirty   map[string]any    //外部直接置脏数据，内存数据已经处理过，会自动同步到数据库
+	setter  map[string]any    //需要持久化到数据库的数据
 	dataset *dataset.Document //数据
 }
 
@@ -45,22 +46,26 @@ func (this *Document) val(k string) (r int64, ok bool) {
 	return
 }
 
-func (this *Document) save() error {
+func (this *Document) save() (err error) {
 	if this.Updater.Async {
 		return nil
 	}
-	dirty, err := this.dataset.Save()
-	if err != nil {
+	if this.setter == nil {
+		this.setter = make(map[string]any)
+	}
+	if err = this.dataset.Save(this.setter); err != nil {
 		return err
 	}
-	if len(dirty) == 0 {
+	//同步dirty
+	for k, v := range this.dirty {
+		this.setter[k] = v
+	}
+	if len(this.setter) == 0 {
 		return nil
 	}
-	err = this.model.Setter(this.statement.Updater, dirty)
-
-	//if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
-	//	this.dirty = nil
-	//}
+	if err = this.model.Setter(this.statement.Updater, this.setter); err == nil {
+		this.setter = nil
+	}
 	return err
 }
 
@@ -75,6 +80,7 @@ func (this *Document) reset() {
 // release 运行时释放
 func (this *Document) release() {
 	this.statement.release()
+	this.dirty = nil
 	if !this.Updater.Async {
 		if this.statement.ram == RAMTypeNone {
 			this.dataset = nil
@@ -203,12 +209,12 @@ func (this *Document) submit() (err error) {
 }
 
 // Dirty 设置脏数据,手动修改内存后置脏同步到数据库
-//func (this *Document) Dirty() dataset.Update {
-//	if this.dirty == nil {
-//		this.dirty = dataset.Update{}
-//	}
-//	return this.dirty
-//}
+func (this *Document) Dirty(k string, v any) {
+	if this.dirty == nil {
+		this.dirty = map[string]any{}
+	}
+	this.dirty[k] = v
+}
 
 func (this *Document) Range(f func(k string, v any) bool) {
 	this.dataset.Range(f)

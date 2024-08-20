@@ -122,17 +122,19 @@ func (doc *Document) Update(data map[string]any) {
 	}
 }
 
-func (doc *Document) Save() (dirty map[string]any, err error) {
+func (doc *Document) Save(dirty map[string]any) (err error) {
 	if len(doc.dirty) == 0 {
 		return
 	}
-	dirty, doc.dirty = doc.dirty, nil
+	//dirty, doc.dirty = doc.dirty, nil
 	if m, ok := doc.data.(ModelSaving); ok {
-		m.Saving(dirty)
+		m.Saving(doc.dirty)
 	}
-	for k, v := range dirty {
+	for k, v := range doc.dirty {
 		if err = doc.setter(k, v); err != nil {
 			logger.Alert("Document Save Update:%v,Error:%v,", dirty, err)
+		} else if dirty != nil {
+			dirty[k] = v
 		}
 	}
 	return
