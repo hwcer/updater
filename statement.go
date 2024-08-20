@@ -20,48 +20,10 @@ type modelIType interface {
 type stmHandleOptCreate func(t operator.Types, k any, v int64, r any)
 type stmHandleDataExist func(k any) bool
 
-//
-//type stmDatasetValues struct {
-//	v map[any]int64
-//}
-//
-//func (this *stmDatasetValues) get(k any) (v int64, ok bool) {
-//	if this.v != nil {
-//		v, ok = this.v[k]
-//	}
-//	return
-//}
-//
-//func (this *stmDatasetValues) set(k any, v int64) {
-//	if this.v == nil {
-//		this.v = map[any]int64{}
-//	}
-//	this.v[k] = v
-//}
-//
-//func (this *stmDatasetValues) add(k any, v int64) {
-//	if this.v == nil {
-//		this.v = map[any]int64{}
-//	}
-//	this.v[k] += v
-//}
-//
-//func (this *stmDatasetValues) sub(k any, v int64) {
-//	if this.v == nil {
-//		this.v = map[any]int64{}
-//	}
-//	this.v[k] -= v
-//}
-//
-//func (this *stmDatasetValues) release() {
-//	this.v = nil
-//}
-
 type statement struct {
-	ram   RAMType
-	keys  Keys
-	cache []*operator.Operator
-	//values          stmDatasetValues //执行过程中的数量过程
+	ram             RAMType
+	keys            Keys
+	cache           []*operator.Operator
 	Updater         *Updater
 	operator        []*operator.Operator //操作
 	handleOptCreate stmHandleOptCreate
@@ -71,17 +33,6 @@ type statement struct {
 func newStatement(u *Updater, ram RAMType, opt stmHandleOptCreate, exist stmHandleDataExist) *statement {
 	return &statement{ram: ram, handleOptCreate: opt, handleDataExist: exist, Updater: u}
 }
-
-//	func (stmt *statement) done() {
-//		//stmt.cache = append(stmt.cache, stmt.operator...)
-//		if !stmt.Updater.Async {
-//			stmt.keys = nil
-//			stmt.values.release()
-//		}
-//		stmt.operator = nil
-//		//stmt.verify = false
-//		//stmt.Updater.Error = nil
-//	}
 
 func (stmt *statement) stmt() *statement {
 	return stmt
@@ -109,9 +60,6 @@ func (stmt *statement) reset() {
 
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
-	//if !stmt.Updater.Async {
-	//	stmt.values.release()
-	//}
 	stmt.keys = nil
 	stmt.operator = nil
 }
@@ -123,10 +71,19 @@ func (stmt *statement) date() {
 
 // verify 执行verify后操作
 func (stmt *statement) verify() {
-	if len(stmt.operator) > 0 {
-		stmt.cache = append(stmt.cache, stmt.operator...)
-		stmt.operator = nil
+	if len(stmt.operator) == 0 {
+		return
 	}
+	if Config.Filter == nil {
+		stmt.cache = append(stmt.cache, stmt.operator...)
+	} else {
+		for _, v := range stmt.operator {
+			if Config.Filter(v) {
+				stmt.cache = append(stmt.cache, v)
+			}
+		}
+	}
+	stmt.operator = nil
 }
 
 func (stmt *statement) submit() {
@@ -161,21 +118,6 @@ func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
 	stmt.Updater.operated = true
 }
 
-//func (b *statement) Has(key string) bool {
-//	return b.Fields.Has(key)
-//}
-
-//func (stmt *statement) submit() []*operator.Operator {
-//	return stmt.cache
-//}
-
-// Select 字段名(HASH)或者OID(table)
-//func (b *statement) Select(keys ...string) {
-//	if r := b.Fields.Select(keys...); r > 0 {
-//		b.Updater.changed = true
-//	}
-//}
-
 func (stmt *statement) Add(k any, v int32) {
 	if v <= 0 {
 		return
@@ -201,21 +143,3 @@ func (stmt *statement) Min(k any, v int64) {
 func (stmt *statement) Del(k any) {
 	stmt.handleOptCreate(operator.TypesDel, k, 0, nil)
 }
-
-// Set set结果
-// coll       Set(iid,k,v) Set(iid,map[any]any)
-// hash doc   Set(k,v)   Set(map[any]any)
-//func (this *statement) Set(k any, v ...any) {
-//	switch len(v) {
-//	case 0:
-//		this.handle(dirty.OperatorTypeSet, k, nil)
-//	case 1:
-//		this.handle(dirty.OperatorTypeSet, k, v[0])
-//	case 2:
-//		if field, ok := v[0].(string); ok {
-//			this.handle(dirty.OperatorTypeSet, k, dirty.NewUpdate(field, v[1]))
-//		} else {
-//			logger.Debug("set args error:%v", v)
-//		}
-//	}
-//}

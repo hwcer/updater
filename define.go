@@ -36,6 +36,7 @@ var Config = struct {
 	IMax    func(iid int32) int64                                     //通过道具iid查找上限
 	IType   func(iid int32) int32                                     //通过道具iid查找IType ID
 	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
+	Filter  func(*operator.Operator) bool                             //过滤cache,返回false时不返回给前端
 }{}
 
 //type Item interface {

@@ -284,12 +284,11 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	switch d := k.(type) {
 	case string:
 		op.OID = d
+		op.IID, this.Updater.Error = Config.ParseId(this.Updater, op.OID)
 	default:
 		op.IID = dataset.ParseInt32(k)
 	}
-	if op.IID == 0 {
-		op.IID, this.Updater.Error = Config.ParseId(this.Updater, op.OID)
-	}
+
 	if this.Updater.Error != nil {
 		return
 	}
@@ -305,9 +304,6 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 		return v, nil
 	}
 	iid := dataset.ParseInt32(key)
-	if iid <= 0 {
-		return "", fmt.Errorf("iid empty:%v", iid)
-	}
 	it := this.ITypeCollection(iid)
 	if it == nil {
 		return "", fmt.Errorf("IType unknown:%v", iid)
