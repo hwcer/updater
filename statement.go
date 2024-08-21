@@ -74,13 +74,12 @@ func (stmt *statement) verify() {
 	if len(stmt.operator) == 0 {
 		return
 	}
-	if Config.Filter == nil {
-		stmt.cache = append(stmt.cache, stmt.operator...)
-	} else {
-		for _, v := range stmt.operator {
-			if Config.Filter(v) {
-				stmt.cache = append(stmt.cache, v)
-			}
+	if stmt.cache == nil {
+		stmt.cache = make([]*operator.Operator, 0, len(stmt.operator))
+	}
+	for _, v := range stmt.operator {
+		if Config.Filter(v) {
+			stmt.cache = append(stmt.cache, v)
 		}
 	}
 	stmt.operator = nil
