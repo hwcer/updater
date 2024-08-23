@@ -7,18 +7,18 @@ import (
 )
 
 func init() {
-	register(ConditionNone, taskTargetHandleNone)
-	register(ConditionData, taskTargetHandleData)
-	register(ConditionEvents, taskTargetHandleEvents)
-	register(ConditionMethod, taskTargetHandleMethod)
-	register(ConditionWeekly, taskTargetHandleWeekly)
-	register(ConditionHistory, taskTargetHandleHistory)
+	Register(ConditionNone, taskTargetHandleNone)
+	Register(ConditionData, taskTargetHandleData)
+	Register(ConditionEvents, taskTargetHandleEvents)
+	Register(ConditionMethod, taskTargetHandleMethod)
+	Register(ConditionWeekly, taskTargetHandleWeekly)
+	Register(ConditionHistory, taskTargetHandleHistory)
 }
 func value(u *updater.Updater, target Value) (r int64) {
 	if f, ok := verifyCondition[target.GetCondition()]; ok {
 		r = f(u, target)
 	} else {
-		logger.Alert("Condition unknown,Condition:%v,Key:%v", target.GetCondition(),target.GetKey())
+		logger.Alert("Condition unknown,Condition:%v,Key:%v", target.GetCondition(), target.GetKey())
 	}
 	return
 }
@@ -49,7 +49,7 @@ func taskTargetHandleNone(u *updater.Updater, target Value) (r int64) {
 func taskTargetHandleEvents(u *updater.Updater, target Value) (r int64) {
 	if d, ok := target.(GetVal); ok {
 		r = d.GetVal()
-	}else {
+	} else {
 		logger.Alert("taskTargetHandleEvents ")
 	}
 	return

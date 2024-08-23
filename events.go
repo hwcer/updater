@@ -19,6 +19,7 @@ type Middleware interface {
 
 type Events struct {
 	events      map[EventType][]Listener
+	listener    map[EventType][]Listener //常驻事件
 	middlewares map[string]Middleware
 }
 
@@ -49,6 +50,13 @@ func (e *Events) Set(name string, handle Middleware) bool {
 	return true
 }
 
+func (e *Events) Listener(t EventType, handle Listener) {
+	if e.listener == nil {
+		e.listener = map[EventType][]Listener{}
+	}
+	e.listener[t] = append(e.listener[t], handle)
+}
+
 func (e *Events) LoadOrStore(name string, handle Middleware) (v Middleware) {
 	if e.middlewares == nil {
 		e.middlewares = map[string]Middleware{}
@@ -76,6 +84,7 @@ func (e *Events) emit(u *Updater, t EventType) {
 		return
 	}
 	e.emitEvents(u, t)
+	e.emitListener(u, t)
 	e.emitMiddleware(u, t)
 }
 
@@ -106,6 +115,18 @@ func (e *Events) emitEvents(u *Updater, t EventType) {
 			}
 		}
 		e.events[t] = es
+	}
+	return
+}
+func (e *Events) emitListener(u *Updater, t EventType) {
+	if l := e.listener[t]; len(l) > 0 {
+		var es []Listener
+		for _, h := range l {
+			if h(u) {
+				es = append(es, h)
+			}
+		}
+		e.listener[t] = es
 	}
 	return
 }

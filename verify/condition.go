@@ -16,7 +16,7 @@ var verifyCondition = make(map[int32]verifyConditionHandle)
 // verifyConditionHandle times  开始时间，结束时间仅仅用在 TaskConditionHistory 类型的活动中
 type verifyConditionHandle func(u *updater.Updater, handle Value) int64
 
-func register(key int32, handle verifyConditionHandle) {
+func Register(key int32, handle verifyConditionHandle) {
 	verifyCondition[key] = handle
 }
 
