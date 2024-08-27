@@ -16,10 +16,10 @@ type Handle interface {
 	Parser() Parser                                 //解析模型
 	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator,不会触发任何事件
 	IType(int32) IType                              //根据iid获取IType
-	init() error                                    //构造方法
 	stmt() *statement                               //获取核心
 	save() error                                    //保存所有数据
 	reset()                                         //运行时开始时
+	loading(RAMType) error                          //构造方法,load 是否需要加载数据库数据
 	release()                                       //运行时释放缓存信息,并返回所有操作过程
 	destroy() error                                 //同步所有数据到数据库,手动同步,或者销毁时执行
 	submit() error                                  //即时同步,提交所有操作,缓存生效,同步数据库

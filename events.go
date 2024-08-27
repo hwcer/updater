@@ -18,19 +18,26 @@ type Middleware interface {
 }
 
 type Events struct {
-	events      map[EventType][]Listener
-	listener    map[EventType][]Listener //常驻事件
-	middlewares map[string]Middleware
+	events      map[EventType][]Listener //过程事件
+	emitter     map[EventType][]Listener //常驻事件
+	middlewares map[string]Middleware    //中间件
 }
 
-func (e *Events) On(t EventType, handle Listener) {
+func (e *Events) On(t EventType, handle Listener, noRelease ...bool) {
 	if e.events == nil {
 		e.events = map[EventType][]Listener{}
 	}
-	e.events[t] = append(e.events[t], handle)
+	if e.emitter == nil {
+		e.emitter = map[EventType][]Listener{}
+	}
+	if len(noRelease) > 0 && noRelease[0] {
+		e.emitter[t] = append(e.emitter[t], handle)
+	} else {
+		e.events[t] = append(e.events[t], handle)
+	}
 }
 
-// Get 获取plug
+// Get 获取中间件
 func (e *Events) Get(name string) any {
 	if e.middlewares != nil && e.middlewares[name] != nil {
 		return e.middlewares[name]
@@ -38,7 +45,7 @@ func (e *Events) Get(name string) any {
 	return nil
 }
 
-// Set 设置插件,如果已存在(全局,当前)返回false
+// Set 设置中间件,如果已存在返回false
 func (e *Events) Set(name string, handle Middleware) bool {
 	if e.middlewares == nil {
 		e.middlewares = map[string]Middleware{}
@@ -48,13 +55,6 @@ func (e *Events) Set(name string, handle Middleware) bool {
 	}
 	e.middlewares[name] = handle
 	return true
-}
-
-func (e *Events) Listener(t EventType, handle Listener) {
-	if e.listener == nil {
-		e.listener = map[EventType][]Listener{}
-	}
-	e.listener[t] = append(e.listener[t], handle)
 }
 
 func (e *Events) LoadOrStore(name string, handle Middleware) (v Middleware) {
@@ -83,9 +83,9 @@ func (e *Events) emit(u *Updater, t EventType) {
 	if u.Error != nil {
 		return
 	}
-	e.emitEvents(u, t)
-	e.emitListener(u, t)
-	e.emitMiddleware(u, t)
+	e.triggerEvents(u, t)
+	e.triggerEmitter(u, t)
+	e.triggerMiddleware(u, t)
 }
 
 func (e *Events) release() {
@@ -93,20 +93,7 @@ func (e *Events) release() {
 	e.middlewares = nil
 }
 
-func (e *Events) emitMiddleware(u *Updater, t EventType) {
-	if len(e.middlewares) == 0 {
-		return
-	}
-	mw := map[string]Middleware{}
-	for k, p := range e.middlewares {
-		if p.Emit(u, t) {
-			mw[k] = p
-		}
-	}
-	e.middlewares = mw
-}
-
-func (e *Events) emitEvents(u *Updater, t EventType) {
+func (e *Events) triggerEvents(u *Updater, t EventType) {
 	if events := e.events[t]; len(events) > 0 {
 		var es []Listener
 		for _, h := range events {
@@ -118,15 +105,28 @@ func (e *Events) emitEvents(u *Updater, t EventType) {
 	}
 	return
 }
-func (e *Events) emitListener(u *Updater, t EventType) {
-	if l := e.listener[t]; len(l) > 0 {
+func (e *Events) triggerEmitter(u *Updater, t EventType) {
+	if l := e.emitter[t]; len(l) > 0 {
 		var es []Listener
 		for _, h := range l {
 			if h(u) {
 				es = append(es, h)
 			}
 		}
-		e.listener[t] = es
+		e.emitter[t] = es
 	}
 	return
+}
+
+func (e *Events) triggerMiddleware(u *Updater, t EventType) {
+	if len(e.middlewares) == 0 {
+		return
+	}
+	mw := map[string]Middleware{}
+	for k, p := range e.middlewares {
+		if p.Emit(u, t) {
+			mw[k] = p
+		}
+	}
+	e.middlewares = mw
 }

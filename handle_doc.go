@@ -32,10 +32,10 @@ type Document struct {
 	dataset *dataset.Document //数据
 }
 
-func NewDocument(u *Updater, model any, ram RAMType) Handle {
+func NewDocument(u *Updater, model any) Handle {
 	r := &Document{}
 	r.model = model.(documentModel)
-	r.statement = *newStatement(u, ram, r.operator, r.has)
+	r.statement = *newStatement(u, r.operator, r.has)
 	return r
 }
 
@@ -89,18 +89,16 @@ func (this *Document) release() {
 		}
 	}
 }
-func (this *Document) init() (err error) {
+func (this *Document) loading(ram RAMType) (err error) {
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
-	if this.statement.ram == RAMTypeMaybe {
-		this.statement.ram = RAMTypeNone
-		logger.Alert("updater Document模型不支持RAMTypeMaybe已经自动转换为RAMTypeNone")
+	this.statement.ram = ram
+	if !this.statement.loader && (this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways) {
+		this.statement.loader = true
+		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
 	}
-	if this.statement.ram == RAMTypeAlways && !this.dataset.Loader() {
-		err = this.model.Getter(this.Updater, this.dataset, nil)
-	}
-	return
+	return this.Updater.Error
 }
 
 // 关闭时执行,玩家下线

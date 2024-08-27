@@ -14,7 +14,7 @@ const (
 	ParserTypeCollection               //Collection 文档集合模式
 )
 
-type handleFunc func(updater *Updater, model any, ram RAMType) Handle
+type handleFunc func(updater *Updater, model any) Handle
 
 var handles = make(map[Parser]handleFunc)
 
@@ -78,7 +78,6 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 	} else {
 		mod.loading = RAMTypeNone
 	}
-
 	modelsRank = append(modelsRank, mod)
 	sort.SliceStable(modelsRank, func(i, j int) bool {
 		return modelsRank[i].order > modelsRank[j].order

@@ -27,10 +27,10 @@ type Collection struct {
 	bulkWrite dataset.BulkWrite
 }
 
-func NewCollection(u *Updater, model any, ram RAMType) Handle {
+func NewCollection(u *Updater, model any) Handle {
 	r := &Collection{}
 	r.model = model.(collectionModel)
-	r.statement = *newStatement(u, ram, r.operator, r.Has)
+	r.statement = *newStatement(u, r.operator, r.Has)
 	return r
 }
 func (this *Collection) Parser() Parser {
@@ -80,9 +80,13 @@ func (this *Collection) release() {
 		}
 	}
 }
-func (this *Collection) init() error {
-	this.dataset = dataset.NewColl()
-	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
+func (this *Collection) loading(ram RAMType) error {
+	if this.dataset == nil {
+		this.dataset = dataset.NewColl()
+	}
+	this.statement.ram = ram
+	if !this.statement.loader && (this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways) {
+		this.statement.loader = true
 		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
 	}
 	return this.Updater.Error

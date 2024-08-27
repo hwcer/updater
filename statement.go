@@ -24,14 +24,15 @@ type statement struct {
 	ram             RAMType
 	keys            Keys
 	cache           []*operator.Operator
-	Updater         *Updater
+	loader          bool                 //是否已经完成加载
+	Updater         *Updater             //Updater
 	operator        []*operator.Operator //操作
-	handleOptCreate stmHandleOptCreate
-	handleDataExist stmHandleDataExist //查询数据集中是否存在
+	handleOptCreate stmHandleOptCreate   //Create
+	handleDataExist stmHandleDataExist   //查询数据集中是否存在
 }
 
-func newStatement(u *Updater, ram RAMType, opt stmHandleOptCreate, exist stmHandleDataExist) *statement {
-	return &statement{ram: ram, handleOptCreate: opt, handleDataExist: exist, Updater: u}
+func newStatement(u *Updater, opt stmHandleOptCreate, exist stmHandleDataExist) *statement {
+	return &statement{handleOptCreate: opt, handleDataExist: exist, Updater: u}
 }
 
 func (stmt *statement) stmt() *statement {
@@ -90,6 +91,10 @@ func (stmt *statement) submit() {
 		stmt.Updater.dirty = append(stmt.Updater.dirty, stmt.cache...)
 		stmt.cache = nil
 	}
+}
+
+func (this *statement) Loader() bool {
+	return this.loader
 }
 
 func (stmt *statement) Select(key any) {

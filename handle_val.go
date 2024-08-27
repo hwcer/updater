@@ -21,10 +21,10 @@ type Values struct {
 	dataset *dataset.Values
 }
 
-func NewValues(u *Updater, model any, ram RAMType) Handle {
+func NewValues(u *Updater, model any) Handle {
 	r := &Values{}
 	r.model = model.(valuesModel)
-	r.statement = *newStatement(u, ram, r.operator, r.Has)
+	r.statement = *newStatement(u, r.operator, r.Has)
 	if sch, err := schema.Parse(model); err == nil {
 		r.name = sch.Table
 	} else {
@@ -37,9 +37,13 @@ func (this *Values) Parser() Parser {
 	return ParserTypeValues
 }
 
-func (this *Values) init() error {
-	this.dataset = dataset.NewValues()
-	if this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways {
+func (this *Values) loading(ram RAMType) error {
+	if this.dataset == nil {
+		this.dataset = dataset.NewValues()
+	}
+	this.statement.ram = ram
+	if !this.statement.loader && (this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways) {
+		this.statement.loader = true
 		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
 	}
 	return this.Updater.Error
@@ -70,7 +74,7 @@ func (this *Values) reset() {
 		if this.Updater.Error = this.save(); this.Updater.Error != nil {
 			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
 		} else {
-			this.Updater.Error = this.init()
+			this.Updater.Error = this.loading(this.statement.ram)
 		}
 	}
 }

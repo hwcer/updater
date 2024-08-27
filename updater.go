@@ -24,13 +24,13 @@ type Updater struct {
 	Player any  //角色信息
 	Events Events
 	//Emitter  Emitter
-	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
-	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
-	loader   bool                 //数据加载完毕
-	changed  bool                 //数据变动,需要使用Data更新数据
-	operated bool                 //新操作需要重执行Verify检查数据
-	handles  map[string]Handle    //Handle
-	ReadOnly bool                 //只读模式,无法写入
+	dirty  []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
+	strict StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	//loader   bool             //数据加载完毕
+	changed  bool              //数据变动,需要使用Data更新数据
+	operated bool              //新操作需要重执行Verify检查数据
+	handles  map[string]Handle //Handle
+	ReadOnly bool              //只读模式,无法写入
 }
 
 func New(p any) (u *Updater) {
@@ -73,38 +73,43 @@ func (u *Updater) Strict(v StrictType) {
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(init bool) (err error) {
-	if u.loader {
-		return
-	}
-	u.Async = false
+	//if u.loader {
+	//	return
+	//}
+	//u.Async = false
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
-		for _, model := range modelsRank {
-			ram := model.ram
-			if !init {
-				ram = model.loading
-			}
-			h := handles[model.parser](u, model.model, ram)
-			u.handles[model.name] = h
-			if err = h.init(); err != nil {
-				return
-			}
+	}
+	for _, model := range modelsRank {
+		name := model.name
+		handle := u.handles[name]
+		if handle == nil {
+			handle = handles[model.parser](u, model.model)
+			u.handles[name] = handle
+		}
+		ram := model.ram
+		if !init {
+			ram = model.loading
+		}
+		if err = handle.loading(ram); err != nil {
+			return
 		}
 	}
-	if init {
-		for _, model := range modelsRank {
-			h := u.handles[model.name]
-			stmt := h.stmt()
-			if stmt.ram == model.ram {
-				continue
-			}
-			stmt.ram = model.ram
-			if err = h.init(); err != nil {
-				return
-			}
-		}
-		u.loader = true
-	}
+
+	//if init {
+	//	for _, model := range modelsRank {
+	//		h := u.handles[model.name]
+	//		stmt := h.stmt()
+	//		if stmt.ram == model.ram {
+	//			continue
+	//		}
+	//		stmt.ram = model.ram
+	//		if err = h.init(); err != nil {
+	//			return
+	//		}
+	//	}
+	//	u.loader = true
+	//}
 	return
 }
 

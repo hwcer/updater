@@ -139,9 +139,10 @@ func (doc *Document) Save(dirty map[string]any) (err error) {
 	}
 	return
 }
-func (doc *Document) Loader() bool {
-	return doc.data != nil
-}
+
+//func (doc *Document) Loader() bool {
+//	return doc.data != nil
+//}
 
 // write 跳过缓存直接修改数据
 func (doc *Document) setter(k string, v any) error {
