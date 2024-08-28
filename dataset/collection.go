@@ -4,6 +4,11 @@ import (
 	"fmt"
 )
 
+type CollectionMonitor interface {
+	Insert(doc *Document)
+	Delete(doc *Document)
+}
+
 func NewColl(rows ...any) *Collection {
 	coll := &Collection{}
 	coll.dataset = Dataset{}
@@ -26,6 +31,13 @@ func (d Dataset) Del(k string) {
 
 func (d Dataset) Get(k string) (doc *Document, ok bool) {
 	doc, ok = d[k]
+	return
+}
+
+func (d Dataset) GetAndDel(k string) (doc *Document) {
+	if doc = d[k]; doc != nil {
+		delete(d, k)
+	}
 	return
 }
 
@@ -116,12 +128,15 @@ func (coll *Collection) Remove(id ...string) {
 	}
 }
 
-func (coll *Collection) Save(bulkWrite BulkWrite) error {
+func (coll *Collection) Save(bulkWrite BulkWrite, monitor CollectionMonitor) error {
 	for k, v := range coll.dirty {
 		if v.op.Has(collOperatorDelete) {
-			coll.dataset.Del(k)
+			doc := coll.dataset.GetAndDel(k)
 			if bulkWrite != nil {
 				bulkWrite.Delete(k)
+			}
+			if monitor != nil && doc != nil {
+				monitor.Delete(doc)
 			}
 		}
 		if v.op.Has(collOperatorInsert) {
@@ -135,6 +150,9 @@ func (coll *Collection) Save(bulkWrite BulkWrite) error {
 				if bulkWrite != nil {
 					bulkWrite.Insert(doc.Any())
 				}
+			}
+			if monitor != nil {
+				monitor.Insert(doc)
 			}
 		} else if v.op.Has(collOperatorUpdate) {
 			doc, _ := coll.dataset.Get(k)

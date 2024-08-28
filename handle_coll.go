@@ -24,6 +24,7 @@ type Collection struct {
 	model     collectionModel
 	remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset   *dataset.Collection
+	monitor   dataset.CollectionMonitor
 	bulkWrite dataset.BulkWrite
 }
 
@@ -35,6 +36,10 @@ func NewCollection(u *Updater, model any) Handle {
 }
 func (this *Collection) Parser() Parser {
 	return ParserTypeCollection
+}
+
+func (this *Collection) SetMonitor(v dataset.CollectionMonitor) {
+	this.monitor = v
 }
 
 //func (this *Collection) get(k string) (r *dataset.Document) {
@@ -54,7 +59,7 @@ func (this *Collection) save() (err error) {
 		return
 	}
 	bulkWrite := this.BulkWrite()
-	if err = this.dataset.Save(bulkWrite); err != nil {
+	if err = this.dataset.Save(bulkWrite, this.monitor); err != nil {
 		return
 	}
 	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
@@ -112,12 +117,8 @@ func (this *Collection) Has(id any) (r bool) {
 
 // Get 返回item,不可叠加道具只能使用oid获取
 func (this *Collection) Get(key any) (r any) {
-	if oid, err := this.ObjectId(key); err == nil {
-		if i := this.dataset.Val(oid); i != nil {
-			r = i.Any()
-		}
-	} else {
-		logger.Debug(err)
+	if doc := this.Doc(key); doc != nil {
+		r = doc.Any()
 	}
 	return
 }
@@ -126,6 +127,14 @@ func (this *Collection) Get(key any) (r any) {
 func (this *Collection) Val(key any) (r int64) {
 	if oid, err := this.ObjectId(key); err == nil {
 		r, _ = this.val(oid)
+	}
+	return
+}
+func (this *Collection) Doc(key any) (r *dataset.Document) {
+	if oid, err := this.ObjectId(key); err == nil {
+		r = this.dataset.Val(oid)
+	} else {
+		logger.Debug(err)
 	}
 	return
 }
