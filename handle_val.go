@@ -115,6 +115,10 @@ func (this *Values) Val(k any) (r int64) {
 	return
 }
 
+func (this *Values) All() dataset.Data {
+	return this.dataset.All()
+}
+
 // Set 设置
 // Set(k int32,v int64)
 func (this *Values) Set(k any, v ...any) {

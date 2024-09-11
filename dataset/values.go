@@ -48,6 +48,10 @@ func (val *Values) Get(k int32) (r int64, ok bool) {
 	return val.data.Get(k)
 }
 
+func (val *Values) All() Data {
+	return val.data
+}
+
 func (val *Values) Set(k int32, v int64) {
 	if val.dirty == nil {
 		val.dirty = Data{}
