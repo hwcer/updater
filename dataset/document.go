@@ -137,6 +137,7 @@ func (doc *Document) Save(dirty map[string]any) (err error) {
 			dirty[k] = v
 		}
 	}
+	doc.dirty = nil
 	return
 }
 
@@ -219,9 +220,9 @@ func (doc *Document) Reset(v any) {
 	doc.dirty = nil
 }
 
-func (doc *Document) Release() {
-	doc.dirty = nil
-}
+//func (doc *Document) Release() {
+//	doc.dirty = nil
+//}
 
 func (doc *Document) Range(handle func(string, any) bool) {
 	sch, err := doc.Schema()

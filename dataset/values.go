@@ -86,6 +86,7 @@ func (val *Values) Save(dirty Data) (expire int64) {
 		}
 		val.data[k] = v
 	}
+	val.dirty = nil
 	return
 }
 
@@ -101,13 +102,13 @@ func (val *Values) Range(handle func(int32, int64) bool) {
 }
 func (val *Values) Reset(data Data, expire int64) {
 	val.data = data
-	val.dirty = nil
+	//val.dirty = nil
 	val.expire = expire
 }
 
-func (val *Values) Release() {
-	val.dirty = nil
-}
+//func (val *Values) Release() {
+//	val.dirty = nil
+//}
 
 // Receive 接收器，接收外部对象放入列表，不进行任何操作，一般用于初始化
 func (val *Values) Receive(k int32, v int64) {
