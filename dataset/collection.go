@@ -182,13 +182,6 @@ func (coll *Collection) Reset(rows ...any) {
 	}
 }
 
-// Release 释放执行过程
-//func (coll *Collection) Release(empty bool) {
-//	if empty {
-//		coll.dataset = Dataset{}
-//	}
-//}
-
 // Receive 接收器，接收外部对象放入列表，不进行任何操作，一般用于初始化
 func (coll *Collection) Receive(id string, data any) {
 	coll.dataset.Set(id, NewDoc(data))

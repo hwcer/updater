@@ -14,11 +14,12 @@ type ModelGet interface {
 	Get(string) (v any, ok bool)
 }
 type ModelSet interface {
-	Set(k string, v any) (ok bool)
+	Set(k string, v any) (r any, ok bool)
 }
-type ModelUnset interface {
-	Unset(k string) (ok bool)
-}
+
+//type ModelUnset interface {
+//	Unset(k string) (ok bool)
+//}
 
 type ModelClone interface {
 	Clone() any

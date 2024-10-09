@@ -122,42 +122,38 @@ func (doc *Document) Update(data map[string]any) {
 	}
 }
 
-func (doc *Document) Save(dirty map[string]any) (err error) {
+func (doc *Document) Save(dirty map[string]any) error {
 	if len(doc.dirty) == 0 {
-		return
+		return nil
 	}
-	//dirty, doc.dirty = doc.dirty, nil
 	if m, ok := doc.data.(ModelSaving); ok {
 		m.Saving(doc.dirty)
 	}
 	for k, v := range doc.dirty {
-		if err = doc.setter(k, v); err != nil {
+		if r, err := doc.setter(k, v); err != nil {
 			logger.Alert("Document Save Update:%v,Error:%v,", dirty, err)
 		} else if dirty != nil {
-			dirty[k] = v
+			dirty[k] = r
 		}
 	}
 	doc.dirty = nil
-	return
+	return nil
 }
 
-//func (doc *Document) Loader() bool {
-//	return doc.data != nil
-//}
-
 // write 跳过缓存直接修改数据
-func (doc *Document) setter(k string, v any) error {
+func (doc *Document) setter(k string, v any) (any, error) {
 	if m, ok := doc.data.(ModelSet); ok {
-		if m.Set(k, v) {
-			return nil
+		var r any
+		if r, ok = m.Set(k, v); ok {
+			return r, nil
 		}
 	}
 	sch, err := doc.Schema()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	logger.Debug("建议给%v.%v添加Set接口提升性能", sch.Name, k)
-	return sch.SetValue(doc.data, v, k)
+	return v, sch.SetValue(doc.data, v, k)
 }
 
 func (doc *Document) Schema() (sch *schema.Schema, err error) {
