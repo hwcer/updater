@@ -142,6 +142,11 @@ func (doc *Document) Save(dirty map[string]any) error {
 
 // write 跳过缓存直接修改数据
 func (doc *Document) setter(k string, v any) (any, error) {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error(err)
+		}
+	}()
 	if m, ok := doc.data.(ModelSet); ok {
 		var r any
 		if r, ok = m.Set(k, v); ok {
