@@ -24,9 +24,10 @@ type ModelSet interface {
 type ModelClone interface {
 	Clone() any
 }
-type ModelSaving interface {
-	Saving(map[string]any)
-}
+
+//type ModelSaving interface {
+//	Saving(map[string]any)
+//}
 
 type BulkWrite interface {
 	Save() error
