@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"errors"
+	"fmt"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/schema"
 	"reflect"
@@ -15,28 +16,28 @@ func NewDoc(i any) *Document {
 	return &Document{data: i}
 }
 
-type DocumentDirty map[string]any
-
-func (dirty DocumentDirty) Has(k string) bool {
-	_, ok := dirty[k]
-	return ok
-}
-func (dirty DocumentDirty) Get(k string) (any, bool) {
-	r, ok := dirty[k]
-	return r, ok
-}
-func (dirty DocumentDirty) Set(k string, v any) {
-	if dirty != nil {
-		dirty[k] = v
-	} else {
-		logger.Alert("updater/dataset Document Dirty is nil,key:%v", k)
-	}
-}
+//type DocumentDirty map[string]any
+//
+//func (dirty DocumentDirty) Has(k string) bool {
+//	_, ok := dirty[k]
+//	return ok
+//}
+//func (dirty DocumentDirty) Get(k string) (any, bool) {
+//	r, ok := dirty[k]
+//	return r, ok
+//}
+//func (dirty DocumentDirty) Set(k string, v any) {
+//	if dirty != nil {
+//		dirty[k] = v
+//	} else {
+//		logger.Alert("updater/dataset Document Dirty is nil,key:%v", k)
+//	}
+//}
 
 type Document struct {
 	sch   *schema.Schema
 	data  any
-	dirty DocumentDirty
+	dirty Update
 }
 
 // Has 是否存在字段
@@ -98,7 +99,7 @@ func (doc *Document) Set(k string, v any) {
 		return
 	}
 	if doc.dirty == nil {
-		doc.dirty = DocumentDirty{}
+		doc.dirty = Update{}
 	}
 	doc.dirty.Set(k, v)
 }
@@ -116,41 +117,41 @@ func (doc *Document) Sub(k string, v int64) (r int64) {
 }
 
 // Update 批量更新
-func (doc *Document) Update(data map[string]any) {
+func (doc *Document) Update(data Update) {
 	for k, v := range data {
 		doc.Set(k, v)
 	}
 }
 
-func (doc *Document) Save(dirty map[string]any) error {
+func (doc *Document) Save(dirty Update) error {
 	if len(doc.dirty) == 0 {
 		return nil
 	}
-	//if m, ok := doc.data.(ModelSaving); ok {
-	//	m.Saving(doc.dirty)
-	//}
 	for k, v := range doc.dirty {
 		if r, err := doc.setter(k, v); err != nil {
 			logger.Alert("Document Save Update:%v,Error:%v,", dirty, err)
 		} else if dirty != nil {
-			dirty[k] = r
+			switch d := r.(type) {
+			case Update:
+				dirty.Merge(d)
+			default:
+				dirty[k] = r
+			}
 		}
 	}
 	doc.dirty = nil
 	return nil
 }
 
-// write 跳过缓存直接修改数据
-func (doc *Document) setter(k string, v any) (any, error) {
+func (doc *Document) setter(k string, v any) (r any, err error) {
 	defer func() {
-		if err := recover(); err != nil {
-			logger.Error(err)
+		if e := recover(); e != nil {
+			err = fmt.Errorf("%v", e)
 		}
 	}()
 	if m, ok := doc.data.(ModelSet); ok {
-		var r any
 		if r, ok = m.Set(k, v); ok {
-			return r, nil
+			return
 		}
 	}
 	sch, err := doc.Schema()

@@ -20,15 +20,15 @@ type documentModel interface {
 	New(update *Updater) any                                             //初始化对象
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
 	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
-	Setter(update *Updater, dirty map[string]any) error                  //保存数据接口
+	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
 }
 
 // Document 文档存储
 type Document struct {
 	statement
 	model   documentModel     //handle model
-	dirty   map[string]any    //外部直接置脏数据，内存数据已经处理过，会自动同步到数据库
-	setter  map[string]any    //需要持久化到数据库的数据
+	dirty   dataset.Update    //外部直接置脏数据，内存数据已经处理过，会自动同步到数据库
+	setter  dataset.Update    //需要持久化到数据库的数据
 	dataset *dataset.Document //数据
 }
 
@@ -51,7 +51,7 @@ func (this *Document) save() (err error) {
 		return nil
 	}
 	if this.setter == nil {
-		this.setter = make(map[string]any)
+		this.setter = make(dataset.Update)
 	}
 	if err = this.dataset.Save(this.setter); err != nil {
 		return err

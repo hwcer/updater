@@ -18,6 +18,12 @@ func (d Update) Del(k string) {
 	delete(d, k)
 }
 
+func (d Update) Merge(from Update) {
+	for k, v := range from {
+		d[k] = v
+	}
+}
+
 func NewUpdate(k string, v any) Update {
 	r := Update{}
 	r[k] = v

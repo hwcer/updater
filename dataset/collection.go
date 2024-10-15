@@ -89,7 +89,7 @@ func (coll *Collection) New(i ...any) (err error) {
 }
 
 // Update 批量更新,对象必须已经存在
-func (coll *Collection) Update(id string, data map[string]any) error {
+func (coll *Collection) Update(id string, data Update) error {
 	doc, ok := coll.Get(id)
 	if !ok {
 		return fmt.Errorf("item not exist:%v", id)
@@ -156,7 +156,7 @@ func (coll *Collection) Save(bulkWrite BulkWrite, monitor CollectionMonitor) err
 			}
 		} else if v.op.Has(collOperatorUpdate) {
 			doc, _ := coll.dataset.Get(k)
-			dirty := make(map[string]any)
+			dirty := make(Update)
 			if err := doc.Save(dirty); err == nil && len(dirty) > 0 && bulkWrite != nil {
 				bulkWrite.Update(dirty, k)
 			}

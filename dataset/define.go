@@ -13,25 +13,22 @@ type Model interface {
 type ModelGet interface {
 	Get(string) (v any, ok bool)
 }
+
+// ModelSet 内存写入
+//
+//	r.(type)==Update 时直接将 r.(Update)写入数据库
+//	其他类型  写入{k:r}
 type ModelSet interface {
 	Set(k string, v any) (r any, ok bool)
 }
-
-//type ModelUnset interface {
-//	Unset(k string) (ok bool)
-//}
 
 type ModelClone interface {
 	Clone() any
 }
 
-//type ModelSaving interface {
-//	Saving(map[string]any)
-//}
-
 type BulkWrite interface {
 	Save() error
-	Update(data any, where ...any)
+	Update(data map[string]any, where ...any)
 	Insert(documents ...any)
 	Delete(where ...any)
 }
