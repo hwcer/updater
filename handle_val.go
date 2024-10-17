@@ -74,6 +74,8 @@ func (this *Values) reset() {
 		if this.Updater.Error = this.save(); this.Updater.Error != nil {
 			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
 		} else {
+			this.dataset = dataset.NewValues()
+			this.statement.loader = false
 			this.Updater.Error = this.loading(this.statement.ram)
 		}
 	}
