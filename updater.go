@@ -18,19 +18,16 @@ const (
 )
 
 type Updater struct {
-	Time   time.Time
-	Error  error
-	Async  bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
-	Player any  //角色信息
-	Events Events
-	//Emitter  Emitter
-	dirty  []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
-	strict StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
-	//loader   bool             //数据加载完毕
-	changed  bool              //数据变动,需要使用Data更新数据
-	operated bool              //新操作需要重执行Verify检查数据
-	handles  map[string]Handle //Handle
-	ReadOnly bool              //只读模式,无法写入
+	Time     time.Time
+	Error    error
+	Async    bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
+	Player   any  //角色信息
+	Events   Events
+	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
+	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	changed  bool                 //数据变动,需要使用Data更新数据
+	operated bool                 //新操作需要重执行Verify检查数据
+	handles  map[string]Handle    //Handle
 }
 
 func New(p any) (u *Updater) {
@@ -73,10 +70,6 @@ func (u *Updater) Strict(v StrictType) {
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(init bool) (err error) {
-	//if u.loader {
-	//	return
-	//}
-	//u.Async = false
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
 	}
@@ -114,8 +107,8 @@ func (u *Updater) Loading(init bool) (err error) {
 }
 
 // Reset 重置,每次请求开始时调用
-func (u *Updater) Reset(readOnly bool, t ...time.Time) {
-	u.ReadOnly = readOnly
+func (u *Updater) Reset(t ...time.Time) {
+	//u.ReadOnly = readOnly
 	if len(t) > 0 {
 		u.Time = t[0]
 	} else {
@@ -136,7 +129,7 @@ func (u *Updater) Release() {
 	u.changed = false
 	u.operated = false
 	u.Error = nil
-	u.ReadOnly = false
+	//u.ReadOnly = false
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
@@ -416,18 +409,12 @@ func (u *Updater) Destroy() (err error) {
 
 // Dirty 设置脏数据,手动更新到客户端,不进行任何操作
 func (u *Updater) Dirty(opt ...*operator.Operator) {
-	if u.ReadOnly {
-		return
-	}
 	u.dirty = append(u.dirty, opt...)
 }
 
 func (u *Updater) WriteAble() error {
 	if u.Error != nil {
 		return u.Error
-	}
-	if u.ReadOnly {
-		return Errorf(0, "read only mode")
 	}
 	return nil
 }
