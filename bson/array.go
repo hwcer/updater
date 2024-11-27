@@ -1,7 +1,7 @@
 package bson
 
 import (
-	"github.com/hwcer/logger"
+	"github.com/hwcer/cosgo/logger"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"

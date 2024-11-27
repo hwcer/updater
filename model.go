@@ -2,7 +2,7 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/schema"
+	"github.com/hwcer/cosgo/schema"
 	"sort"
 )
 

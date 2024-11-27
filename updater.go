@@ -3,7 +3,7 @@ package updater
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/logger"
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 	"time"
@@ -18,11 +18,12 @@ const (
 )
 
 type Updater struct {
+	uid      any
 	Time     time.Time
 	Error    error
 	Async    bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
-	Player   any  //角色信息
 	Events   Events
+	Process  Process              //自定义处理进程
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	changed  bool                 //数据变动,需要使用Data更新数据
@@ -30,13 +31,17 @@ type Updater struct {
 	handles  map[string]Handle    //Handle
 }
 
-func New(p any) (u *Updater) {
-	u = &Updater{Player: p}
+func New(uid any) (u *Updater) {
+	u = &Updater{uid: uid}
 	return u
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
 	u.Events.On(t, handle)
+}
+
+func (u *Updater) Uid() any {
+	return u.uid
 }
 
 func (u *Updater) Errorf(format any, args ...any) error {
@@ -70,6 +75,12 @@ func (u *Updater) Strict(v StrictType) {
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(init bool) (err error) {
+	if u.Process == nil {
+		u.Process = Process{}
+		for k, f := range processDefault {
+			u.Process.Set(k, f(u))
+		}
+	}
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
 	}
@@ -88,21 +99,7 @@ func (u *Updater) Loading(init bool) (err error) {
 			return
 		}
 	}
-
-	//if init {
-	//	for _, model := range modelsRank {
-	//		h := u.handles[model.name]
-	//		stmt := h.stmt()
-	//		if stmt.ram == model.ram {
-	//			continue
-	//		}
-	//		stmt.ram = model.ram
-	//		if err = h.init(); err != nil {
-	//			return
-	//		}
-	//	}
-	//	u.loader = true
-	//}
+	u.emit(OnLoaded)
 	return
 }
 
@@ -403,7 +400,7 @@ func (u *Updater) Destroy() (err error) {
 			return
 		}
 	}
-	u.Player = nil
+	u.uid = nil
 	return
 }
 

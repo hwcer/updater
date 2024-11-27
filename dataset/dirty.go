@@ -1,8 +1,8 @@
 package dataset
 
 import (
+	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/cosgo/values"
-	"github.com/hwcer/logger"
 )
 
 const (

@@ -3,10 +3,11 @@ package updater
 type EventType int8
 
 const (
-	OnPreData    EventType = iota //Data前
-	OnPreVerify                   //verify前
-	OnPreSubmit                   //submit 前
-	OnPreRelease                  //Release 释放前
+	OnLoaded EventType = iota //加载之后执行
+	OnPreData
+	OnPreVerify  //verify前
+	OnPreSubmit  //submit 前
+	OnPreRelease //Release 释放前
 )
 
 // Listener 监听任务,返回true表示继续监听,false 从监听列表中移除

@@ -3,8 +3,8 @@ package dataset
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/logger"
-	"github.com/hwcer/schema"
+	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/cosgo/schema"
 	"reflect"
 	"strings"
 )

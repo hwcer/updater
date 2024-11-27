@@ -1,8 +1,8 @@
 package updater
 
 import (
-	"github.com/hwcer/logger"
-	"github.com/hwcer/schema"
+	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
