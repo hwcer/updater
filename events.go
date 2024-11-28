@@ -19,23 +19,17 @@ type Middleware interface {
 }
 
 type Events struct {
-	events      map[EventType][]Listener //过程事件
-	emitter     map[EventType][]Listener //常驻事件
-	middlewares map[string]Middleware    //中间件
+	events map[EventType][]Listener //过程事件
+	//emitter     map[EventType][]Listener //常驻事件
+	middlewares map[string]Middleware //中间件
 }
 
-func (e *Events) On(t EventType, handle Listener, noRelease ...bool) {
+// On 监听事件,必须在事件回调返回false时删除事件
+func (e *Events) On(t EventType, handle Listener) {
 	if e.events == nil {
 		e.events = map[EventType][]Listener{}
 	}
-	if e.emitter == nil {
-		e.emitter = map[EventType][]Listener{}
-	}
-	if len(noRelease) > 0 && noRelease[0] {
-		e.emitter[t] = append(e.emitter[t], handle)
-	} else {
-		e.events[t] = append(e.events[t], handle)
-	}
+	e.events[t] = append(e.events[t], handle)
 }
 
 // Get 获取中间件
@@ -44,6 +38,9 @@ func (e *Events) Get(name string) any {
 		return e.middlewares[name]
 	}
 	return nil
+}
+func (e *Events) Use(name string, handle Middleware) bool {
+	return e.Set(name, handle)
 }
 
 // Set 设置中间件,如果已存在返回false
@@ -84,16 +81,24 @@ func (e *Events) emit(u *Updater, t EventType) {
 	if u.Error != nil {
 		return
 	}
+	e.triggerGlobal(u, t)
 	e.triggerEvents(u, t)
-	e.triggerEmitter(u, t)
 	e.triggerMiddleware(u, t)
 }
 
 func (e *Events) release() {
-	e.events = nil
-	e.middlewares = nil
+	//e.events = nil
+	//e.middlewares = nil
 }
 
+func (e *Events) triggerGlobal(u *Updater, t EventType) {
+	if l := globalEvents[t]; len(l) > 0 {
+		for _, h := range l {
+			h(u)
+		}
+	}
+	return
+}
 func (e *Events) triggerEvents(u *Updater, t EventType) {
 	if events := e.events[t]; len(events) > 0 {
 		var es []Listener
@@ -103,18 +108,6 @@ func (e *Events) triggerEvents(u *Updater, t EventType) {
 			}
 		}
 		e.events[t] = es
-	}
-	return
-}
-func (e *Events) triggerEmitter(u *Updater, t EventType) {
-	if l := e.emitter[t]; len(l) > 0 {
-		var es []Listener
-		for _, h := range l {
-			if h(u) {
-				es = append(es, h)
-			}
-		}
-		e.emitter[t] = es
 	}
 	return
 }
