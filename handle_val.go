@@ -224,7 +224,7 @@ func (this *Values) operator(t operator.Types, k any, v int64, r any) {
 		logger.Debug("IType not exist:%v", op.IID)
 		return
 	}
-	op.Bag = it.Id()
+	op.Bag = it.ID()
 	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}

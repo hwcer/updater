@@ -50,14 +50,20 @@ type Model struct {
 	loading RAMType //加载时内存模式
 }
 
-func ITypes(f func(k int32, it IType) bool) {
+func ITypes(f func(int32, IType) bool) {
 	for k, it := range itypesDict {
 		if !f(k, it) {
 			break
 		}
 	}
 }
-
+func Models(f func(int32, any) bool) {
+	for k, m := range itypesDict {
+		if !f(k, m) {
+			break
+		}
+	}
+}
 func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 	if _, ok := handles[parser]; !ok {
 		return fmt.Errorf("parser unknown:%v", parser)
@@ -87,7 +93,7 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 		if parser == ParserTypeCollection {
 			it = it.(ITypeCollection)
 		}
-		id := it.Id()
+		id := it.ID()
 		if _, ok := modelsDict[id]; ok {
 			return fmt.Errorf("model IType(%v)已经存在:%v", it, mod.name)
 		}

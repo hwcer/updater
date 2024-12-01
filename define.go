@@ -40,7 +40,7 @@ func SetCacheFilterRule(it int32, rule any) {
 // IType 一个IType对于一种数据类型·
 // 多种数据类型 可以用一种数据模型(model,一张表结构)
 type IType interface {
-	Id() int32 //IType 唯一标志
+	ID() int32 //IType 唯一标志
 }
 
 type ITypeCollection interface {

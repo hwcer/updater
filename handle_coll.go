@@ -266,7 +266,7 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
-	op.Bag = it.Id()
+	op.Bag = it.ID()
 	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}

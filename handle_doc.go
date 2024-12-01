@@ -279,7 +279,7 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	this.statement.Select(op.Key)
 	it := this.IType(op.IID)
 	if it != nil {
-		op.Bag = it.Id()
+		op.Bag = it.ID()
 		if listen, ok := it.(ITypeListener); ok {
 			listen.Listener(this.Updater, op)
 		}
