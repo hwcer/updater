@@ -20,6 +20,16 @@ func RegisterGlobalProcess(name string, creator processCreator) {
 
 type Process map[string]any
 
+func (pro Process) Has(name string) bool {
+	_, ok := pro[name]
+	return ok
+}
+func (pro Process) Try(u *Updater, name string, f processCreator) {
+	if _, ok := pro[name]; !ok {
+		pro[name] = f(u)
+	}
+}
+
 func (pro Process) Set(name string, value any) bool {
 	if _, ok := pro[name]; ok {
 		return false

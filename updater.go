@@ -32,7 +32,7 @@ type Updater struct {
 }
 
 func New(uid any) (u *Updater) {
-	u = &Updater{uid: uid}
+	u = &Updater{uid: uid, Process: Process{}}
 	return u
 }
 
@@ -74,13 +74,7 @@ func (u *Updater) Strict(v StrictType) {
 
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
-func (u *Updater) Loading(init bool) (err error) {
-	if u.Process == nil {
-		u.Process = Process{}
-		for k, f := range processDefault {
-			u.Process.Set(k, f(u))
-		}
-	}
+func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
 	}
@@ -98,6 +92,12 @@ func (u *Updater) Loading(init bool) (err error) {
 		if err = handle.loading(ram); err != nil {
 			return
 		}
+	}
+	for _, f := range cb {
+		f()
+	}
+	for k, f := range processDefault {
+		u.Process.Try(u, k, f)
 	}
 	u.emit(OnLoaded)
 	return
