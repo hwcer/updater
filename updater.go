@@ -19,7 +19,7 @@ const (
 
 type Updater struct {
 	uid      any
-	Time     time.Time
+	Now      time.Time
 	Error    error
 	Async    bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
 	Events   Events
@@ -107,9 +107,9 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 func (u *Updater) Reset(t ...time.Time) {
 	//u.ReadOnly = readOnly
 	if len(t) > 0 {
-		u.Time = t[0]
+		u.Now = t[0]
 	} else {
-		u.Time = time.Now()
+		u.Now = time.Now()
 	}
 	u.strict = StrictTypeEnabled
 	for _, w := range u.Handles() {
