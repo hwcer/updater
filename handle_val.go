@@ -70,7 +70,7 @@ func (this *Values) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
-	if expire := this.dataset.Expire(); expire > 0 && expire < this.Updater.Time.Unix() {
+	if expire := this.dataset.Expire(); expire > 0 && expire < this.Updater.Now.Unix() {
 		if this.Updater.Error = this.save(); this.Updater.Error != nil {
 			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
 		} else {
