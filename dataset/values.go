@@ -101,6 +101,9 @@ func (val *Values) Range(handle func(int32, int64) bool) {
 	}
 }
 func (val *Values) Reset(data Data, expire int64) {
+	if data == nil {
+		data = Data{}
+	}
 	val.data = data
 	//val.dirty = nil
 	val.expire = expire

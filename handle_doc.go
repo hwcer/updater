@@ -216,9 +216,6 @@ func (this *Document) Range(f func(k string, v any) bool) {
 	this.dataset.Range(f)
 }
 
-func (this *Document) Interface() any {
-	return this.dataset.Any()
-}
 func (this *Document) Any() any {
 	return this.dataset.Any()
 }
