@@ -60,7 +60,7 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 }
 
 func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
-	if it := coll.ITypeCollection(op.IID); it != nil && !it.Stacked() {
+	if it := coll.ITypeCollection(op.IID); it != nil && !it.Stacked(op.IID) {
 		return collectionHandleNewEquip(coll, op) //不可以堆叠装备类道具
 	}
 	//可以叠加的道具

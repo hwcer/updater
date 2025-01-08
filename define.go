@@ -46,7 +46,7 @@ type IType interface {
 type ITypeCollection interface {
 	IType
 	New(u *Updater, op *operator.Operator) (item any, err error) //根据Operator信息生成新对象
-	Stacked() bool                                               //是否可以叠加
+	Stacked(int32) bool                                          //是否可以叠加
 	ObjectId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID,仅限于可以叠加道具,不可以叠加道具返回空,使用NEW来创建
 }
 

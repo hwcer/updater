@@ -274,7 +274,7 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 		return nil
 	}
 	//可以堆叠道具
-	if op.OID == "" && it.Stacked() {
+	if op.OID == "" && it.Stacked(op.IID) {
 		op.OID, err = it.ObjectId(this.Updater, op.IID)
 	}
 	if err != nil {
@@ -319,7 +319,7 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 	if it == nil {
 		return "", fmt.Errorf("IType unknown:%v", iid)
 	}
-	if !it.Stacked() {
+	if !it.Stacked(iid) {
 		return "", ErrObjectIdEmpty(iid)
 	}
 	oid, err = it.ObjectId(this.Updater, iid)
