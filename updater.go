@@ -19,6 +19,7 @@ const (
 
 type Updater struct {
 	uid      any
+	init     int8 //初始化 todo 0-实时读写数据库，>0 安装预定规则加载
 	Now      time.Time
 	Error    error
 	Async    bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
