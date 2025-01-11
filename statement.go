@@ -31,17 +31,13 @@ type statement struct {
 	handleDataExist stmHandleDataExist   //查询数据集中是否存在
 }
 
-func newStatement(u *Updater, opt stmHandleOptCreate, exist stmHandleDataExist) *statement {
-	return &statement{handleOptCreate: opt, handleDataExist: exist, Updater: u}
-}
-
-func (stmt *statement) stmt() *statement {
-	return stmt
+func newStatement(u *Updater, m *Model, opt stmHandleOptCreate, exist stmHandleDataExist) *statement {
+	return &statement{ram: m.ram, handleOptCreate: opt, handleDataExist: exist, Updater: u}
 }
 
 // Has 查询key(DBName)是否已经初始化
 func (stmt *statement) has(key any) bool {
-	if stmt.ram == RAMTypeAlways {
+	if stmt.ram == RAMTypeAlways && stmt.loader {
 		return true
 	}
 	if stmt.keys != nil && stmt.keys.Has(key) {
@@ -57,6 +53,17 @@ func (stmt *statement) reset() {
 	//if stmt.keys == nil && stmt.ram != RAMTypeAlways {
 	//	stmt.keys = Keys{}
 	//}
+}
+func (stmt *statement) reload() {
+	stmt.loader = false
+}
+
+// 是否需要执行加载
+func (this *statement) loading() bool {
+	if this.Updater.init && !this.loader && (this.ram == RAMTypeMaybe || this.ram == RAMTypeAlways) {
+		return true
+	}
+	return false
 }
 
 // 每一个执行时都会执行 release
@@ -136,13 +143,13 @@ func (stmt *statement) Sub(k any, v int32) {
 	stmt.handleOptCreate(operator.TypesSub, k, int64(v), nil)
 }
 
-func (stmt *statement) Max(k any, v int64) {
-	stmt.handleOptCreate(operator.TypesMax, k, v, nil)
-}
-
-func (stmt *statement) Min(k any, v int64) {
-	stmt.handleOptCreate(operator.TypesMin, k, v, nil)
-}
+//func (stmt *statement) Max(k any, v int64) {
+//	stmt.handleOptCreate(operator.TypesMax, k, v, nil)
+//}
+//
+//func (stmt *statement) Min(k any, v int64) {
+//	stmt.handleOptCreate(operator.TypesMin, k, v, nil)
+//}
 
 func (stmt *statement) Del(k any) {
 	stmt.handleOptCreate(operator.TypesDel, k, 0, nil)

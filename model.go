@@ -14,7 +14,7 @@ const (
 	ParserTypeCollection               //Collection 文档集合模式
 )
 
-type handleFunc func(updater *Updater, model any) Handle
+type handleFunc func(updater *Updater, model *Model) Handle
 
 var handles = make(map[Parser]handleFunc)
 

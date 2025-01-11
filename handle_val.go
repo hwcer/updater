@@ -21,11 +21,11 @@ type Values struct {
 	dataset *dataset.Values
 }
 
-func NewValues(u *Updater, model any) Handle {
+func NewValues(u *Updater, m *Model) Handle {
 	r := &Values{}
-	r.model = model.(valuesModel)
-	r.statement = *newStatement(u, r.operator, r.Has)
-	if sch, err := schema.Parse(model); err == nil {
+	r.model = m.model.(valuesModel)
+	r.statement = *newStatement(u, m, r.operator, r.Has)
+	if sch, err := schema.Parse(m.model); err == nil {
 		r.name = sch.Table
 	} else {
 		logger.Fatal(err)
@@ -37,26 +37,33 @@ func (this *Values) Parser() Parser {
 	return ParserTypeValues
 }
 
-func (this *Values) loading(ram RAMType) error {
+func (this *Values) reload() error {
+	this.dataset = nil
+	this.statement.reload()
+	return this.loading()
+}
+
+func (this *Values) loading() error {
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
-	this.statement.ram = ram
-	if !this.statement.loader && (this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways) {
-		this.statement.loader = true
-		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
+	if this.statement.loading() {
+		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
+			this.statement.loader = true
+		}
 	}
 	return this.Updater.Error
 }
 
 func (this *Values) save() (err error) {
-	if this.Updater.Async {
-		return
-	}
 	dirty := this.Dirty()
 	expire := this.dataset.Save(dirty)
 	if len(dirty) == 0 {
 		return nil
+	}
+	if this.Updater.debug {
+		this.dirty = nil
+		return
 	}
 	if err = this.model.Setter(this.statement.Updater, dirty, expire); err == nil {
 		this.dirty = nil
@@ -70,13 +77,13 @@ func (this *Values) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
-	if expire := this.dataset.Expire(); expire > 0 && expire < this.Updater.Now.Unix() {
+	if expire := this.dataset.Expire(); expire > 0 && expire < this.Updater.Unix() {
 		if this.Updater.Error = this.save(); this.Updater.Error != nil {
 			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
 		} else {
 			this.dataset = dataset.NewValues()
 			this.statement.loader = false
-			this.Updater.Error = this.loading(this.statement.ram)
+			this.Updater.Error = this.loading()
 		}
 	}
 }
@@ -84,10 +91,11 @@ func (this *Values) reset() {
 // release 运行时释放
 func (this *Values) release() {
 	this.statement.release()
-	if !this.Updater.Async {
-		if this.statement.ram == RAMTypeNone {
-			this.dataset = nil
-		}
+	if this.statement.Updater.debug {
+		return //debug状态不清理内存
+	}
+	if this.statement.ram == RAMTypeNone {
+		this.dataset = nil
 	}
 }
 

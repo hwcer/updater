@@ -28,10 +28,10 @@ type Collection struct {
 	bulkWrite dataset.BulkWrite
 }
 
-func NewCollection(u *Updater, model any) Handle {
+func NewCollection(u *Updater, m *Model) Handle {
 	r := &Collection{}
-	r.model = model.(collectionModel)
-	r.statement = *newStatement(u, r.operator, r.Has)
+	r.model = m.model.(collectionModel)
+	r.statement = *newStatement(u, m, r.operator, r.Has)
 	return r
 }
 func (this *Collection) Parser() Parser {
@@ -55,11 +55,13 @@ func (this *Collection) val(id string) (r int64, ok bool) {
 }
 
 func (this *Collection) save() (err error) {
-	if this.Updater.Async || this.dataset == nil {
-		return
-	}
+
 	bulkWrite := this.BulkWrite()
 	if err = this.dataset.Save(bulkWrite, this.monitor); err != nil {
+		return
+	}
+	if this.Updater.debug {
+		this.bulkWrite = nil
 		return
 	}
 	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
@@ -74,23 +76,29 @@ func (this *Collection) reset() {
 		this.dataset = dataset.NewColl()
 	}
 }
-
+func (this *Collection) reload() error {
+	this.dataset = nil
+	this.statement.reload()
+	return this.loading()
+}
 func (this *Collection) release() {
 	this.statement.release()
-	if !this.Updater.Async {
-		if this.statement.ram == RAMTypeNone {
-			this.dataset = nil
-		}
+	if this.statement.Updater.debug {
+		return //debug状态不清理内存
 	}
+	if this.statement.ram == RAMTypeNone {
+		this.dataset = nil
+	}
+
 }
-func (this *Collection) loading(ram RAMType) error {
+func (this *Collection) loading() error {
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
 	}
-	this.statement.ram = ram
-	if !this.statement.loader && (this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways) {
-		this.statement.loader = true
-		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
+	if this.statement.loading() {
+		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
+			this.statement.loader = true
+		}
 	}
 	return this.Updater.Error
 }

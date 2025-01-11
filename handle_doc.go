@@ -32,10 +32,10 @@ type Document struct {
 	dataset *dataset.Document //数据
 }
 
-func NewDocument(u *Updater, model any) Handle {
+func NewDocument(u *Updater, m *Model) Handle {
 	r := &Document{}
-	r.model = model.(documentModel)
-	r.statement = *newStatement(u, r.operator, r.has)
+	r.model = m.model.(documentModel)
+	r.statement = *newStatement(u, m, r.operator, r.has)
 	return r
 }
 
@@ -47,9 +47,6 @@ func (this *Document) val(k string) (r int64, ok bool) {
 }
 
 func (this *Document) save() (err error) {
-	if this.Updater.Async {
-		return nil
-	}
 	if this.setter == nil {
 		this.setter = make(dataset.Update)
 	}
@@ -62,6 +59,10 @@ func (this *Document) save() (err error) {
 	}
 	if len(this.setter) == 0 {
 		return nil
+	}
+	if this.Updater.debug {
+		this.setter = nil
+		return
 	}
 	if err = this.model.Setter(this.statement.Updater, this.setter); err == nil {
 		this.setter = nil
@@ -76,25 +77,31 @@ func (this *Document) reset() {
 		this.dataset = dataset.NewDoc(nil)
 	}
 }
+func (this *Document) reload() error {
+	this.dataset = nil
+	this.statement.reload()
+	return this.loading()
+}
 
 // release 运行时释放
 func (this *Document) release() {
 	this.statement.release()
 	this.dirty = nil
-	if !this.Updater.Async {
-		if this.statement.ram == RAMTypeNone {
-			this.dataset = nil
-		}
+	if this.statement.Updater.debug {
+		return //debug状态不清理内存
+	}
+	if this.statement.ram == RAMTypeNone {
+		this.dataset = nil
 	}
 }
-func (this *Document) loading(ram RAMType) (err error) {
+func (this *Document) loading() (err error) {
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
-	this.statement.ram = ram
-	if !this.statement.loader && (this.statement.ram == RAMTypeMaybe || this.statement.ram == RAMTypeAlways) {
-		this.statement.loader = true
-		this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil)
+	if this.statement.loading() {
+		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
+			this.statement.loader = true
+		}
 	}
 	return this.Updater.Error
 }

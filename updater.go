@@ -19,17 +19,17 @@ const (
 
 type Updater struct {
 	uid      any
-	init     int8 //初始化 todo 0-实时读写数据库，>0 安装预定规则加载
-	Now      time.Time
-	Error    error
-	Async    bool //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
-	Events   Events
-	Process  Process              //自定义处理进程
+	now      time.Time
+	init     bool                 //初始化,false-不初始化，实时读写数据库  true-按照模块预设进行初始化，
+	debug    bool                 //异步操作数据,临时关闭数据库写入,进入内存模式,不影响数据库读操作
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
 	changed  bool                 //数据变动,需要使用Data更新数据
 	operated bool                 //新操作需要重执行Verify检查数据
 	handles  map[string]Handle    //Handle
+	Error    error
+	Events   Events
+	Process  Process
 }
 
 func New(uid any) (u *Updater) {
@@ -45,6 +45,27 @@ func (u *Updater) Uid() any {
 	return u.uid
 }
 
+func (u *Updater) Now() time.Time {
+	return u.now
+}
+
+func (u *Updater) Unix() int64 {
+	return u.now.Unix()
+}
+
+// Debug 设置，并返回当前Debug状态
+func (u *Updater) Debug(v ...bool) bool {
+	if len(v) == 0 {
+		debug := v[0]
+		if u.debug && u.debug != debug {
+			for _, w := range u.Handles() {
+				w.reload()
+			}
+		}
+		u.debug = debug
+	}
+	return u.debug
+}
 func (u *Updater) Errorf(format any, args ...any) error {
 	switch v := format.(type) {
 	case string:
@@ -59,7 +80,6 @@ func (u *Updater) Errorf(format any, args ...any) error {
 
 // Save 保存所有缓存数并自动关闭异步模式
 func (u *Updater) Save() (err error) {
-	u.Async = false
 	for _, w := range u.Handles() {
 		if err = w.save(); err != nil {
 			return
@@ -76,6 +96,9 @@ func (u *Updater) Strict(v StrictType) {
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(init bool, cb ...func()) (err error) {
+	if init {
+		u.init = true
+	}
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
 	}
@@ -83,14 +106,10 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 		name := model.name
 		handle := u.handles[name]
 		if handle == nil {
-			handle = handles[model.parser](u, model.model)
+			handle = handles[model.parser](u, model)
 			u.handles[name] = handle
 		}
-		ram := model.ram
-		if !init {
-			ram = model.loading
-		}
-		if err = handle.loading(ram); err != nil {
+		if err = handle.loading(); err != nil {
 			return
 		}
 	}
@@ -108,9 +127,9 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 func (u *Updater) Reset(t ...time.Time) {
 	//u.ReadOnly = readOnly
 	if len(t) > 0 {
-		u.Now = t[0]
+		u.now = t[0]
 	} else {
-		u.Now = time.Now()
+		u.now = time.Now()
 	}
 	u.strict = StrictTypeEnabled
 	for _, w := range u.Handles() {
@@ -170,17 +189,17 @@ func (u *Updater) Sub(iid int32, num int32) {
 	}
 }
 
-func (u *Updater) Max(iid int32, num int64) {
-	if w := u.handle(iid); w != nil {
-		w.Max(iid, num)
-	}
-}
-
-func (u *Updater) Min(iid int32, num int64) {
-	if w := u.handle(iid); w != nil {
-		w.Min(iid, num)
-	}
-}
+//func (u *Updater) Max(iid int32, num int64) {
+//	if w := u.handle(iid); w != nil {
+//		w.Max(iid, num)
+//	}
+//}
+//
+//func (u *Updater) Min(iid int32, num int64) {
+//	if w := u.handle(iid); w != nil {
+//		w.Min(iid, num)
+//	}
+//}
 
 func (u *Updater) Val(id any) (r int64) {
 	if w := u.handle(id); w != nil {
