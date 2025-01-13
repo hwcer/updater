@@ -59,7 +59,7 @@ func (u *Updater) Debug(v ...bool) bool {
 		debug := v[0]
 		if u.debug && u.debug != debug {
 			for _, w := range u.Handles() {
-				w.reload()
+				_ = w.reload()
 			}
 		}
 		u.debug = debug
@@ -142,6 +142,7 @@ func (u *Updater) Reset(t ...time.Time) {
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
 	u.emit(OnPreRelease)
+
 	u.dirty = nil
 	u.changed = false
 	u.operated = false

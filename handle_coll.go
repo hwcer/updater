@@ -26,11 +26,13 @@ type Collection struct {
 	dataset   *dataset.Collection
 	monitor   dataset.CollectionMonitor
 	bulkWrite dataset.BulkWrite
+	name      string
 }
 
 func NewCollection(u *Updater, m *Model) Handle {
 	r := &Collection{}
 	r.model = m.model.(collectionModel)
+	r.name = m.name
 	r.statement = *newStatement(u, m, r.operator, r.Has)
 	return r
 }
@@ -55,7 +57,6 @@ func (this *Collection) val(id string) (r int64, ok bool) {
 }
 
 func (this *Collection) save() (err error) {
-
 	bulkWrite := this.BulkWrite()
 	if err = this.dataset.Save(bulkWrite, this.monitor); err != nil {
 		return
