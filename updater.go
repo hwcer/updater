@@ -55,7 +55,7 @@ func (u *Updater) Unix() int64 {
 
 // Debug 设置，并返回当前Debug状态
 func (u *Updater) Debug(v ...bool) bool {
-	if len(v) == 0 {
+	if len(v) > 0 {
 		debug := v[0]
 		if u.debug && u.debug != debug {
 			for _, w := range u.Handles() {
