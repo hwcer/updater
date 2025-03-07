@@ -3,19 +3,17 @@ package updater
 import "github.com/hwcer/updater/operator"
 
 type Handle interface {
-	Get(k any) any      //获取值
-	Val(k any) int64    //获取val值
-	Add(k any, v int32) //自增v
-	Sub(k any, v int32) //扣除v
-	Del(k any)          //删除道具
-	//Max(k any, v int64)                             //如果大于原来的值就写入
-	//Min(k any, v int64)                             //如果小于于原来的值就写入
+	Get(k any) any                                  //获取值
+	Val(k any) int64                                //获取val值
+	Add(k any, v int32)                             //自增v
+	Sub(k any, v int32)                             //扣除v
+	Del(k any)                                      //删除道具
 	Set(k any, v ...any)                            //设置v值
 	Data() error                                    //非内存模式获取数据库中的数据
+	IType(int32) IType                              //根据iid获取IType
 	Select(keys ...any)                             //非内存模式时获取特定道具
 	Parser() Parser                                 //解析模型
 	Operator(op *operator.Operator, before ...bool) //直接添加并执行封装好的Operator,不会触发任何事件
-	IType(int32) IType                              //根据iid获取IType
 	save() error                                    //保存所有数据
 	reset()                                         //运行时开始时
 	reload() error                                  // 抛弃内存数据重新加载

@@ -14,12 +14,12 @@ type Operator struct {
 	Result any    `json:"r"`           //最终结果
 }
 
-func (opt *Operator) SetKey(k string) {
-	opt.Key = k
-}
-func (opt *Operator) SetOID(id string) {
-	opt.OID = id
-}
+//func (opt *Operator) SetKey(k string) {
+//	opt.Key = k
+//}
+//func (opt *Operator) SetOID(id string) {
+//	opt.OID = id
+//}
 
 /*
 	数据结构以及有效字段说明
