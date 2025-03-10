@@ -6,6 +6,7 @@ import (
 	"github.com/hwcer/cosgo/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
+	"runtime/debug"
 	"time"
 )
 
@@ -130,6 +131,10 @@ func (u *Updater) Reset(t ...time.Time) {
 		u.now = t[0]
 	} else {
 		u.now = time.Now()
+	}
+	if u.now.IsZero() {
+		_ = u.Errorf("获取系统时间失败")
+		fmt.Printf("%s\n", string(debug.Stack()))
 	}
 	u.strict = StrictTypeEnabled
 	for _, w := range u.Handles() {
