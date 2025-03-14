@@ -61,7 +61,7 @@ func (this *Collection) save() (err error) {
 	if err = this.dataset.Save(bulkWrite, this.monitor); err != nil {
 		return
 	}
-	if this.Updater.debug {
+	if this.Updater.develop {
 		this.bulkWrite = nil
 		return
 	}
@@ -84,7 +84,7 @@ func (this *Collection) reload() error {
 }
 func (this *Collection) release() {
 	this.statement.release()
-	if this.statement.Updater.debug {
+	if this.statement.Updater.develop {
 		return //debug状态不清理内存
 	}
 	if this.statement.ram == RAMTypeNone {

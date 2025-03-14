@@ -61,7 +61,7 @@ func (this *Values) save() (err error) {
 	if len(dirty) == 0 {
 		return nil
 	}
-	if this.Updater.debug {
+	if this.Updater.develop {
 		this.dirty = nil
 		return
 	}
@@ -91,7 +91,7 @@ func (this *Values) reset() {
 // release 运行时释放
 func (this *Values) release() {
 	this.statement.release()
-	if this.statement.Updater.debug {
+	if this.statement.Updater.develop {
 		return //debug状态不清理内存
 	}
 	if this.statement.ram == RAMTypeNone {

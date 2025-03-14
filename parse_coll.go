@@ -14,8 +14,6 @@ func init() {
 	collectionParseHandle[operator.TypesSub] = collectionHandleSub
 	collectionParseHandle[operator.TypesSet] = collectionHandleSet
 	collectionParseHandle[operator.TypesDel] = collectionHandleDel
-	collectionParseHandle[operator.TypesMax] = collectionHandleMax
-	collectionParseHandle[operator.TypesMin] = collectionHandleMin
 	collectionParseHandle[operator.TypesDrop] = collectionHandleResolve
 	collectionParseHandle[operator.TypesResolve] = collectionHandleResolve
 }
@@ -113,29 +111,6 @@ func collectionCompareTransform(coll *Collection, op *operator.Operator, ok bool
 		op.Type = operator.TypesSet
 		op.Result = dataset.NewUpdate(dataset.ItemNameVAL, op.Value)
 		err = collectionHandleSet(coll, op)
-	}
-	return
-}
-func collectionHandleMax(coll *Collection, op *operator.Operator) (err error) {
-	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
-	}
-	if v, ok := coll.val(op.OID); op.Value > v {
-		err = collectionCompareTransform(coll, op, ok)
-	} else {
-		op.Type = operator.TypesDrop
-	}
-	return
-}
-
-func collectionHandleMin(coll *Collection, op *operator.Operator) (err error) {
-	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
-	}
-	if v, ok := coll.val(op.OID); op.Value < v {
-		err = collectionCompareTransform(coll, op, ok)
-	} else {
-		op.Type = operator.TypesDrop
 	}
 	return
 }

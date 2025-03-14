@@ -11,8 +11,6 @@ func init() {
 	documentParseHandle[operator.TypesAdd] = documentParseAdd
 	documentParseHandle[operator.TypesSet] = documentParseSet
 	documentParseHandle[operator.TypesSub] = documentParseSub
-	documentParseHandle[operator.TypesMax] = documentParseMax
-	documentParseHandle[operator.TypesMin] = documentParseMin
 	documentParseHandle[operator.TypesDrop] = documentParseResolve
 	documentParseHandle[operator.TypesResolve] = documentParseResolve
 }
@@ -51,27 +49,5 @@ func documentParseSub(this *Document, op *operator.Operator) error {
 func documentParseSet(this *Document, op *operator.Operator) (err error) {
 	op.Type = operator.TypesSet
 	this.dataset.Set(op.Key, op.Result)
-	return
-}
-
-func documentParseMax(this *Document, op *operator.Operator) (err error) {
-	v, _ := this.val(op.Key)
-	if op.Value > v {
-		op.Result = op.Value
-		err = documentParseSet(this, op)
-	} else {
-		op.Type = operator.TypesDrop
-	}
-	return
-}
-
-func documentParseMin(this *Document, op *operator.Operator) (err error) {
-	v, _ := this.val(op.Key)
-	if op.Value < v {
-		op.Result = op.Value
-		err = documentParseSet(this, op)
-	} else {
-		op.Type = operator.TypesDrop
-	}
 	return
 }

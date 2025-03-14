@@ -60,7 +60,7 @@ func (this *Document) save() (err error) {
 	if len(this.setter) == 0 {
 		return nil
 	}
-	if this.Updater.debug {
+	if this.Updater.develop {
 		this.setter = nil
 		return
 	}
@@ -87,7 +87,7 @@ func (this *Document) reload() error {
 func (this *Document) release() {
 	this.statement.release()
 	this.dirty = nil
-	if this.statement.Updater.debug {
+	if this.statement.Updater.develop {
 		return //debug状态不清理内存
 	}
 	if this.statement.ram == RAMTypeNone {
@@ -118,7 +118,7 @@ func (this *Document) Has(k any) bool {
 // Get  对象中的特定值
 // 不建议使用GET获取特定字段值
 func (this *Document) Get(k any) (r any) {
-	if key, err := this.ObjectId(k); err == nil {
+	if key, _, err := this.ObjectId(k); err == nil {
 		r = this.dataset.Val(key)
 	}
 	return
@@ -126,7 +126,7 @@ func (this *Document) Get(k any) (r any) {
 
 // Val 不建议使用Val获取特定字段值的int64值
 func (this *Document) Val(k any) (r int64) {
-	if key, err := this.ObjectId(k); err == nil {
+	if key, _, err := this.ObjectId(k); err == nil {
 		r, _ = this.val(key)
 	}
 	return
@@ -145,7 +145,7 @@ func (this *Document) Set(k any, v ...any) {
 
 func (this *Document) Select(keys ...any) {
 	for _, k := range keys {
-		if key, err := this.ObjectId(k); err == nil {
+		if key, _, err := this.ObjectId(k); err == nil {
 			this.statement.Select(key)
 		} else {
 			logger.Alert(err)
@@ -226,12 +226,29 @@ func (this *Document) Range(f func(k string, v any) bool) {
 func (this *Document) Any() any {
 	return this.dataset.Any()
 }
-func (this *Document) ObjectId(k any) (key string, err error) {
+
+// Name  db name
+func (this *Document) Name(k string) (r string, err error) {
+	if sch := this.Schema(); sch != nil {
+		if field := sch.LookUpField(k); field != nil {
+			if field.JSName != "" {
+				r = field.JSName
+			} else {
+				r = field.Name
+			}
+		} else {
+			err = fmt.Errorf("document field not exist")
+		}
+	}
+	return
+}
+
+func (this *Document) ObjectId(k any) (key string, iid int32, err error) {
 	switch v := k.(type) {
 	case string:
 		key = v
 	default:
-		iid := dataset.ParseInt32(k)
+		iid = dataset.ParseInt32(k)
 		key, err = this.model.Field(this.Updater, iid)
 	}
 	if err != nil {
@@ -240,15 +257,10 @@ func (this *Document) ObjectId(k any) (key string, err error) {
 	if strings.Index(key, ".") > 0 {
 		return
 	}
-	if sch := this.Schema(); sch != nil {
-		if field := sch.LookUpField(key); field != nil {
-			key = field.DBName
-		} else {
-			err = fmt.Errorf("document field not exist")
-		}
-	}
+	key, err = this.Name(key)
 	return
 }
+
 func (this *Document) IType(iid int32) IType {
 	if h, ok := this.model.(modelIType); ok {
 		v := h.IType(iid)
@@ -266,14 +278,8 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 		return
 	}
 	op := operator.New(t, v, r)
-	switch s := k.(type) {
-	case string:
-		op.Key = s
-	default:
-		if op.IID = dataset.ParseInt32(k); op.IID > 0 {
-			op.Key, this.Updater.Error = this.model.Field(this.Updater, op.IID)
-		}
-	}
+	op.Key, op.IID, this.Updater.Error = this.ObjectId(k)
+
 	if this.Updater.Error == nil && op.Key == "" {
 		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
 	}
