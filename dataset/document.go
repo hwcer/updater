@@ -243,3 +243,6 @@ func (doc *Document) Range(handle func(string, any) bool) {
 func (doc *Document) Any() any {
 	return doc.data
 }
+func (doc *Document) IsNil() bool {
+	return doc.data == nil
+}

@@ -35,7 +35,7 @@ type Document struct {
 func NewDocument(u *Updater, m *Model) Handle {
 	r := &Document{}
 	r.model = m.model.(documentModel)
-	r.statement = *newStatement(u, m, r.operator, r.has)
+	r.statement = *newStatement(u, m, r.operator, r.Has)
 	return r
 }
 
@@ -102,6 +102,8 @@ func (this *Document) loading() (err error) {
 		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
 			this.statement.loader = true
 		}
+	} else if this.dataset.IsNil() {
+		this.dataset.Reset(this.model.New(this.statement.Updater))
 	}
 	return this.Updater.Error
 }
@@ -112,7 +114,7 @@ func (this *Document) destroy() (err error) {
 }
 
 func (this *Document) Has(k any) bool {
-	return true
+	return false
 }
 
 // Get  对象中的特定值
