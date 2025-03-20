@@ -3,12 +3,14 @@ package updater
 import (
 	"fmt"
 	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
 type collectionModel interface {
 	Upsert(update *Updater, op *operator.Operator) bool
+	Schema() *schema.Schema
 	Getter(update *Updater, data *dataset.Collection, keys []string) error //keys==nil 初始化所有
 	Setter(update *Updater, bulkWrite dataset.BulkWrite) error
 	BulkWrite(update *Updater) dataset.BulkWrite
@@ -21,21 +23,26 @@ type collectionModel interface {
 
 type Collection struct {
 	statement
+	name      string
 	model     collectionModel
 	remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset   *dataset.Collection
 	monitor   dataset.CollectionMonitor
 	bulkWrite dataset.BulkWrite
-	name      string
 }
 
 func NewCollection(u *Updater, m *Model) Handle {
 	r := &Collection{}
-	r.model = m.model.(collectionModel)
 	r.name = m.name
+	r.model = m.model.(collectionModel)
 	r.statement = *newStatement(u, m, r.operator, r.Has)
 	return r
 }
+
+func (this *Collection) Schema() *schema.Schema {
+	return this.model.Schema()
+}
+
 func (this *Collection) Parser() Parser {
 	return ParserTypeCollection
 }
@@ -90,8 +97,8 @@ func (this *Collection) release() {
 	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
 	}
-
 }
+
 func (this *Collection) loading() error {
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
@@ -150,22 +157,25 @@ func (this *Collection) Doc(key any) (r *dataset.Document) {
 // Set(oid||iid,map[string]any)
 // Set(oid||iid,key string,val any)
 func (this *Collection) Set(k any, v ...any) {
+	var data dataset.Update
 	switch len(v) {
 	case 1:
-		if update := dataset.ParseUpdate(v[0]); update != nil {
-			this.operator(operator.TypesSet, k, 0, update)
-		} else {
+		if data = dataset.ParseUpdate(v[0]); data == nil {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
-			this.operator(operator.TypesSet, k, 0, dataset.NewUpdate(field, v[1]))
+			data = dataset.NewUpdate(field, v[1])
 		} else {
 			this.Updater.Error = ErrArgsIllegal(k, v)
 		}
 	default:
 		this.Updater.Error = ErrArgsIllegal(k, v)
 	}
+	if this.Updater.Error != nil {
+		return
+	}
+	this.operator(operator.TypesSet, k, 0, data)
 }
 
 // Remove 从内存中移除，用于清理不常用数据，不会改变数据库
@@ -295,7 +305,31 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 
 	return
 }
-
+func (this *Collection) Operator(op *operator.Operator, before ...bool) {
+	if op.Type == operator.TypesSet {
+		data := dataset.Update{}
+		result, ok := op.Result.(dataset.Update)
+		if !ok {
+			this.Updater.Error = fmt.Errorf("Operator.set return error name:%s  result:%v", op.Result)
+			return
+		}
+		sch := this.Schema()
+		if sch == nil {
+			this.Updater.Error = fmt.Errorf("operator.set schema empty:%s", this.name)
+			return
+		}
+		for k, v := range result {
+			if name := sch.JSName(k); name != "" {
+				data[name] = v
+			} else {
+				this.Updater.Error = fmt.Errorf("operator.set field not exist,name%s field:%s", this.name, k)
+				return
+			}
+		}
+		op.Result = data
+	}
+	this.statement.Operator(op, before...)
+}
 func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 	if err := this.Updater.WriteAble(); err != nil {
 		return
@@ -316,7 +350,7 @@ func (this *Collection) operator(t operator.Types, k any, v int64, r any) {
 		this.Updater.Error = err
 		return
 	}
-	this.statement.Operator(op)
+	this.Operator(op)
 }
 
 func (this *Collection) ObjectId(key any) (oid string, err error) {
