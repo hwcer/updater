@@ -9,6 +9,13 @@ type CollectionMonitor interface {
 	Delete(doc *Document)
 }
 
+type collectionGetId interface {
+	GetId() string
+}
+type collectionGetVal interface {
+	GetVal() int64
+}
+
 func NewColl(rows ...any) *Collection {
 	coll := &Collection{}
 	coll.dataset = Dataset{}

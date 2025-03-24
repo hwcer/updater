@@ -69,7 +69,7 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 		return collectionHandleNewItem(coll, op)
 	} else {
 		op.Result = op.Value + v
-		err = coll.dataset.Set(op.OID, dataset.ItemNameVAL, op.Result)
+		err = coll.dataset.Set(op.OID, coll.GetValJSName(), op.Result)
 	}
 	return
 }
@@ -84,7 +84,7 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) error {
 		return err
 	}
 	op.Result = r
-	err = coll.dataset.Set(op.OID, dataset.ItemNameVAL, r)
+	err = coll.dataset.Set(op.OID, coll.GetValJSName(), r)
 	return nil
 }
 
@@ -109,7 +109,7 @@ func collectionCompareTransform(coll *Collection, op *operator.Operator, ok bool
 		err = collectionHandleAdd(coll, op)
 	} else {
 		op.Type = operator.TypesSet
-		op.Result = dataset.NewUpdate(dataset.ItemNameVAL, op.Value)
+		op.Result = dataset.NewUpdate(coll.GetValJSName(), op.Value)
 		err = collectionHandleSet(coll, op)
 	}
 	return
@@ -158,7 +158,7 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error
 		if err = doc.Save(nil); err != nil {
 			return
 		}
-		op.Value = doc.GetInt64(dataset.ItemNameVAL)
+		op.Value = doc.GetInt64(coll.GetValJSName())
 	}
 
 	op.Type = operator.TypesNew

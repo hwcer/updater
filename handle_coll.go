@@ -16,6 +16,12 @@ type collectionModel interface {
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
 
+var CollectionValueJSNameDefault = "val"
+
+type collectionModelValueJSName interface {
+	GetValueJSName() string //获取value值的jsname
+}
+
 // collectionUpsert set时如果不存在,是否自动转换为new
 //type collectionUpsert interface {
 //	Upsert(update *Updater, op *operator.Operator) bool
@@ -51,14 +57,17 @@ func (this *Collection) SetMonitor(v dataset.CollectionMonitor) {
 	this.monitor = v
 }
 
-//func (this *Collection) get(k string) (r *dataset.Document) {
-//	return this.dataset.Get(k)
-//}
+func (this *Collection) GetValJSName() string {
+	if f, ok := this.model.(collectionModelValueJSName); ok {
+		return f.GetValueJSName()
+	}
+	return CollectionValueJSNameDefault
+}
 
 func (this *Collection) val(id string) (r int64, ok bool) {
 	var i *dataset.Document
 	if i, ok = this.dataset.Get(id); ok {
-		r = i.GetInt64(dataset.ItemNameVAL)
+		r = i.GetInt64(this.GetValJSName())
 	}
 	return
 }

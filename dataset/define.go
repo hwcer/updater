@@ -2,7 +2,7 @@ package dataset
 
 const (
 	ItemNameOID = "_id"
-	ItemNameVAL = "val"
+	//ItemNameVAL = "val"
 )
 
 type Model interface {
