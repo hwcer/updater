@@ -19,7 +19,7 @@ const (
 )
 
 type Updater struct {
-	uid      any
+	uid      string
 	now      time.Time
 	init     bool                 //初始化,false-不初始化，实时读写数据库  true-按照模块预设进行初始化，
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
@@ -33,7 +33,7 @@ type Updater struct {
 	Process  Process
 }
 
-func New(uid any) (u *Updater) {
+func New(uid string) (u *Updater) {
 	u = &Updater{uid: uid, Process: Process{}}
 	return u
 }
@@ -42,7 +42,7 @@ func (u *Updater) On(t EventType, handle Listener) {
 	u.Events.On(t, handle)
 }
 
-func (u *Updater) Uid() any {
+func (u *Updater) Uid() string {
 	return u.uid
 }
 
@@ -400,7 +400,7 @@ func (u *Updater) Destroy() (err error) {
 			return
 		}
 	}
-	u.uid = nil
+	u.uid = ""
 	return
 }
 
