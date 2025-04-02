@@ -27,7 +27,7 @@ type ModelClone interface {
 }
 
 type BulkWrite interface {
-	Save() error
+	Submit() error
 	Update(data Update, where ...any)
 	Insert(documents ...any)
 	Delete(where ...any)

@@ -53,6 +53,9 @@ func (u *Updater) Now() time.Time {
 func (u *Updater) Unix() int64 {
 	return u.now.Unix()
 }
+func (u *Updater) Milli() int64 {
+	return u.now.UnixMilli()
+}
 
 // Develop 设置，并返回当前Debug状态
 func (u *Updater) Develop(v ...bool) bool {

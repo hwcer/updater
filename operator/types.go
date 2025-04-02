@@ -31,19 +31,19 @@ func (at Types) MustNumber() bool {
 func (at Types) ToString() string {
 	switch at {
 	case TypesAdd:
-		return "Add"
+		return "add"
 	case TypesSub:
-		return "Sub"
+		return "sub"
 	case TypesSet:
-		return "Set"
+		return "set"
 	case TypesDel:
-		return "Del"
+		return "del"
 	case TypesNew:
-		return "New"
+		return "insert"
 	case TypesResolve:
-		return "Resolve"
+		return "resolve"
 	case TypesDrop:
-		return "Drop"
+		return "discard"
 	default:
 		return "unknown"
 	}
