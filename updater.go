@@ -3,7 +3,7 @@ package updater
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/cosgo/logger"
+	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 	"runtime/debug"
