@@ -26,14 +26,14 @@ var testPlayer = &bsonPlayer{
 }
 
 var doc Document
-var bsonBytes []byte
+var raw []byte
 
 func init() {
 	doc, _ = Marshal(testPlayer)
-	bsonBytes = doc.Bytes(nil)
+	raw = doc.Raw(nil)
 }
 func TestNew(t *testing.T) {
-	t.Logf("bsonBytes len:%v", len(bsonBytes))
+	t.Logf("Bytes len:%v", len(raw))
 	t.Logf("Document len:%v", doc.Len())
 
 	_ = doc.Set("info.vip", 100)
@@ -41,16 +41,12 @@ func TestNew(t *testing.T) {
 		t.Logf("Error:%v", err)
 	}
 
-	if r, err := doc.Inc("info.vip", 2); err != nil {
-		t.Logf("INC Error:%v", err)
-	} else {
-		t.Logf("INC result:%v", r)
-	}
-
 	t.Logf("Document:%v", doc.String())
 
 	t.Logf("info.vip:%v", doc.GetInt32("info.vip"))
 	t.Logf("items.20:%v", doc.GetInt32("items.20"))
+
+	t.Logf("Document:%v", doc.String())
 
 	newPlayer := &bsonPlayer{}
 	if err := doc.Unmarshal(newPlayer); err != nil {
@@ -58,6 +54,7 @@ func TestNew(t *testing.T) {
 	} else {
 		t.Logf("newPlayer:%+v", newPlayer)
 	}
+	return
 }
 
 func BenchmarkBsonSet(b *testing.B) {
@@ -74,13 +71,13 @@ func BenchmarkBsonGet(b *testing.B) {
 
 func BenchmarkBytes(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_ = doc.Bytes(nil)
+		_ = doc.Raw(nil)
 	}
 }
 
 func BenchmarkMetaGet(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		d := bsoncore.Document(bsonBytes)
+		d := bsoncore.Document(raw)
 		v := d.Lookup("info.vip")
 		_, _ = v.Int32OK()
 	}

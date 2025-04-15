@@ -8,30 +8,36 @@ import (
 )
 
 func New() Document {
-	return make(map[string]*Element)
+	return Document{}
 }
 
 func NewArray() *Array {
 	return &Array{}
 }
 
-func NewElement(key string) *Element {
-	return &Element{key: key}
-}
-
-func NewArrayElement(key string) *Element {
-	return &Element{key: key, val: bsoncore.Value{Type: bsontype.Array}}
-}
-
-func NewDocumentElement(key string) *Element {
-	return &Element{key: key, val: bsoncore.Value{Type: bsontype.EmbeddedDocument}}
-}
-
-func NewElementFromValue(key string, val interface{}) (ele *Element, err error) {
-	ele = &Element{key: key}
-	ele.val.Type, ele.val.Data, err = bson.MarshalValue(val)
+func NewElement(t bsontype.Type, v []byte) (r *Element, err error) {
+	r = &Element{}
+	err = r.Reset(t, v)
 	return
 }
+
+func NewElementFromValue(v bsoncore.Value) (r *Element, err error) {
+	return NewElement(v.Type, v.Data)
+}
+
+//func NewArrayElement(key string) *Element {
+//	return &Element{key: key, val: bsoncore.Value{Type: bsontype.Array}}
+//}
+//
+//func NewDocumentElement(key string) *Element {
+//	return &Element{key: key, val: bsoncore.Value{Type: bsontype.EmbeddedDocument}}
+//}
+
+//func NewElementFromValue(key string, val interface{}) (ele *Element, err error) {
+//	ele = &Element{key: key}
+//	ele.val.Type, ele.val.Data, err = bson.MarshalValue(val)
+//	return
+//}
 
 func Marshal(i interface{}) (r Document, err error) {
 	var ok bool
@@ -51,17 +57,6 @@ func Marshal(i interface{}) (r Document, err error) {
 	r = New()
 	err = r.Reset(raw)
 	return
-}
-
-func Unmarshal(doc Document, v interface{}) error {
-	return doc.Unmarshal(v)
-}
-
-func IsTop(k string) bool {
-	if k == "" || k == "." {
-		return true
-	}
-	return false
 }
 
 func Split(key string) (string, string) {
