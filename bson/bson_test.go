@@ -35,13 +35,11 @@ func init() {
 func TestNew(t *testing.T) {
 	t.Logf("Bytes len:%v", len(raw))
 	t.Logf("Document len:%v", doc.Len())
-
+	t.Logf("Document:%v", doc.String())
 	_ = doc.Set("info.vip", 100)
 	if err := doc.Set("items.20", 20); err != nil {
 		t.Logf("Error:%v", err)
 	}
-
-	t.Logf("Document:%v", doc.String())
 
 	t.Logf("info.vip:%v", doc.GetInt32("info.vip"))
 	t.Logf("items.20:%v", doc.GetInt32("items.20"))
