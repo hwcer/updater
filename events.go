@@ -3,11 +3,11 @@ package updater
 type EventType int8
 
 const (
-	OnLoaded EventType = iota //加载之后执行
-	OnPreData
-	OnPreVerify  //verify前
-	OnPreSubmit  //submit 前
-	OnPreRelease //Release 释放前
+	EventTypeInit    EventType = iota //加载之后执行,需要判断数据有无加载到内存中
+	EventTypeData                     //Data之后执行,仅仅需要读数据库时才会触发
+	EventTypeSubmit                   //Submit提交数据后触发，有可能多次触发,可以在事件中安全的继续修改数据
+	EventTypeSuccess                  //Success 成功执行所有数据操作活执行
+	EventTypeRelease                  //Release释放前,必然触发一次，需要自行判断updater.Error
 )
 
 // Listener 监听任务,返回true表示继续监听,false 从监听列表中移除
@@ -84,11 +84,6 @@ func (e *Events) emit(u *Updater, t EventType) {
 	e.triggerGlobal(u, t)
 	e.triggerEvents(u, t)
 	e.triggerMiddleware(u, t)
-}
-
-func (e *Events) release() {
-	//e.events = nil
-	//e.middlewares = nil
 }
 
 func (e *Events) triggerGlobal(u *Updater, t EventType) {

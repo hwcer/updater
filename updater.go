@@ -122,7 +122,7 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 	for k, f := range processDefault {
 		u.Process.Try(u, k, f)
 	}
-	u.emit(OnLoaded)
+	u.emit(EventTypeInit)
 	return
 }
 
@@ -148,8 +148,7 @@ func (u *Updater) Reset(t ...time.Time) {
 // 无论有无错误,都应该执行Release
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
-	u.emit(OnPreRelease)
-
+	u.emit(EventTypeRelease)
 	u.dirty = nil
 	u.changed = false
 	u.operated = false
@@ -159,7 +158,6 @@ func (u *Updater) Release() {
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
 	}
-	u.Events.release()
 	return
 }
 
@@ -235,7 +233,7 @@ func (u *Updater) data(hs []Handle) (err error) {
 		return
 	}
 	u.changed = false
-	u.emit(OnPreData)
+	u.emit(EventTypeData)
 	for _, w := range hs {
 		if err = w.Data(); err != nil {
 			return
@@ -252,13 +250,11 @@ func (u *Updater) verify(hs []Handle) (err error) {
 		return
 	}
 	u.operated = false
-	u.emit(OnPreVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].verify(); err != nil {
 			return
 		}
 	}
-	//u.Emitter.emit(u)
 	return
 }
 
@@ -274,11 +270,12 @@ func (u *Updater) submit(hs []Handle) (err error) {
 		if err = u.verify(hs); err != nil {
 			return
 		}
-		u.emit(OnPreSubmit)
+		u.emit(EventTypeSubmit)
 		if i = i + 1; i >= 100 {
 			return ErrSubmitEndlessLoop
 		}
 	}
+	u.emit(EventTypeSuccess)
 	return
 }
 
@@ -297,7 +294,6 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			return
 		}
 	}
-	//u.emit(PlugsTypeSuccess)
 	r = u.dirty
 	u.dirty = nil
 	return
