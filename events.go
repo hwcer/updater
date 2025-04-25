@@ -44,11 +44,15 @@ func (e *Events) Use(name string, handle Middleware) bool {
 }
 
 // Set 设置中间件,如果已存在返回false
-func (e *Events) Set(name string, handle Middleware) bool {
+func (e *Events) Set(name string, handle Middleware, replace ...bool) bool {
 	if e.middlewares == nil {
 		e.middlewares = map[string]Middleware{}
 	}
-	if _, ok := e.middlewares[name]; ok {
+	var r bool
+	if len(replace) > 0 {
+		r = replace[0]
+	}
+	if _, ok := e.middlewares[name]; ok && !r {
 		return false
 	}
 	e.middlewares[name] = handle
