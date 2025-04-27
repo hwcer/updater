@@ -5,7 +5,8 @@ type EventType int8
 const (
 	EventTypeInit    EventType = iota //加载之后执行,需要判断数据有无加载到内存中
 	EventTypeData                     //Data之后执行,仅仅需要读数据库时才会触发
-	EventTypeSubmit                   //Submit提交数据后触发，有可能多次触发,可以在事件中安全的继续修改数据
+	EventTypeVerify                   //Verify 触发数据检查前,有可能多次触发,可以在事件中安全的继续修改数据
+	EventTypeSubmit                   //Submit 提交数据前触发，有可能多次触发,可以在事件中安全的继续修改数据
 	EventTypeSuccess                  //Success 成功执行所有数据操作活执行
 	EventTypeRelease                  //Release释放前,必然触发一次，需要自行判断updater.Error
 )
@@ -33,7 +34,7 @@ func (e *Events) On(t EventType, handle Listener) {
 }
 
 // Get 获取中间件
-func (e *Events) Get(name string) any {
+func (e *Events) Get(name string) Middleware {
 	if e.middlewares != nil && e.middlewares[name] != nil {
 		return e.middlewares[name]
 	}

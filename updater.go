@@ -250,6 +250,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 		return
 	}
 	u.operated = false
+	u.emit(EventTypeVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].verify(); err != nil {
 			return
@@ -261,9 +262,6 @@ func (u *Updater) verify(hs []Handle) (err error) {
 func (u *Updater) submit(hs []Handle) (err error) {
 	i := int8(1)
 	for u.changed || u.operated {
-		if err = u.Error; err != nil {
-			return
-		}
 		if err = u.data(hs); err != nil {
 			return
 		}
@@ -275,7 +273,6 @@ func (u *Updater) submit(hs []Handle) (err error) {
 			return ErrSubmitEndlessLoop
 		}
 	}
-	u.emit(EventTypeSuccess)
 	return
 }
 
@@ -288,12 +285,12 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if err = u.submit(hs); err != nil {
 		return
 	}
-
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].submit(); err != nil {
 			return
 		}
 	}
+	u.emit(EventTypeSuccess)
 	r = u.dirty
 	u.dirty = nil
 	return
