@@ -37,10 +37,10 @@ func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 
 func documentParseSub(this *Document, op *operator.Operator) error {
 	d, _ := this.val(op.Key)
-	r, err := this.Updater.deduct(op.IID, d, op.Value)
-	if err != nil {
-		return err
+	if d < op.Value {
+		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
+	r := d - op.Value
 	op.Result = r
 	this.dataset.Set(op.Key, r)
 	return nil

@@ -10,20 +10,15 @@ import (
 	"time"
 )
 
-type StrictType int8
-
-const (
-	StrictTypeEnabled StrictType = 0 //启用严格模式，道具不足直接报错
-	StrictTypeDisable StrictType = 1 //关闭严格模式，道具不足扣成负数
-	StrictTypeLoosest StrictType = 2 //关闭严格模式，道具不足扣成零值
-)
+type Player interface {
+	Uid() string
+}
 
 type Updater struct {
-	uid      string
 	now      time.Time
 	init     bool                 //初始化,false-不初始化，实时读写数据库  true-按照模块预设进行初始化，
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
-	strict   StrictType           //非严格模式下,扣除道具不足时允许扣成0,而不是报错
+	player   Player               //业务层角色对象
 	changed  bool                 //数据变动,需要使用Data更新数据
 	develop  bool                 //开发者模式，关闭数据库写入,进入内存模式,不影响数据库读操作，退出时可以丢弃内存数据，重新加载数据库数据
 	operated bool                 //新操作需要重执行Verify检查数据
@@ -33,8 +28,8 @@ type Updater struct {
 	Process  Process
 }
 
-func New(uid string) (u *Updater) {
-	u = &Updater{uid: uid, Process: Process{}}
+func New(p Player) (u *Updater) {
+	u = &Updater{player: p, Process: Process{}}
 	return u
 }
 
@@ -43,7 +38,7 @@ func (u *Updater) On(t EventType, handle Listener) {
 }
 
 func (u *Updater) Uid() string {
-	return u.uid
+	return u.player.Uid()
 }
 
 func (u *Updater) Now() time.Time {
@@ -55,6 +50,9 @@ func (u *Updater) Unix() int64 {
 }
 func (u *Updater) Milli() int64 {
 	return u.now.UnixMilli()
+}
+func (u *Updater) Player() Player {
+	return u.player
 }
 
 // Develop 设置，并返回当前Debug状态
@@ -89,11 +87,6 @@ func (u *Updater) Save() (err error) {
 		}
 	}
 	return
-}
-
-// Strict 设置扣道具模式，仅仅生效一个周期
-func (u *Updater) Strict(v StrictType) {
-	u.strict = v
 }
 
 // Loading 重新加载数据,自动关闭异步数据
@@ -138,7 +131,6 @@ func (u *Updater) Reset(t ...time.Time) {
 		_ = u.Errorf("获取系统时间失败")
 		fmt.Printf("%s\n", string(debug.Stack()))
 	}
-	u.strict = StrictTypeEnabled
 	for _, w := range u.Handles() {
 		w.reset()
 	}
@@ -396,7 +388,7 @@ func (u *Updater) Destroy() (err error) {
 			return
 		}
 	}
-	u.uid = ""
+	u.player = nil
 	return
 }
 
@@ -410,18 +402,4 @@ func (u *Updater) WriteAble() error {
 		return u.Error
 	}
 	return nil
-}
-
-func (u *Updater) deduct(iid int32, v, sub int64) (r int64, err error) {
-	r = v - sub
-	if r < 0 {
-		if u.strict == StrictTypeDisable {
-
-		} else if u.strict == StrictTypeLoosest {
-			r = 0
-		} else {
-			err = ErrItemNotEnough(iid, sub, v)
-		}
-	}
-	return
 }

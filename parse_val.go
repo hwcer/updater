@@ -40,10 +40,10 @@ func hashParseAdd(this *Values, op *operator.Operator) (err error) {
 
 func hashParseSub(this *Values, op *operator.Operator) error {
 	d := this.Val(op.IID)
-	r, err := this.Updater.deduct(op.IID, d, op.Value)
-	if err != nil {
-		return err
+	if d < op.Value {
+		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
+	r := d - op.Value
 	op.Result = r
 	this.dataset.Set(op.IID, r)
 	return nil

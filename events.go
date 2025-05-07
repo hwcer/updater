@@ -11,6 +11,20 @@ const (
 	EventTypeRelease                  //Release释放前,必然触发一次，需要自行判断updater.Error
 )
 
+// 全局事件,会持续触发
+var globalEvents = map[EventType][]func(u *Updater){}
+
+// RegisterGlobalEvent 必须在初始化话时调用
+
+func RegisterGlobalEvent(t EventType, handle func(u *Updater)) {
+	globalEvents[t] = append(globalEvents[t], handle)
+}
+
+// Emit 通过外部触发事件
+func Emit(u *Updater, t EventType) {
+	u.emit(t)
+}
+
 // Listener 监听任务,返回true表示继续监听,false 从监听列表中移除
 type Listener func(u *Updater) (next bool)
 

@@ -79,13 +79,12 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) error {
 		return ErrObjectIdEmpty(op.IID)
 	}
 	d, _ := coll.val(op.OID)
-	r, err := coll.Updater.deduct(op.IID, d, op.Value)
-	if err != nil {
-		return err
+	if d < op.Value {
+		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
+	r := d - op.Value
 	op.Result = r
-	err = coll.dataset.Set(op.OID, coll.GetValJSName(), r)
-	return nil
+	return coll.dataset.Set(op.OID, coll.GetValJSName(), r)
 }
 
 func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
