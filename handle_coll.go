@@ -6,6 +6,7 @@ import (
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
+	"strings"
 )
 
 type collectionModel interface {
@@ -328,10 +329,12 @@ func (this *Collection) Operator(op *operator.Operator, before ...bool) {
 			return
 		}
 		for k, v := range result {
-			if name := sch.JSName(k); name != "" {
+			if strings.Contains(k, ".") {
+				data[k] = v //使用.操作符，所有字段名称必须和数据库一致
+			} else if name := sch.JSName(k); name != "" {
 				data[name] = v
 			} else {
-				this.Updater.Error = fmt.Errorf("operator.set field not exist,name%s field:%s", this.name, k)
+				this.Updater.Error = fmt.Errorf("operator.set field not exist,name:%s field:%s", this.name, k)
 				return
 			}
 		}
