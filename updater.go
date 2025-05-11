@@ -365,6 +365,9 @@ func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
 	if iid <= 0 {
 		return errors.New("operator iid empty")
 	}
+	if op.Bag == 0 {
+		op.Bag = Config.IType(iid)
+	}
 	handle := u.handle(iid)
 	if handle == nil {
 		return errors.New("handle unknown")
