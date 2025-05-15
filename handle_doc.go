@@ -17,7 +17,8 @@ import (
 	Set(k string, v any) error    //设置k值的为v
 */
 type documentModel interface {
-	New(update *Updater) any                                             //初始化对象
+	New(update *Updater) any //初始化对象
+	Reset(update *Updater, data *dataset.Document) error
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
 	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
@@ -64,7 +65,7 @@ func (this *Document) save() (err error) {
 		this.setter = nil
 		return
 	}
-	if err = this.model.Setter(this.statement.Updater, this.setter); err == nil {
+	if err = this.model.Setter(this.Updater, this.setter); err == nil {
 		this.setter = nil
 	}
 	return err
@@ -76,6 +77,7 @@ func (this *Document) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
+	this.Updater.Error = this.model.Reset(this.Updater, this.dataset)
 }
 func (this *Document) reload() error {
 	this.dataset = nil
@@ -281,20 +283,27 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	}
 	op := operator.New(t, v, r)
 	op.Key, op.IID, this.Updater.Error = this.ObjectId(k)
-
-	if this.Updater.Error == nil && op.Key == "" {
-		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
-	}
 	if this.Updater.Error != nil {
 		return
 	}
+	if op.Key == "" {
+		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
+		return
+	}
+
 	this.statement.Select(op.Key)
 	it := this.IType(op.IID)
-	if it != nil {
-		op.Bag = it.ID()
-		if listen, ok := it.(ITypeListener); ok {
-			listen.Listener(this.Updater, op)
-		}
+	if it == nil {
+		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
+		return
 	}
+	op.Bag = it.ID()
+	if oc, ok := it.(ITypeObjectId); ok {
+		op.OID = oc.ObjectId(this.Updater, op.IID)
+	}
+	if listen, ok := it.(ITypeListener); ok {
+		listen.Listener(this.Updater, op)
+	}
+
 	this.statement.Operator(op)
 }

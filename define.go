@@ -42,12 +42,15 @@ func SetCacheFilterRule(it int32, rule any) {
 type IType interface {
 	ID() int32 //IType 唯一标志
 }
+type ITypeObjectId interface {
+	ObjectId(u *Updater, iid int32) (oid string) //使用IID创建OID,仅限于可以叠加道具,不可以叠加道具返回空,使用NEW来创建
+}
 
 type ITypeCollection interface {
 	IType
+	ITypeObjectId
 	New(u *Updater, op *operator.Operator) (item any, err error) //根据Operator信息生成新对象
 	Stacked(int32) bool                                          //是否可以叠加
-	ObjectId(u *Updater, iid int32) (oid string, err error)      //使用IID创建OID,仅限于可以叠加道具,不可以叠加道具返回空,使用NEW来创建
 }
 
 // ITypeResolve 自动分解,如果没有分解方式超出上限则使用系统默认方式（丢弃）处理

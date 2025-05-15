@@ -113,7 +113,7 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 		f()
 	}
 	for k, f := range processDefault {
-		u.Process.Try(u, k, f)
+		u.Process.GetOrCreate(u, k, f)
 	}
 	u.emit(EventTypeInit)
 	return

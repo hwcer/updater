@@ -75,6 +75,9 @@ func (this *Collection) val(id string) (r int64, ok bool) {
 
 func (this *Collection) save() (err error) {
 	bulkWrite := this.BulkWrite()
+	if bulkWrite == nil {
+		return
+	}
 	if err = this.dataset.Save(bulkWrite, this.monitor); err != nil {
 		return
 	}
@@ -304,10 +307,7 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 	}
 	//可以堆叠道具
 	if op.OID == "" && it.Stacked(op.IID) {
-		op.OID, err = it.ObjectId(this.Updater, op.IID)
-	}
-	if err != nil {
-		return
+		op.OID = it.ObjectId(this.Updater, op.IID)
 	}
 	if op.OID != "" {
 		this.statement.Select(op.OID)
@@ -377,9 +377,12 @@ func (this *Collection) ObjectId(key any) (oid string, err error) {
 	if !it.Stacked(iid) {
 		return "", ErrObjectIdEmpty(iid)
 	}
-	oid, err = it.ObjectId(this.Updater, iid)
-	if err == nil && oid == "" {
+	if oid = it.ObjectId(this.Updater, iid); oid == "" {
 		err = ErrUnableUseIIDOperation
 	}
 	return
+}
+
+func (this *Collection) Dataset() *dataset.Collection {
+	return this.dataset
 }
