@@ -406,3 +406,29 @@ func (u *Updater) WriteAble() error {
 	}
 	return nil
 }
+
+func (u *Updater) Values(name any) *Values {
+	i := u.Handle(name)
+	if i == nil {
+		return nil
+	}
+	r, _ := i.(*Values)
+	return r
+}
+func (u *Updater) Document(name any) *Document {
+	i := u.Handle(name)
+	if i == nil {
+		return nil
+	}
+	r, _ := i.(*Document)
+	return r
+}
+
+func (u *Updater) Collection(name any) *Collection {
+	i := u.Handle(name)
+	if i == nil {
+		return nil
+	}
+	r, _ := i.(*Collection)
+	return r
+}
