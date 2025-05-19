@@ -89,9 +89,16 @@ func (u *Updater) Save() (err error) {
 	return
 }
 
+func (u *Updater) Loader() bool {
+	return u.init
+}
+
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(init bool, cb ...func()) (err error) {
+	if u.init {
+		return
+	}
 	if init {
 		u.init = true
 	}
@@ -115,7 +122,9 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 	for k, f := range processDefault {
 		u.Process.GetOrCreate(u, k, f)
 	}
-	u.emit(EventTypeInit)
+	if u.init {
+		u.emit(EventTypeInit)
+	}
 	return
 }
 
