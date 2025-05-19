@@ -251,8 +251,14 @@ func (u *Updater) verify(hs []Handle) (err error) {
 	return
 }
 
-func (u *Updater) submit(hs []Handle) (err error) {
-	i := int8(1)
+// Submit 按照MODEL的倒序执行
+func (u *Updater) Submit() (r []*operator.Operator, err error) {
+	if err = u.WriteAble(); err != nil {
+		return nil, err
+	}
+	hs := u.Handles()
+
+	loop := int8(1)
 	for u.changed || u.operated {
 		if err = u.data(hs); err != nil {
 			return
@@ -261,21 +267,10 @@ func (u *Updater) submit(hs []Handle) (err error) {
 			return
 		}
 		u.emit(EventTypeSubmit)
-		if i = i + 1; i >= 100 {
-			return ErrSubmitEndlessLoop
+		if loop = loop + 1; loop >= 100 {
+			u.Error = ErrSubmitEndlessLoop
+			return nil, u.Error
 		}
-	}
-	return
-}
-
-// Submit 按照MODEL的倒序执行
-func (u *Updater) Submit() (r []*operator.Operator, err error) {
-	if err = u.WriteAble(); err != nil {
-		return nil, err
-	}
-	hs := u.Handles()
-	if err = u.submit(hs); err != nil {
-		return
 	}
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].submit(); err != nil {
