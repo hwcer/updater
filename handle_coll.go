@@ -34,7 +34,7 @@ type Collection struct {
 	model     collectionModel
 	remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset   *dataset.Collection
-	monitor   dataset.CollectionMonitor
+	monitor   dataset.CollectionMonitor //监控数据的insert 和 delete
 	bulkWrite dataset.BulkWrite
 }
 
