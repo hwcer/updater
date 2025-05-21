@@ -179,13 +179,15 @@ func (u *Updater) Set(id any, v ...any) {
 	}
 }
 
-func (u *Updater) Add(iid int32, num int32) {
+// Add 添加道具,num int32|int64
+func (u *Updater) Add(iid int32, num any) {
 	if w := u.handle(iid); w != nil {
 		w.Add(iid, num)
 	}
 }
 
-func (u *Updater) Sub(iid int32, num int32) {
+// Sub 扣除道具,num int32|int64
+func (u *Updater) Sub(iid int32, num any) {
 	if w := u.handle(iid); w != nil {
 		w.Sub(iid, num)
 	}
@@ -318,7 +320,7 @@ func (u *Updater) Handle(name any) Handle {
 	case int:
 		return u.handleByIType(int32(k))
 	case int32:
-		return u.handleByIType(int32(k))
+		return u.handleByIType(k)
 	case int64:
 		return u.handleByIType(int32(k))
 	}

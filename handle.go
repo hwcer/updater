@@ -5,8 +5,8 @@ import "github.com/hwcer/updater/operator"
 type Handle interface {
 	Get(k any) any                                  //获取值
 	Val(k any) int64                                //获取val值
-	Add(k any, v int32)                             //自增v
-	Sub(k any, v int32)                             //扣除v
+	Add(k any, v any)                               //自增v   int32 | int64
+	Sub(k any, v any)                               //扣除v int32 | int64
 	Del(k any)                                      //删除道具
 	Set(k any, v ...any)                            //设置v值
 	Data() error                                    //非内存模式获取数据库中的数据

@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -129,18 +130,20 @@ func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
 	stmt.Updater.operated = true
 }
 
-func (stmt *statement) Add(k any, v int32) {
-	if v <= 0 {
+func (stmt *statement) Add(k any, v any) {
+	n := dataset.ParseInt64(v)
+	if n <= 0 {
 		return
 	}
-	stmt.handleOptCreate(operator.TypesAdd, k, int64(v), nil)
+	stmt.handleOptCreate(operator.TypesAdd, k, n, nil)
 }
 
-func (stmt *statement) Sub(k any, v int32) {
-	if v <= 0 {
+func (stmt *statement) Sub(k any, v any) {
+	n := dataset.ParseInt64(v)
+	if n <= 0 {
 		return
 	}
-	stmt.handleOptCreate(operator.TypesSub, k, int64(v), nil)
+	stmt.handleOptCreate(operator.TypesSub, k, n, nil)
 }
 
 //func (stmt *statement) Max(k any, v int64) {
