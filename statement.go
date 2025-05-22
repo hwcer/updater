@@ -70,6 +70,7 @@ func (this *statement) loading() bool {
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
 	stmt.keys = nil
+	stmt.cache = nil
 	stmt.operator = nil
 }
 

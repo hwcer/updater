@@ -89,7 +89,9 @@ func (val *Values) Save(dirty Data) (expire int64) {
 	val.dirty = nil
 	return
 }
-
+func (val *Values) Release() {
+	val.dirty = nil
+}
 func (val *Values) Expire() int64 {
 	return val.expire
 }

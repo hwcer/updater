@@ -109,6 +109,8 @@ func (this *Collection) release() {
 	}
 	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
+	} else {
+		this.dataset.Release()
 	}
 }
 

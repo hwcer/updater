@@ -94,6 +94,8 @@ func (this *Document) release() {
 	}
 	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
+	} else {
+		this.dataset.Release()
 	}
 }
 func (this *Document) loading() (err error) {

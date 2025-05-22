@@ -142,6 +142,9 @@ func (doc *Document) Save(dirty Update) error {
 	doc.dirty = nil
 	return nil
 }
+func (doc *Document) Release() {
+	doc.dirty = nil
+}
 
 func (doc *Document) setter(k string, v any) (r any, err error) {
 	defer func() {

@@ -173,6 +173,10 @@ func (coll *Collection) Save(bulkWrite BulkWrite, monitor CollectionMonitor) err
 	return nil
 }
 
+func (coll *Collection) Release() {
+	coll.dirty = nil
+}
+
 func (coll *Collection) Range(handle func(string, *Document) bool) {
 	for k, v := range coll.dataset {
 		if !handle(k, v) {
