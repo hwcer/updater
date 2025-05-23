@@ -22,9 +22,8 @@ func (d Data) Del(k int32) {
 }
 
 type Values struct {
-	data   Data
-	dirty  Data
-	expire int64
+	data  Data
+	dirty Data
 }
 
 func (val *Values) Len() int {
@@ -72,8 +71,7 @@ func (val *Values) Sub(k int32, v int64) (r int64) {
 	return r
 }
 
-func (val *Values) Save(dirty Data) (expire int64) {
-	expire = val.expire
+func (val *Values) Save(dirty Data) {
 	if len(val.dirty) == 0 {
 		return
 	}
@@ -89,12 +87,11 @@ func (val *Values) Save(dirty Data) (expire int64) {
 	val.dirty = nil
 	return
 }
+
 func (val *Values) Release() {
 	val.dirty = nil
 }
-func (val *Values) Expire() int64 {
-	return val.expire
-}
+
 func (val *Values) Range(handle func(int32, int64) bool) {
 	for k, v := range val.data {
 		if !handle(k, v) {
@@ -102,13 +99,11 @@ func (val *Values) Range(handle func(int32, int64) bool) {
 		}
 	}
 }
-func (val *Values) Reset(data Data, expire int64) {
+func (val *Values) Reset(data Data) {
 	if data == nil {
 		data = Data{}
 	}
 	val.data = data
-	//val.dirty = nil
-	val.expire = expire
 }
 
 //func (val *Values) Release() {

@@ -17,6 +17,7 @@ type Player interface {
 type Updater struct {
 	now      time.Time
 	init     bool                 //初始化,false-不初始化，实时读写数据库  true-按照模块预设进行初始化，
+	last     int64                //上次请求的时间时间戳，用于判断数据是否需要重置
 	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	player   Player               //业务层角色对象
 	changed  bool                 //数据变动,需要使用Data更新数据
@@ -136,6 +137,9 @@ func (u *Updater) Reset(t ...time.Time) {
 	} else {
 		u.now = time.Now()
 	}
+	if u.last == 0 {
+		u.last = u.now.Unix()
+	}
 	if u.now.IsZero() {
 		_ = u.Errorf("获取系统时间失败")
 		fmt.Printf("%s\n", string(debug.Stack()))
@@ -150,6 +154,7 @@ func (u *Updater) Reset(t ...time.Time) {
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
 	u.emit(EventTypeRelease)
+	u.last = u.now.Unix()
 	u.dirty = nil
 	u.changed = false
 	u.operated = false

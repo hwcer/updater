@@ -17,8 +17,7 @@ import (
 	Set(k string, v any) error    //设置k值的为v
 */
 type documentModel interface {
-	New(update *Updater) any //初始化对象
-	Reset(update *Updater, data *dataset.Document) error
+	New(update *Updater) any                                             //初始化对象
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
 	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
@@ -77,7 +76,13 @@ func (this *Document) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
-	this.Updater.Error = this.model.Reset(this.Updater, this.dataset)
+	if reset, ok := this.model.(ModelReset); ok {
+		if reset.Reset(this.Updater, this.Updater.last) {
+			this.Updater.Error = this.reload()
+		}
+	}
+
+	//this.Updater.Error = this.model.Reset(this.Updater, this.dataset)
 }
 func (this *Document) reload() error {
 	this.dataset = nil

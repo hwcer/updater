@@ -96,6 +96,11 @@ func (this *Collection) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
 	}
+	if reset, ok := this.model.(ModelReset); ok {
+		if reset.Reset(this.Updater, this.Updater.last) {
+			this.Updater.Error = this.reload()
+		}
+	}
 }
 func (this *Collection) reload() error {
 	this.dataset = nil

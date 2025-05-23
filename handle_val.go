@@ -9,7 +9,7 @@ import (
 
 type valuesModel interface {
 	Getter(u *Updater, data *dataset.Values, keys []int32) (err error) //获取数据接口
-	Setter(u *Updater, data dataset.Data, expire int64) error          //保存数据接口
+	Setter(u *Updater, data dataset.Data) error                        //保存数据接口
 }
 
 // Values 数字型键值对
@@ -57,7 +57,7 @@ func (this *Values) loading() error {
 
 func (this *Values) save() (err error) {
 	dirty := this.Dirty()
-	expire := this.dataset.Save(dirty)
+	this.dataset.Save(dirty)
 	if len(dirty) == 0 {
 		return nil
 	}
@@ -65,7 +65,7 @@ func (this *Values) save() (err error) {
 		this.dirty = nil
 		return
 	}
-	if err = this.model.Setter(this.statement.Updater, dirty, expire); err == nil {
+	if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
 		this.dirty = nil
 	}
 	return
@@ -77,15 +77,21 @@ func (this *Values) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
-	if expire := this.dataset.Expire(); expire > 0 && expire < this.Updater.Unix() {
-		if this.Updater.Error = this.save(); this.Updater.Error != nil {
-			logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
-		} else {
-			this.dataset = dataset.NewValues()
-			this.statement.loader = false
-			this.Updater.Error = this.loading()
+	if reset, ok := this.model.(ModelReset); ok {
+		if reset.Reset(this.Updater, this.Updater.last) {
+			this.Updater.Error = this.reload()
 		}
 	}
+
+	//if expire := this.dataset.Expire(); expire > 0 && expire < this.Updater.Unix() {
+	//	if this.Updater.Error = this.save(); this.Updater.Error != nil {
+	//		logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
+	//	} else {
+	//		this.dataset = dataset.NewValues()
+	//		this.statement.loader = false
+	//		this.Updater.Error = this.loading()
+	//	}
+	//}
 }
 
 // release 运行时释放

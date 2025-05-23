@@ -32,6 +32,11 @@ type ModelLoading interface {
 	Loading() RAMType
 }
 
+// 返回true时 重新调用 model.Getter
+type ModelReset interface {
+	Reset(*Updater, int64) bool
+}
+
 // NewHandle 注册新解析器
 func NewHandle(name Parser, f handleFunc) {
 	handles[name] = f

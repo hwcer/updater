@@ -2,7 +2,6 @@ package updater
 
 import (
 	"github.com/hwcer/logger"
-	"strings"
 )
 
 type processCreator func(updater *Updater) any
@@ -10,7 +9,6 @@ type processCreator func(updater *Updater) any
 var processDefault = map[string]processCreator{}
 
 func RegisterGlobalProcess(name string, creator processCreator) {
-	name = strings.ToLower(name)
 	if processDefault[name] != nil {
 		logger.Alert("player handle register already registered:%v", name)
 	} else {
