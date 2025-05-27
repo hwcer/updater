@@ -43,5 +43,5 @@ type Operator struct {
 		SUB : OID(string),IID(int32),Value(int32),Result(int32)
 		DEL : OID(string),IID(int32)
 		SET : OID(string),IID(int32),Result(map(string)any)
-		NEW : OID(string),IID(int32),Result(any)
+		NEW : OID(string),IID(int32),Result([]any)
 */

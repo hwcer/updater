@@ -12,10 +12,10 @@ var Config = struct {
 	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
 	Filter  func(*operator.Operator) bool                             //过滤cache,返回false时不返回给前端
 }{
-	Filter: cacheFilterHandle,
+	Filter: cacheFilterDefault,
 }
 
-func cacheFilterHandle(o *operator.Operator) bool {
+func cacheFilterDefault(o *operator.Operator) bool {
 	rule, ok := cacheFilterRule[o.Bag]
 	if !ok {
 		return true
@@ -30,10 +30,10 @@ func cacheFilterHandle(o *operator.Operator) bool {
 	}
 }
 
-// SetCacheFilterRule 设置Updater cache过滤规则
+// SetCacheFilter 设置Updater cache过滤规则
 // rule bool
 // rule func(*operator.Operator) bool  自定义规则
-func SetCacheFilterRule(it int32, rule any) {
+func SetCacheFilter(it int32, rule any) {
 	cacheFilterRule[it] = rule
 }
 
