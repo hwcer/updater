@@ -5,14 +5,14 @@ import (
 )
 
 var (
-	ErrCodeArgsIllegal   = 0
-	ErrCodeItemNotExist  = 0
-	ErrCodeItemNotEnough = 0
-	ErrCodeITypeNotExist = 0
-	ErrCodeObjectIdEmpty = 0
+	ErrCodeArgsIllegal   int32 = 0
+	ErrCodeItemNotExist  int32 = 0
+	ErrCodeItemNotEnough int32 = 0
+	ErrCodeITypeNotExist int32 = 0
+	ErrCodeObjectIdEmpty int32 = 0
 )
 
-func Errorf(code int, msg any, args ...any) error {
+func Errorf(code int32, msg any, args ...any) error {
 	return values.Errorf(code, msg, args...)
 }
 
