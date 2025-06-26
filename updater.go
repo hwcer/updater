@@ -126,6 +126,7 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 	if u.init {
 		u.emit(EventTypeInit)
 	}
+	u.last = u.now.Unix()
 	return
 }
 
@@ -136,9 +137,6 @@ func (u *Updater) Reset(t ...time.Time) {
 		u.now = t[0]
 	} else {
 		u.now = time.Now()
-	}
-	if u.last == 0 {
-		u.last = u.now.Unix()
 	}
 	if u.now.IsZero() {
 		_ = u.Errorf("获取系统时间失败")
