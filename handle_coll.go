@@ -2,11 +2,12 @@ package updater
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
-	"strings"
 )
 
 type collectionModel interface {
@@ -87,6 +88,8 @@ func (this *Collection) save() (err error) {
 	}
 	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
 		this.bulkWrite = nil
+	} else {
+		logger.Debug("Collection[%s] save error:%v", this.name, err)
 	}
 	return
 }
