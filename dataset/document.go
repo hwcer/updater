@@ -3,10 +3,11 @@ package dataset
 import (
 	"errors"
 	"fmt"
-	"github.com/hwcer/cosgo/schema"
-	"github.com/hwcer/logger"
 	"reflect"
 	"strings"
+
+	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/logger"
 )
 
 func NewDoc(i any) *Document {
@@ -35,7 +36,7 @@ func NewDoc(i any) *Document {
 //}
 
 type Document struct {
-	sch   *schema.Schema
+	//sch   *schema.Schema
 	data  any
 	dirty Update
 }
@@ -170,16 +171,7 @@ func (doc *Document) Schema() (sch *schema.Schema, err error) {
 		err = errors.New("document not loader")
 		return
 	}
-	if doc.sch == nil {
-		if sch, err = schema.Parse(doc.data); err == nil {
-			doc.sch = sch
-		} else {
-			logger.Error(err)
-		}
-	} else {
-		sch = doc.sch
-	}
-	return
+	return schema.Parse(doc.data)
 }
 func (doc *Document) Clone() *Document {
 	if i, ok := doc.data.(ModelClone); ok {
@@ -212,7 +204,7 @@ func (doc *Document) Json() (map[string]any, error) {
 	}
 	r := map[string]any{}
 	for _, field := range sch.Fields {
-		if k := field.DBName; k != ItemNameOID {
+		if k := field.DBName(); k != ItemNameOID {
 			r[k] = sch.GetValue(doc.data, k)
 		}
 	}
@@ -220,7 +212,6 @@ func (doc *Document) Json() (map[string]any, error) {
 }
 
 func (doc *Document) Reset(v any) {
-	doc.sch = nil
 	doc.data = v
 	doc.dirty = nil
 }

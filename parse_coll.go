@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
@@ -101,19 +102,6 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	return
 }
 
-// collectionCompareTransform MAX MIN符合规则的转换成ADD或者SET
-func collectionCompareTransform(coll *Collection, op *operator.Operator, ok bool) (err error) {
-	if !ok {
-		op.Type = operator.TypesAdd
-		err = collectionHandleAdd(coll, op)
-	} else {
-		op.Type = operator.TypesSet
-		op.Result = dataset.NewUpdate(coll.GetValJSName(), op.Value)
-		err = collectionHandleSet(coll, op)
-	}
-	return
-}
-
 // collectionHandleNewEquip
 func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err error) {
 	op.Type = operator.TypesNew
@@ -129,8 +117,9 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 	}
 	var item any
 	var items []any
+	cc := op.Clone(1)
 	for i := int64(1); i <= op.Value; i++ {
-		if item, err = it.New(coll.Updater, op); err != nil {
+		if item, err = it.New(coll.Updater, cc); err != nil {
 			return
 		} else {
 			items = append(items, item)

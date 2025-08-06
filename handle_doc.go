@@ -242,11 +242,7 @@ func (this *Document) Any() any {
 func (this *Document) Name(k string) (r string, err error) {
 	if sch := this.Schema(); sch != nil {
 		if field := sch.LookUpField(k); field != nil {
-			if field.JSName != "" {
-				r = field.JSName
-			} else {
-				r = field.Name
-			}
+			r = field.JSName()
 		} else {
 			err = fmt.Errorf("document field not exist")
 		}

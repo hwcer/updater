@@ -1,26 +1,5 @@
 package operator
 
-func New(t Types, v int64, r any) *Operator {
-	return &Operator{Type: t, Value: v, Result: r}
-}
-
-type Operator struct {
-	OID    string `json:"o,omitempty"` //object id
-	IID    int32  `json:"i,omitempty"` //item id
-	Key    string `json:"k,omitempty"` //字段名
-	Bag    int32  `json:"b,omitempty"` //物品类型 model
-	Type   Types  `json:"t"`           //操作类型 opt
-	Value  int64  `json:"v"`           //增量,add sub new 时有效
-	Result any    `json:"r"`           //最终结果
-}
-
-//func (opt *Operator) SetKey(k string) {
-//	opt.Key = k
-//}
-//func (opt *Operator) SetOID(id string) {
-//	opt.OID = id
-//}
-
 /*
 	数据结构以及有效字段说明
 
@@ -45,3 +24,25 @@ type Operator struct {
 		SET : OID(string),IID(int32),Result(map(string)any)
 		NEW : OID(string),IID(int32),Result([]any)
 */
+
+func New(t Types, v int64, r any) *Operator {
+	return &Operator{Type: t, Value: v, Result: r}
+}
+
+type Operator struct {
+	OID    string `json:"o,omitempty"` //object id
+	IID    int32  `json:"i,omitempty"` //item id
+	Key    string `json:"k,omitempty"` //字段名
+	Bag    int32  `json:"b,omitempty"` //物品类型 model
+	Type   Types  `json:"t"`           //操作类型 opt
+	Value  int64  `json:"v"`           //增量,add sub new 时有效
+	Result any    `json:"r"`           //最终结果
+}
+
+func (op *Operator) Clone(v ...int64) *Operator {
+	r := *op
+	if len(v) > 0 {
+		r.Value = v[0]
+	}
+	return &r
+}
