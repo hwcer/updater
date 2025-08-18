@@ -46,3 +46,12 @@ func (pro Process) GetOrCreate(u *Updater, name string, f processCreator) any {
 	}
 	return i
 }
+
+func (pro Process) GetOrStore(u *Updater, name string, v any) any {
+	i, ok := pro[name]
+	if !ok {
+		i = v
+		pro[name] = i
+	}
+	return i
+}
