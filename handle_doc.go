@@ -2,11 +2,12 @@ package updater
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
-	"strings"
 )
 
 /*
@@ -123,6 +124,7 @@ func (this *Document) destroy() (err error) {
 }
 
 func (this *Document) Has(k any) bool {
+
 	return false
 }
 
