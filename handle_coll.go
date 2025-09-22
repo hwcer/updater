@@ -208,8 +208,14 @@ func (this *Collection) Remove(id ...string) {
 
 // New 使用全新的模型插入
 func (this *Collection) New(v dataset.Model) (err error) {
-	op := &operator.Operator{OID: v.GetOID(), IID: v.GetIID(), Type: operator.TypesNew, Value: 1, Result: []any{v}}
-	op.Value = 1
+	op := &operator.Operator{OID: v.GetOID(), IID: v.GetIID(), Type: operator.TypesNew, Result: []any{v}}
+
+	if n := dataset.GetVal(v); n > 0 {
+		op.Value = n
+	} else {
+		op.Value = 1
+	}
+
 	if err = this.mayChange(op); err != nil {
 		return this.Updater.Errorf(err)
 	}

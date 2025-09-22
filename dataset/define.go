@@ -2,16 +2,31 @@ package dataset
 
 const (
 	ItemNameOID = "_id"
-	//ItemNameVAL = "val"
+	ItemNameVAL = "val"
 )
 
 type Model interface {
 	GetOID() string //获取OID
 	GetIID() int32  //获取IID
 }
+type ModelVal interface {
+	GetVal() int64
+}
 
 type ModelGet interface {
 	Get(string) (v any, ok bool)
+}
+
+func GetVal(i any) int64 {
+	if mv, ok := i.(ModelVal); ok {
+		return mv.GetVal()
+	}
+	if mg, ok := i.(ModelGet); ok {
+		if v, exist := mg.Get(ItemNameVAL); exist {
+			return ParseInt64(v)
+		}
+	}
+	return 0
 }
 
 // ModelSet 内存写入
