@@ -246,7 +246,7 @@ func (this *Document) Name(k string) (r string, err error) {
 		if field := sch.LookUpField(k); field != nil {
 			r = field.JSName()
 		} else {
-			err = fmt.Errorf("document field not exist")
+			err = fmt.Errorf("document field not exist,model:%s,Field:%s", sch.Name, k)
 		}
 	}
 	return
