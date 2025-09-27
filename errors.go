@@ -29,7 +29,7 @@ func ErrItemNotEnough(args ...any) error {
 }
 
 func ErrITypeNotExist(iid int32) error {
-	return Errorf(ErrCodeITypeNotExist, "IType Not Exist%v", iid)
+	return Errorf(ErrCodeITypeNotExist, "IType Not Exist:%v", iid)
 }
 
 func ErrObjectIdEmpty(args ...any) error {
