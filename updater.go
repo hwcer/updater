@@ -3,11 +3,12 @@ package updater
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
+	"time"
+
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
-	"runtime/debug"
-	"time"
 )
 
 type Player interface {
@@ -340,7 +341,7 @@ func (u *Updater) handle(k any) Handle {
 	itk := Config.IType(iid)
 	model, ok := modelsDict[itk]
 	if !ok {
-		logger.Alert("Updater.handle not exists,iid:%v IType:%v", k, itk)
+		logger.Debug("Updater.handle not exists,iid:%v IType:%v", k, itk)
 		return nil
 	}
 	return u.Handle(model.name)
