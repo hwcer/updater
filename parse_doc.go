@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+
 	"github.com/hwcer/updater/operator"
 )
 
@@ -37,7 +38,7 @@ func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 
 func documentParseSub(this *Document, op *operator.Operator) error {
 	d, _ := this.val(op.Key)
-	if d < op.Value {
+	if d < op.Value && !this.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	r := d - op.Value

@@ -80,7 +80,7 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) error {
 		return ErrObjectIdEmpty(op.IID)
 	}
 	d, _ := coll.val(op.OID)
-	if d < op.Value {
+	if d < op.Value && !coll.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	r := d - op.Value

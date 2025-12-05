@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
@@ -40,7 +41,7 @@ func hashParseAdd(this *Values, op *operator.Operator) (err error) {
 
 func hashParseSub(this *Values, op *operator.Operator) error {
 	d := this.Val(op.IID)
-	if d < op.Value {
+	if d < op.Value && !this.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	r := d - op.Value

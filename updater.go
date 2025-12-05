@@ -16,18 +16,19 @@ type Player interface {
 }
 
 type Updater struct {
-	now      time.Time
-	init     bool                 //初始化,false-不初始化，实时读写数据库  true-按照模块预设进行初始化，
-	last     int64                //上次请求的时间时间戳，用于判断数据是否需要重置
-	dirty    []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
-	player   Player               //业务层角色对象
-	changed  bool                 //数据变动,需要使用Data更新数据
-	develop  bool                 //开发者模式，关闭数据库写入,进入内存模式,不影响数据库读操作，退出时可以丢弃内存数据，重新加载数据库数据
-	operated bool                 //新操作需要重执行Verify检查数据
-	handles  map[string]Handle    //Handle
-	Error    error
-	Events   Events
-	Process  Process
+	now           time.Time
+	init          bool                 //初始化,false-不初始化，实时读写数据库  true-按照模块预设进行初始化，
+	last          int64                //上次请求的时间时间戳，用于判断数据是否需要重置
+	dirty         []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
+	player        Player               //业务层角色对象
+	changed       bool                 //数据变动,需要使用Data更新数据
+	develop       bool                 //开发者模式，关闭数据库写入,进入内存模式,不影响数据库读操作，退出时可以丢弃内存数据，重新加载数据库数据
+	operated      bool                 //新操作需要重执行Verify检查数据
+	handles       map[string]Handle    //Handle
+	Error         error
+	Events        Events
+	Process       Process
+	CreditAllowed bool //是否扣钱时是否允许负债，每次设置仅仅一次性有效
 }
 
 func New(p Player) (u *Updater) {
@@ -158,6 +159,7 @@ func (u *Updater) Release() {
 	u.changed = false
 	u.operated = false
 	u.Error = nil
+	u.CreditAllowed = false
 	//u.ReadOnly = false
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
