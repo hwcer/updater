@@ -1,9 +1,13 @@
 package updater
 
 import (
+	"context"
 	"sync/atomic"
+	"time"
 
+	"github.com/hwcer/cosgo/scc"
 	"github.com/hwcer/cosgo/values"
+	"github.com/hwcer/logger"
 )
 
 var (
@@ -48,7 +52,10 @@ var (
 )
 
 // disaster 数据库熔断保护
-var disaster = atomic.Bool{}
+var disaster = atomic.Int32{}
+
+// monitoring 标记是否已经有监控协程在运行
+var monitoring = atomic.Bool{}
 
 type SaveErrorType int32
 
@@ -59,24 +66,9 @@ const (
 	SaveErrorTypeDisaster                      //灾难性错误，立即拒绝所有服务，禁止用户操作任何数据
 )
 
-func onSaveErrorHandle(updater *Updater, err error) (bool, error) {
-	t, newErr := DatabaseError(updater, err)
-	var retain = true
-	switch t {
-	case SaveErrorTypeNone:
-	case SaveErrorTypeNetwork:
-		initiateDatabaseMonitoring()
-	case SaveErrorTypeProgram:
-		retain = false
-	case SaveErrorTypeDisaster:
-		disaster.Swap(true)
-	}
-	return retain, newErr
-}
-
-// DatabaseError 写入数据库发生错误时查询灾难等级
+// SaveErrorHandle 写入数据库发生错误时查询灾难等级
 // err 传递给用的错误信息
-var DatabaseError = func(updater *Updater, err error) (SaveErrorType, error) {
+var SaveErrorHandle = func(updater *Updater, err error) (SaveErrorType, error) {
 	return SaveErrorTypeNone, err
 }
 
@@ -85,11 +77,66 @@ var DatabaseMonitoring = func() bool {
 	return true
 }
 
+func onSaveErrorHandle(updater *Updater, err error) (bool, error) {
+	t, newErr := SaveErrorHandle(updater, err)
+	var retain = true
+	switch t {
+	case SaveErrorTypeNone:
+	case SaveErrorTypeNetwork:
+		initiateDatabaseMonitoring()
+	case SaveErrorTypeProgram:
+		retain = false
+	case SaveErrorTypeDisaster:
+		disaster.Swap(2)
+	}
+	return retain, newErr
+}
+
 // initiateDatabaseMonitoring 数据库网络错误时启动数据库监控检查
 // 通过持续的调用DatabaseMonitoring 查询数据库是否可用
 // 长时间(30s)数据库不可用会进入灾难级错误开启数据库熔断保护，直到数据库恢复可用
 // 可能同时出现并发性调用，注意只能启动唯一携程用来监控
 // 通过设置 disaster 设定,取消数据库熔断保护
 func initiateDatabaseMonitoring() {
+	// 使用原子操作确保只有一个监控协程在运行
+	if !monitoring.CompareAndSwap(false, true) {
+		return
+	}
 
+	// 启动监控协程
+	scc.CGO(func(ctx context.Context) {
+		defer monitoring.Store(false) // 协程结束时重置监控状态
+
+		// 记录开始检查的时间
+		startTime := time.Now()
+		const timeout = 30 * time.Second
+		var sleepTime = time.Second
+		// 持续检查数据库状态
+		for {
+			select {
+			case <-ctx.Done():
+				// 收到取消信号，退出协程
+				return
+			default:
+				// 检查数据库是否可用
+				if DatabaseMonitoring() {
+					logger.Trace("数据库已恢复，取消灾难模式")
+					disaster.CompareAndSwap(1, 0)
+					return
+				}
+
+				// 检查是否超过30秒未恢复
+				if time.Since(startTime) >= timeout {
+					logger.Trace("数据库无法恢复，开启灾难级错误保护")
+					sleepTime = 5 * time.Second
+					disaster.CompareAndSwap(0, 1)
+				} else {
+					logger.Trace("数据库连接失败，正在检查网络状况")
+				}
+
+				// 每隔一段时间检查一次
+				time.Sleep(sleepTime)
+			}
+		}
+	})
 }

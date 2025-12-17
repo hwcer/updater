@@ -20,7 +20,6 @@ import (
 */
 type documentModel interface {
 	New(update *Updater) any                                             //初始化对象
-	Name() string                                                        //对象名称
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
 	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
