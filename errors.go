@@ -102,22 +102,22 @@ func initiateDatabaseMonitoring() {
 	if !monitoring.CompareAndSwap(false, true) {
 		return
 	}
-
 	// 启动监控协程
 	scc.CGO(func(ctx context.Context) {
 		defer monitoring.Store(false) // 协程结束时重置监控状态
-
 		// 记录开始检查的时间
 		startTime := time.Now()
 		const timeout = 30 * time.Second
 		var sleepTime = time.Second
+		timer := time.NewTimer(sleepTime)
+		defer timer.Stop()
 		// 持续检查数据库状态
 		for {
 			select {
 			case <-ctx.Done():
 				// 收到取消信号，退出协程
 				return
-			default:
+			case <-timer.C:
 				// 检查数据库是否可用
 				if DatabaseMonitoring() {
 					logger.Trace("数据库已恢复，取消灾难模式")
@@ -128,14 +128,13 @@ func initiateDatabaseMonitoring() {
 				// 检查是否超过30秒未恢复
 				if time.Since(startTime) >= timeout {
 					logger.Trace("数据库无法恢复，开启灾难级错误保护")
-					sleepTime = 5 * time.Second
 					disaster.CompareAndSwap(0, 1)
 				} else {
 					logger.Trace("数据库连接失败，正在检查网络状况")
 				}
 
 				// 每隔一段时间检查一次
-				time.Sleep(sleepTime)
+				timer.Reset(sleepTime)
 			}
 		}
 	})
