@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -19,6 +20,7 @@ import (
 */
 type documentModel interface {
 	New(update *Updater) any                                             //初始化对象
+	Name() string                                                        //对象名称
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
 	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
 	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
@@ -27,6 +29,7 @@ type documentModel interface {
 // Document 文档存储
 type Document struct {
 	statement
+	name    string
 	model   documentModel     //handle model
 	dirty   dataset.Update    //外部直接置脏数据，内存数据已经处理过，会自动同步到数据库
 	setter  dataset.Update    //需要持久化到数据库的数据
@@ -35,6 +38,7 @@ type Document struct {
 
 func NewDocument(u *Updater, m *Model) Handle {
 	r := &Document{}
+	r.name = m.name
 	r.model = m.model.(documentModel)
 	r.statement = *newStatement(u, m, r.operator, r.Has)
 	return r
@@ -67,6 +71,13 @@ func (this *Document) save() (err error) {
 	}
 	if err = this.model.Setter(this.Updater, this.setter); err == nil {
 		this.setter = nil
+	} else {
+		ds, _ := json.Marshal(this.setter)
+		logger.Alert("database save error,uid:%s,Collection:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
+		var s bool
+		if s, err = onSaveErrorHandle(this.Updater, err); !s {
+			this.setter = nil
+		}
 	}
 	return err
 }

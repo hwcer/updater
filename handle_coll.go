@@ -89,7 +89,11 @@ func (this *Collection) save() (err error) {
 	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
 		this.bulkWrite = nil
 	} else {
-		logger.Debug("Collection[%s] save error:%v", this.name, err)
+		logger.Alert("database save error,uid:%s,Collection:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, this.bulkWrite.String(), err.Error())
+		var s bool
+		if s, err = onSaveErrorHandle(this.Updater, err); !s {
+			this.bulkWrite = nil
+		}
 	}
 	return
 }

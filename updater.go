@@ -147,6 +147,10 @@ func (u *Updater) Reset(t ...time.Time) {
 	for _, w := range u.Handles() {
 		w.reset()
 	}
+
+	if disaster.Load() {
+		u.Error = ErrServerDeniedService //存在灾难性错误，拒绝服务
+	}
 }
 
 // Release 释放并返回所有已执行的操作,每次请求结束时调用

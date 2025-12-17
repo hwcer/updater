@@ -1,6 +1,8 @@
 package updater
 
 import (
+	"sync/atomic"
+
 	"github.com/hwcer/cosgo/values"
 )
 
@@ -10,6 +12,10 @@ var (
 	ErrCodeItemNotEnough int32 = 0
 	ErrCodeITypeNotExist int32 = 0
 	ErrCodeObjectIdEmpty int32 = 0
+)
+
+var (
+	ErrServerDeniedService = Errorf(500, "Server denied service") //灾难级故障启动，需要人工排查
 )
 
 func Errorf(code int32, msg any, args ...any) error {
@@ -40,3 +46,50 @@ var (
 	ErrUnableUseIIDOperation = Errorf(0, "unable to use iid operation")
 	ErrSubmitEndlessLoop     = Errorf(0, "submit endless loop") //出现死循环,检查事件和插件是否正确移除(返回false)
 )
+
+// disaster 数据库熔断保护
+var disaster = atomic.Bool{}
+
+type SaveErrorType int32
+
+const (
+	SaveErrorTypeNone     SaveErrorType = iota //一般性错误可以忽略等待下次同步
+	SaveErrorTypeNetwork                       //网络错误，可以等待一段时间后恢复,持续的网络错误无法自动恢复会自动升级为灾难性错误
+	SaveErrorTypeProgram                       //程序级错误，可能是数据结构不一致，主键重复等无法恢复，操作被丢弃，保留日志记录错误
+	SaveErrorTypeDisaster                      //灾难性错误，立即拒绝所有服务，禁止用户操作任何数据
+)
+
+func onSaveErrorHandle(updater *Updater, err error) (bool, error) {
+	t, newErr := DatabaseError(updater, err)
+	var retain = true
+	switch t {
+	case SaveErrorTypeNone:
+	case SaveErrorTypeNetwork:
+		initiateDatabaseMonitoring()
+	case SaveErrorTypeProgram:
+		retain = false
+	case SaveErrorTypeDisaster:
+		disaster.Swap(true)
+	}
+	return retain, newErr
+}
+
+// DatabaseError 写入数据库发生错误时查询灾难等级
+// err 传递给用的错误信息
+var DatabaseError = func(updater *Updater, err error) (SaveErrorType, error) {
+	return SaveErrorTypeNone, err
+}
+
+// DatabaseMonitoring 查询数据库监控状态，是否可以
+var DatabaseMonitoring = func() bool {
+	return true
+}
+
+// initiateDatabaseMonitoring 数据库网络错误时启动数据库监控检查
+// 通过持续的调用DatabaseMonitoring 查询数据库是否可用
+// 长时间(30s)数据库不可用会进入灾难级错误开启数据库熔断保护，直到数据库恢复可用
+// 可能同时出现并发性调用，注意只能启动唯一携程用来监控
+// 通过设置 disaster 设定,取消数据库熔断保护
+func initiateDatabaseMonitoring() {
+
+}

@@ -2,8 +2,9 @@ package updater
 
 import (
 	"fmt"
-	"github.com/hwcer/cosgo/schema"
 	"sort"
+
+	"github.com/hwcer/cosgo/schema"
 )
 
 type Parser int8

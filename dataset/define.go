@@ -46,4 +46,5 @@ type BulkWrite interface {
 	Update(data Update, where ...any)
 	Insert(documents ...any)
 	Delete(where ...any)
+	String() string
 }

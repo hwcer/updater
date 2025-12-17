@@ -8,7 +8,7 @@ const (
 	EventTypeVerify                   //Verify 触发数据检查前,有可能多次触发,可以在事件中安全的继续修改数据
 	EventTypeSubmit                   //Submit 提交数据前触发，有可能多次触发,可以在事件中安全的继续修改数据
 	EventTypeSuccess                  //Success 成功执行所有数据操作活执行
-	EventTypeRelease                  //Release释放前,必然触发一次，需要自行判断updater.Error
+	EventTypeRelease                  //Release释放前,必然触发一次，需要自行判断updater.Error )
 )
 
 // 全局事件,会持续触发

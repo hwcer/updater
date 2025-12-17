@@ -1,7 +1,8 @@
 package updater
 
 import (
-	"github.com/hwcer/cosgo/schema"
+	"encoding/json"
+
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
@@ -23,13 +24,9 @@ type Values struct {
 
 func NewValues(u *Updater, m *Model) Handle {
 	r := &Values{}
+	r.name = m.name
 	r.model = m.model.(valuesModel)
 	r.statement = *newStatement(u, m, r.operator, r.Has)
-	if sch, err := schema.Parse(m.model); err == nil {
-		r.name = sch.Table
-	} else {
-		logger.Fatal(err)
-	}
 	return r
 }
 
@@ -67,6 +64,13 @@ func (this *Values) save() (err error) {
 	}
 	if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
 		this.dirty = nil
+	} else {
+		ds, _ := json.Marshal(dirty)
+		logger.Alert("database save error,uid:%s,Collection:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
+		var s bool
+		if s, err = onSaveErrorHandle(this.Updater, err); !s {
+			this.dirty = nil
+		}
 	}
 	return
 }

@@ -144,7 +144,6 @@ func (coll *Collection) Save(bulkWrite BulkWrite, monitor CollectionMonitor) err
 			if v.op.Has(collOperatorUpdate) {
 				doc = doc.Clone()
 			}
-			//整合collOperatorUpdate
 			if err := doc.Save(nil); err == nil {
 				coll.dataset.Set(k, doc)
 				if bulkWrite != nil {
