@@ -141,7 +141,10 @@ func (stmt *statement) Add(k any, v any) {
 
 func (stmt *statement) Sub(k any, v any) {
 	n := dataset.ParseInt64(v)
-	if n <= 0 {
+	if n == 0 {
+		return
+	} else if n < 0 {
+		_ = stmt.Updater.Errorf("sub items error:%d", n)
 		return
 	}
 	stmt.handleOptCreate(operator.TypesSub, k, n, nil)
