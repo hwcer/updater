@@ -150,6 +150,8 @@ func (u *Updater) Reset(t ...time.Time) {
 
 	if disaster.Load() > 0 {
 		u.Error = ErrServerDeniedService //存在灾难性错误，拒绝服务
+	} else {
+		u.emit(EventTypeReset)
 	}
 }
 
