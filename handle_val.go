@@ -86,16 +86,6 @@ func (this *Values) reset() {
 			this.Updater.Error = this.reload()
 		}
 	}
-
-	//if expire := this.dataset.Expire(); expire > 0 && expire < this.Updater.Unix() {
-	//	if this.Updater.Error = this.save(); this.Updater.Error != nil {
-	//		logger.Alert("保存数据失败,name:%v,data:%v\n%v", this.name, this.dataset, this.Updater.Error)
-	//	} else {
-	//		this.dataset = dataset.NewValues()
-	//		this.statement.loader = false
-	//		this.Updater.Error = this.loading()
-	//	}
-	//}
 }
 
 // release 运行时释放
@@ -104,7 +94,7 @@ func (this *Values) release() {
 	if this.statement.Updater.develop {
 		return //debug状态不清理内存
 	}
-	if this.statement.ram == RAMTypeNone {
+	if this.statement.ram == RAMTypeNone && !this.statement.Updater.develop {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
@@ -175,10 +165,24 @@ func (this *Values) Data() (err error) {
 	}
 	return
 }
-
+func (this *Values) preprocess(op *operator.Operator) error {
+	d := this.Val(op.IID)
+	if d < op.Value && !this.Updater.CreditAllowed {
+		return ErrItemNotEnough(op.IID, op.Value, d)
+	}
+	return nil
+}
 func (this *Values) verify() (err error) {
 	if err = this.Updater.WriteAble(); err != nil {
 		return
+	}
+	//先检查所有扣除道具是否足够
+	for _, act := range this.statement.operator {
+		if act.Type == operator.TypesSub {
+			if err = this.preprocess(act); err != nil {
+				return
+			}
+		}
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {

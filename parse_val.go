@@ -41,9 +41,6 @@ func hashParseAdd(this *Values, op *operator.Operator) (err error) {
 
 func hashParseSub(this *Values, op *operator.Operator) error {
 	d := this.Val(op.IID)
-	if d < op.Value && !this.Updater.CreditAllowed {
-		return ErrItemNotEnough(op.IID, op.Value, d)
-	}
 	r := d - op.Value
 	op.Result = r
 	this.dataset.Set(op.IID, r)

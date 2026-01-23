@@ -105,10 +105,7 @@ func (this *Document) reload() error {
 func (this *Document) release() {
 	this.statement.release()
 	this.dirty = nil
-	if this.statement.Updater.develop {
-		return //debug状态不清理内存
-	}
-	if this.statement.ram == RAMTypeNone {
+	if this.statement.ram == RAMTypeNone && !this.statement.Updater.develop {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
@@ -189,10 +186,24 @@ func (this *Document) Data() (err error) {
 	}
 	return
 }
-
+func (this *Document) preprocess(op *operator.Operator) error {
+	d, _ := this.val(op.OID)
+	if d < op.Value && !this.Updater.CreditAllowed {
+		return ErrItemNotEnough(op.IID, op.Value, d)
+	}
+	return nil
+}
 func (this *Document) verify() (err error) {
 	if err = this.Updater.WriteAble(); err != nil {
 		return
+	}
+	//先检查所有扣除道具是否足够
+	for _, act := range this.statement.operator {
+		if act.Type == operator.TypesSub {
+			if err = this.preprocess(act); err != nil {
+				return
+			}
+		}
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {

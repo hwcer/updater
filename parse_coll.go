@@ -76,13 +76,7 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 }
 
 func collectionHandleSub(coll *Collection, op *operator.Operator) error {
-	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
-	}
 	d, _ := coll.val(op.OID)
-	if d < op.Value && !coll.Updater.CreditAllowed {
-		return ErrItemNotEnough(op.IID, op.Value, d)
-	}
 	r := d - op.Value
 	op.Result = r
 	return coll.dataset.Set(op.OID, coll.GetValJSName(), r)
