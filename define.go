@@ -16,7 +16,7 @@ var Config = struct {
 }
 
 func cacheFilterDefault(o *operator.Operator) bool {
-	rule, ok := cacheFilterRule[o.Bag]
+	rule, ok := cacheFilterRule[o.Mod]
 	if !ok {
 		return true
 	}

@@ -383,8 +383,8 @@ func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
 	if iid <= 0 {
 		return errors.New("operator iid empty")
 	}
-	if op.Bag == 0 {
-		op.Bag = Config.IType(iid)
+	if op.Mod == 0 {
+		op.Mod = Config.IType(iid)
 	}
 	handle := u.handle(iid)
 	if handle == nil {
@@ -410,6 +410,8 @@ func (u *Updater) Destroy() (err error) {
 		}
 	}
 	u.player = nil
+	u.handles = nil // 清理handles，释放对所有Handle的引用
+	u.dirty = nil   // 清理dirty，释放对所有Operator的引用
 	return
 }
 

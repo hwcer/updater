@@ -64,7 +64,7 @@ func ITypes(f func(int32, IType) bool) {
 	}
 }
 func Models(f func(int32, any) bool) {
-	for k, m := range itypesDict {
+	for k, m := range modelsDict {
 		if !f(k, m) {
 			break
 		}

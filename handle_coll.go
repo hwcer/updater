@@ -335,7 +335,7 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
-	op.Bag = it.ID()
+	op.Mod = it.ID()
 	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}
@@ -357,7 +357,7 @@ func (this *Collection) Operator(op *operator.Operator, before ...bool) {
 		data := dataset.Update{}
 		result, ok := op.Result.(dataset.Update)
 		if !ok {
-			this.Updater.Error = fmt.Errorf("Operator.set return error name:%s  result:%v", op.Result)
+			this.Updater.Error = fmt.Errorf("Operator.set return error name:%s  result:%v", this.name, op.Result)
 			return
 		}
 		sch := this.Schema()

@@ -23,14 +23,14 @@ func TestName(t *testing.T) {
 	}
 	k := "1"
 	doc, _ := player.Get(k)
-	t.Logf("%+v", doc.Any())
+	t.Logf("%+v", doc.data)
 	if err := player.Update(k, Update{"lv": 100}); err != nil {
 		t.Logf("Update Err:%v", err)
 	}
-	t.Logf("lv:%v", doc.Val("lv"))
-	if err := player.Save(nil); err != nil {
+	t.Logf("lv:%v", doc.GetInt32("lv"))
+	if err := player.Save(nil, nil); err != nil {
 		t.Logf("Save Err:%v", err)
 	}
-	t.Logf("修改结果：%+v", doc.Any())
+	t.Logf("修改结果：%+v", doc.data)
 	player.Release()
 }

@@ -153,7 +153,7 @@ func (this *Document) Val(k any) (r int64) {
 }
 
 // Set 设置
-// Set(k string,v any)
+// Set(k string|int32,v any)
 func (this *Document) Set(k any, v ...any) {
 	switch len(v) {
 	case 1:
@@ -299,6 +299,9 @@ func (this *Document) IType(iid int32) IType {
 		return this.Updater.IType(iid)
 	}
 }
+
+// operator 操作
+// operator(t operator.Types, k any, v int64, r any)
 func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 	if err := this.Updater.WriteAble(); err != nil {
 		return
@@ -323,7 +326,7 @@ func (this *Document) operator(t operator.Types, k any, v int64, r any) {
 		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
 		return
 	}
-	op.Bag = it.ID()
+	op.Mod = it.ID()
 	if oc, ok := it.(ITypeObjectId); ok {
 		op.OID = oc.ObjectId(this.Updater, op.IID)
 	}
