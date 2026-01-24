@@ -107,7 +107,7 @@ func (op *Operator) MarshalJSON() ([]byte, error) {
 	}
 
 	data["m"] = op.Mod
-	data["t"] = op.Type.ToString()
+	data["t"] = op.Type
 	data["v"] = op.Value
 	data["r"] = op.Result
 
