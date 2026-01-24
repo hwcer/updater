@@ -93,10 +93,10 @@ func (op *Operator) String() string {
 func (op *Operator) MarshalJSON() ([]byte, error) {
 	data := make(map[string]interface{})
 	if op.OID != "" {
-		data["oid"] = op.OID
+		data["o"] = op.OID
 	}
 	if op.IID != 0 {
-		data["iid"] = op.IID
+		data["i"] = op.IID
 	}
 	if op.Key != "" {
 		data["k"] = op.Key
