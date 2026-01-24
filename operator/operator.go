@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
@@ -86,4 +87,29 @@ func (op *Operator) Clone(v ...int64) *Operator {
 func (op *Operator) String() string {
 	return fmt.Sprintf("Operator{OID:%s, IID:%d, Key:%s, Mod:%d, Type:%s, Value:%d, Result:%v}",
 		op.OID, op.IID, op.Key, op.Mod, op.Type.ToString(), op.Value, op.Result)
+}
+
+// 兼容旧版
+func (op *Operator) MarshalJSON() ([]byte, error) {
+	data := make(map[string]interface{})
+	if op.OID != "" {
+		data["oid"] = op.OID
+	}
+	if op.IID != 0 {
+		data["iid"] = op.IID
+	}
+	if op.Key != "" {
+		data["k"] = op.Key
+	}
+	if op.Mod != 0 {
+		data["m"] = op.Mod
+		data["b"] = op.Mod //兼容旧版
+	}
+
+	data["m"] = op.Mod
+	data["t"] = op.Type.ToString()
+	data["v"] = op.Value
+	data["r"] = op.Result
+
+	return json.Marshal(data)
 }
