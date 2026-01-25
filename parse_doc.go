@@ -39,6 +39,9 @@ func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 func documentParseSub(this *Document, op *operator.Operator) error {
 	d, _ := this.val(op.Key)
 	r := d - op.Value
+	if d < op.Value && !this.Updater.CreditAllowed {
+		return ErrItemNotEnough(op.IID, op.Value, d)
+	}
 	op.Result = r
 	this.dataset.Set(op.Key, r)
 	return nil

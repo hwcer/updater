@@ -22,7 +22,6 @@ type Updater struct {
 	dirty         []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	player        Player               //业务层角色对象
 	changed       bool                 //数据变动,需要使用Data更新数据
-	develop       bool                 //开发者模式，关闭数据库写入,进入内存模式,不影响数据库读操作，退出时可以丢弃内存数据，重新加载数据库数据
 	operated      bool                 //新操作需要重执行Verify检查数据
 	handles       map[string]Handle    //Handle
 	Error         error
@@ -58,18 +57,6 @@ func (u *Updater) Player() Player {
 	return u.player
 }
 
-// Develop 设置，并返回当前Debug状态
-func (u *Updater) Develop(v ...bool) bool {
-	if len(v) > 0 {
-		if u.develop && u.develop != v[0] {
-			for _, w := range u.Handles() {
-				_ = w.reload()
-			}
-		}
-		u.develop = v[0]
-	}
-	return u.develop
-}
 func (u *Updater) Errorf(format any, args ...any) error {
 	switch v := format.(type) {
 	case string:

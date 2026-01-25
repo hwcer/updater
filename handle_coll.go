@@ -82,10 +82,6 @@ func (this *Collection) save() (err error) {
 	if err = this.dataset.Save(bulkWrite, this.monitor); err != nil {
 		return
 	}
-	if this.Updater.develop {
-		this.bulkWrite = nil
-		return
-	}
 	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
 		this.bulkWrite = nil
 	} else {
@@ -116,8 +112,8 @@ func (this *Collection) reload() error {
 }
 func (this *Collection) release() {
 	this.statement.release()
-	if this.statement.ram == RAMTypeNone && !this.statement.Updater.develop {
-		this.dataset = nil //实时读写，并且不是开发者模式时直接清空
+	if this.statement.ram == RAMTypeNone {
+		this.dataset = nil //实时读写
 	} else {
 		this.dataset.Release()
 	}
@@ -248,30 +244,10 @@ func (this *Collection) Data() (err error) {
 	return
 }
 
-func (this *Collection) preprocess(op *operator.Operator) error {
-	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
-	}
-	d, _ := this.val(op.OID)
-	if d < op.Value && !this.Updater.CreditAllowed {
-		return ErrItemNotEnough(op.IID, op.Value, d)
-	}
-	return nil
-}
-
 func (this *Collection) verify() (err error) {
 	if err = this.Updater.WriteAble(); err != nil {
 		return
 	}
-	//先检查所有扣除道具是否足够
-	for _, act := range this.statement.operator {
-		if act.Type == operator.TypesSub {
-			if err = this.preprocess(act); err != nil {
-				return
-			}
-		}
-	}
-
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
 			return

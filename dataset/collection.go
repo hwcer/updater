@@ -166,7 +166,17 @@ func (coll *Collection) Save(bulkWrite BulkWrite, monitor CollectionMonitor) err
 }
 
 func (coll *Collection) Release() {
-	coll.dirty = nil
+	if coll.dirty == nil {
+		return
+	}
+	for k, v := range coll.dirty {
+		if v.op.Has(collOperatorUpdate) {
+			if doc, ok := coll.dataset.Get(k); ok {
+				doc.Release()
+			}
+		}
+		coll.dirty = nil
+	}
 }
 
 func (coll *Collection) Range(handle func(string, *Document) bool) {

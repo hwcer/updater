@@ -64,10 +64,6 @@ func (this *Document) save() (err error) {
 	if len(this.setter) == 0 {
 		return nil
 	}
-	if this.Updater.develop {
-		this.setter = nil
-		return
-	}
 	if err = this.model.Setter(this.Updater, this.setter); err == nil {
 		this.setter = nil
 	} else {
@@ -105,7 +101,7 @@ func (this *Document) reload() error {
 func (this *Document) release() {
 	this.statement.release()
 	this.dirty = nil
-	if this.statement.ram == RAMTypeNone && !this.statement.Updater.develop {
+	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
@@ -186,24 +182,10 @@ func (this *Document) Data() (err error) {
 	}
 	return
 }
-func (this *Document) preprocess(op *operator.Operator) error {
-	d, _ := this.val(op.OID)
-	if d < op.Value && !this.Updater.CreditAllowed {
-		return ErrItemNotEnough(op.IID, op.Value, d)
-	}
-	return nil
-}
+
 func (this *Document) verify() (err error) {
 	if err = this.Updater.WriteAble(); err != nil {
 		return
-	}
-	//先检查所有扣除道具是否足够
-	for _, act := range this.statement.operator {
-		if act.Type == operator.TypesSub {
-			if err = this.preprocess(act); err != nil {
-				return
-			}
-		}
 	}
 	for _, act := range this.statement.operator {
 		if err = this.Parse(act); err != nil {
