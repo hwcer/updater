@@ -425,6 +425,14 @@ func (u *Updater) Values(name any) *Values {
 	r, _ := i.(*Values)
 	return r
 }
+func (u *Updater) Mapping(name any) *Mapping {
+	i := u.Handle(name)
+	if i == nil {
+		return nil
+	}
+	r, _ := i.(*Mapping)
+	return r
+}
 func (u *Updater) Document(name any) *Document {
 	i := u.Handle(name)
 	if i == nil {

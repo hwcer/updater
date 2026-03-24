@@ -274,11 +274,6 @@ func (this *Collection) submit() (err error) {
 	return
 }
 
-// Len 总记录数
-//func (this *Collection) Len() int {
-//	return len(this.dataset)
-//}
-
 func (this *Collection) Range(h func(id string, doc *dataset.Document) bool) {
 	this.dataset.Range(h)
 }

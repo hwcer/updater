@@ -13,6 +13,7 @@ const (
 	ParserTypeValues     Parser = iota //Map[string]int64模式
 	ParserTypeDocument                 //Document 单文档模式
 	ParserTypeCollection               //Collection 文档集合模式
+	ParserTypeMapping                  //Mapping 映射模式,本身不会存储数据，依赖于其他模块数据，如 日常 依赖 历史数据
 )
 
 type handleFunc func(updater *Updater, model *Model) Handle
@@ -23,6 +24,7 @@ func init() {
 	NewHandle(ParserTypeValues, NewValues)
 	NewHandle(ParserTypeDocument, NewDocument)
 	NewHandle(ParserTypeCollection, NewCollection)
+	NewHandle(ParserTypeMapping, NewMapping)
 }
 
 type TableOrder interface {
@@ -33,7 +35,7 @@ type ModelLoading interface {
 	Loading() RAMType
 }
 
-// 返回true时 重新调用 model.Getter
+// ModelReset 返回true时 重新调用 model.Getter
 type ModelReset interface {
 	Reset(*Updater, int64) bool
 }

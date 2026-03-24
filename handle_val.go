@@ -53,12 +53,11 @@ func (this *Values) loading() error {
 }
 
 func (this *Values) save() (err error) {
-	dirty := this.Dirty()
-	this.dataset.Save(dirty)
+	dirty := this.dirty
 	if len(dirty) == 0 {
 		return nil
 	}
-
+	this.dataset.Save(dirty)
 	if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
 		this.dirty = nil
 	} else {
@@ -198,11 +197,11 @@ func (this *Values) IType(iid int32) IType {
 	}
 }
 
-func (this *Values) Dirty() (r dataset.Data) {
+func (this *Values) Dirty(k int32, v int64) {
 	if this.dirty == nil {
 		this.dirty = dataset.Data{}
 	}
-	return this.dirty
+	this.dirty[k] = v
 }
 
 func (this *Values) operator(t operator.Types, k any, v int64, r any) {
