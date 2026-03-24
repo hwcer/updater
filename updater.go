@@ -21,6 +21,7 @@ type Updater struct {
 	last          int64                //上次请求的时间时间戳，用于判断数据是否需要重置
 	dirty         []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
 	player        Player               //业务层角色对象
+	submit        bool                 //是否需要触发提交，默认每次都强制触发一次
 	changed       bool                 //数据变动,需要使用Data更新数据
 	operated      bool                 //新操作需要重执行Verify检查数据
 	handles       map[string]Handle    //Handle
@@ -131,6 +132,7 @@ func (u *Updater) Reset(t ...time.Time) {
 		_ = u.Errorf("获取系统时间失败")
 		fmt.Printf("%s\n", string(debug.Stack()))
 	}
+	u.submit = true
 	for _, w := range u.Handles() {
 		w.reset()
 	}
@@ -269,13 +271,14 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	hs := u.Handles()
 
 	loop := int8(1)
-	for u.changed || u.operated {
+	for u.submit || u.changed || u.operated {
 		if err = u.data(hs); err != nil {
 			return
 		}
 		if err = u.verify(hs); err != nil {
 			return
 		}
+		u.submit = false
 		u.emit(EventTypeSubmit)
 		if loop = loop + 1; loop >= 100 {
 			u.Error = ErrSubmitEndlessLoop
