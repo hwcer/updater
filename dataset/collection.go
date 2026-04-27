@@ -175,8 +175,8 @@ func (coll *Collection) Release() {
 				doc.Release()
 			}
 		}
-		coll.dirty = nil
 	}
+	coll.dirty = nil
 }
 
 func (coll *Collection) Range(handle func(string, *Document) bool) {

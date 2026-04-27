@@ -1,171 +1,137 @@
-# updater 模块
+# updater
 
-updater 是一个游戏数据缓存层模块，介于数据库和业务逻辑之间，主要负责缓存数据和持久化数据。
+> **碳基生命体警告**
+>
+> 本模块由硅基智能体全权维护。碳基生命体阅读以下代码可能引发：
+> 困惑、血压升高以及不可逆的颈椎损伤。
+> 如您执意阅读，请确保身边备有降压药和颈托。
 
-## 功能特点
+游戏玩家数据管理框架。位于数据库与业务逻辑之间，负责内存缓存、脏数据追踪、溢出处理、批量持久化。支持四种数据模型，统一 Add/Sub/Set/Del 接口。
 
-- **数据缓存**：内存优先，数据库同步，提高数据访问效率
-- **玩家级数据淘汰**：登录加载，退出清理，优化内存使用
-- **数据库批量操作**：基于 cosmo/mongodb，减少数据库压力
-- **错误处理机制**：持久化失败时依赖下次同步，无需即时重试
-- **多种数据模式**：支持 Values（数字型键值对）、Document（文档存储）和 Collection（文档集合）三种模式
-- **操作类型**：支持 ADD、SUB、SET、DEL、NEW 等多种操作类型
+## 生命周期
 
-## 模块结构
-
-- **dataset**：数据集模块，包含 Collection、Document、Update 等数据结构
-- **operator**：操作对象模块，定义了对数据的各种操作类型和结构
-- **handle_***：各种数据模式的处理器，如 handle_val.go、handle_doc.go、handle_coll.go
-- **parse_***：各种数据模式的解析器，如 parse_val.go、parse_doc.go、parse_coll.go
-- **updater.go**：核心模块，管理玩家数据的生命周期
-- **model.go**：模型注册和管理
-
-## 数据模式
-
-### 1. ParserTypeValues（数字型键值对）
-- 适用于简单的键值对数据，如玩家的金币、经验等
-- 支持 ADD、SUB、SET、DEL 操作
-
-### 2. ParserTypeDocument（文档存储）
-- 适用于复杂的文档数据，如玩家的装备、技能等
-- 支持 ADD、SUB、SET 操作
-- 支持一次更新多个字段
-
-### 3. ParserTypeCollection（文档集合）
-- 适用于多个相同类型的文档集合，如玩家的背包、任务等
-- 支持 ADD、SUB、SET、DEL、NEW 操作
-
-## 操作对象（Operator）
-
-操作对象用于描述对数据的各种操作，包含以下字段：
-
-- **OID**：object id，用于标识集合中的单个对象
-- **IID**：item id，用于标识道具或物品的唯一ID
-- **Mod**：物品类型 model ID，用于标识数据模型
-- **Type**：操作类型，如 ADD、SUB、SET、DEL、NEW 等
-- **Value**：增量值，ADD、SUB、NEW 时有效
-- **Result**：最终结果，根据操作类型和数据模型不同而不同
-
-## 使用示例
-
-### 1. 注册模型
-
-```go
-// 注册一个 Values 模式的模型
-updater.Register(updater.ParserTypeValues, updater.RAMTypeAlways, &PlayerGoldModel{})
-
-// 注册一个 Document 模式的模型
-updater.Register(updater.ParserTypeDocument, updater.RAMTypeMaybe, &PlayerEquipModel{})
-
-// 注册一个 Collection 模式的模型
-updater.Register(updater.ParserTypeCollection, updater.RAMTypeNone, &PlayerBagModel{})
+```
+Loading → Reset → 业务操作(Add/Sub/Set/Del) → Data(按需拉DB) → Verify(校验+溢出) → Submit(落库) → Release
 ```
 
-### 2. 创建 Updater
-
 ```go
-// 创建一个 Updater 实例
-u := updater.New(1001) // 1001 是玩家 ID
+u := updater.New(player)
+u.Loading(true)            // 加载全部数据
 
-// 加载玩家数据
-u.Load()
+u.Reset()                  // 每次请求开始
+u.Add(1001, int64(100))    // 加 100 金币
+u.Sub(1002, int64(5))      // 扣 5 钻石
+ops, err := u.Submit()     // 校验+落库，返回变更列表
+u.Release()                // 请求结束，清理临时状态
+
+u.Destroy()                // 玩家下线，强制刷盘
 ```
 
-### 3. 操作数据
+## 四种数据模型
 
-#### Values 模式
+| 模型 | 适用场景 | 数据结构 | 操作 |
+|------|----------|----------|------|
+| **Values** | 纯数值道具（金币、钻石） | `map[int32]int64` | Add/Sub/Set/Del |
+| **Document** | 单文档（玩家信息） | struct 字段级读写 | Add/Sub/Set |
+| **Collection** | 文档集合（背包物品） | `map[oid]*Document` | Add/Sub/Set/Del/New |
+| **Mapping** | 映射模式（日常任务） | 依赖其他模块数据 | Add/Sub/Set |
+
+## 注册模型
 
 ```go
-// 添加金币
-u.Add("gold", 100)
-
-// 扣除金币
-u.Sub("gold", 50)
-
-// 设置金币
-u.Set("gold", 1000)
+updater.Register(updater.ParserTypeValues, updater.RAMTypeAlways, &ItemModel{}, itemIType)
+updater.Register(updater.ParserTypeDocument, updater.RAMTypeMaybe, &PlayerModel{}, playerIType)
+updater.Register(updater.ParserTypeCollection, updater.RAMTypeAlways, &BagModel{}, equipIType, gemIType)
 ```
 
-#### Document 模式
+## 内存策略
+
+| RAMType | 说明 |
+|---------|------|
+| `RAMTypeNone` | 实时读写，每次请求从 DB 拉取，Release 后丢弃 |
+| `RAMTypeMaybe` | 按需加载，Loading 时预载，长期驻留内存 |
+| `RAMTypeAlways` | 全量内存，Loading 时全量加载，永不丢弃 |
+
+## 溢出处理
+
+道具数量超过 `IMax` 上限时自动触发：
+
+```
+Add(金币, 1000) → 当前 9500, 上限 10000
+  → 实际增加 500, 溢出 500
+  → 如果 IType 实现了 ITypeResolve → Resolve(溢出部分)
+  → 否则丢弃
+```
+
+## 灾难熔断
+
+数据库持久化失败时的三级保护：
+
+| 级别 | 行为 |
+|------|------|
+| `SaveErrorTypeNone` | 忽略，等待下次同步 |
+| `SaveErrorTypeNetwork` | 启动数据库监控协程，30s 未恢复升级为灾难 |
+| `SaveErrorTypeDisaster` | 拒绝所有写操作，直到 DB 恢复 |
+
+## 事件系统
 
 ```go
-// 更新装备
-u.Update("equip", dataset.Update{
-    "lv": 10,
-    "atk": 100,
-    "def": 50,
+u.On(updater.EventTypeVerify, func(u *updater.Updater) bool {
+    // Verify 前执行，返回 false 移除监听
+    return true
 })
 ```
 
-#### Collection 模式
+| 事件 | 触发时机 |
+|------|----------|
+| `EventTypeInit` | Loading 完成后 |
+| `EventTypeReset` | 每次 Reset |
+| `EventTypeData` | Data 拉取前 |
+| `EventTypeVerify` | Verify 校验前（可能多次） |
+| `EventTypeSubmit` | Submit 提交前（可能多次） |
+| `EventTypeSuccess` | 全部操作成功后 |
+| `EventTypeRelease` | Release 释放前 |
 
-```go
-// 添加道具
-u.Add("bag", "item_123", 1)
+## 本轮修复
 
-// 扣除道具
-u.Sub("bag", "item_123", 1)
+| 修复 | 说明 |
+|------|------|
+| getMappingOperatorKey 逻辑反转 | Key 为空时错误返回空字符串而非 IID，导致 Mapping 的 Add/Sub/Set 全部读写到错误的 key |
+| Collection.Release 循环内赋 nil | `coll.dirty = nil` 从循环体内移到循环外 |
+| debug.Stack() 热路径移除 | Reset() 中移除 debug.Stack()，避免闭包逃逸 |
+| 死代码清理 | 移除注释代码块、简化 range 表达式 |
+| 依赖升级 | cosgo v1.8.0, mongo-driver v2.5.1 |
 
-// 删除道具
-u.Del("bag", "item_123")
+## 目录结构
+
 ```
-
-### 4. 保存数据
-
-```go
-// 保存数据到数据库
-u.Save()
-
-// 销毁 Updater，清理内存
-u.Destroy()
+updater/
+├── updater.go       Updater 核心生命周期（Reset/Submit/Release/Destroy）
+├── define.go        IType 接口 + Config 全局配置 + Keys 工具类
+├── model.go         模型注册（Register）+ Parser 类型
+├── statement.go     语句基类（Select/Operator/Add/Sub/Del）
+├── handle.go        Handle 接口定义
+├── handle_val.go    Values 实现
+├── handle_doc.go    Document 实现
+├── handle_coll.go   Collection 实现
+├── handle_map.go    Mapping 实现
+├── parse_val.go     Values 操作解析（Add/Sub/Set/Del）
+├── parse_doc.go     Document 操作解析
+├── parse_coll.go    Collection 操作解析（含 New/叠加/不叠加）
+├── parse_map.go     Mapping 操作解析
+├── funcs.go         溢出处理（overflow → Resolve）
+├── errors.go        错误定义 + 灾难熔断机制
+├── events.go        事件系统（Listener/Middleware）
+├── process.go       Process 注册表
+├── dataset/
+│   ├── document.go    Document 数据封装（Get/Set/Save/Clone）
+│   ├── collection.go  Collection 数据集（Insert/Update/Delete/BulkWrite）
+│   ├── dirty.go       脏数据追踪（Insert/Update/Delete 三态标记）
+│   ├── values.go      Values 数据封装（map[int32]int64）
+│   ├── update.go      Update map 封装
+│   ├── define.go      Model/BulkWrite 接口定义
+│   └── utils.go       类型转换工具
+└── operator/
+    ├── operator.go    Operator 结构体 + MarshalJSON
+    └── types.go       操作类型枚举（Add/Sub/Set/Del/New/Drop/Resolve）
 ```
-
-## 配置
-
-### 1. 数据库配置
-
-```go
-updater.Config = &updater.Configuration{
-    IType: func(iid int32) int32 {
-        // 根据物品 ID 获取物品类型
-        return itemTypeMap[iid]
-    },
-    ParseId: func(u *updater.Updater, id string) (int32, error) {
-        // 解析物品 ID
-        return parseItemId(id)
-    },
-}
-```
-
-### 2. 模型接口
-
-```go
-// 物品类型接口
-type modelIType interface {
-    IType(iid int32) int32
-}
-
-// 字段接口
-type modelField interface {
-    Field(u *updater.Updater, iid int32) (string, error)
-}
-```
-
-## 错误处理
-
-- **ErrITypeNotExist**：物品类型不存在
-- **ErrObjectIdEmpty**：对象 ID 为空
-- **ErrUnableUseIIDOperation**：无法使用 IID 操作
-
-## 性能优化
-
-- **内存管理**：根据数据的使用频率，选择合适的 RAM 类型（RAMTypeNone、RAMTypeMaybe、RAMTypeAlways）
-- **批量操作**：减少数据库操作次数，提高性能
-- **索引优化**：为常用字段添加索引，提高查询速度
-
-## 注意事项
-
-- **数据一致性**：内存数据优先，数据库同步可能有延迟，业务逻辑需要考虑这一点
-- **错误处理**：持久化失败时，系统会在下次同步时重试，无需即时处理
-- **内存使用**：合理设置 RAM 类型，避免内存溢出
-- **操作顺序**：批量操作的顺序可能影响最终结果，需要注意操作顺序

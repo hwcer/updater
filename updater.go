@@ -3,7 +3,6 @@ package updater
 import (
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"time"
 
 	"github.com/hwcer/logger"
@@ -130,7 +129,6 @@ func (u *Updater) Reset(t ...time.Time) {
 	}
 	if u.now.IsZero() {
 		_ = u.Errorf("获取系统时间失败")
-		fmt.Printf("%s\n", string(debug.Stack()))
 	}
 	u.submit = true
 	for _, w := range u.Handles() {

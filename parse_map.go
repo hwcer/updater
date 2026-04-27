@@ -29,7 +29,7 @@ func mappingParseResolve(this *Mapping, op *operator.Operator) (err error) {
 	return
 }
 func getMappingOperatorKey(op *operator.Operator) any {
-	if op.Key == "" {
+	if op.Key != "" {
 		return op.Key
 	}
 	return op.IID
