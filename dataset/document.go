@@ -204,7 +204,7 @@ func (doc *Document) Json() (map[string]any, error) {
 	}
 	r := map[string]any{}
 	for _, field := range sch.Fields {
-		if k := field.DBName(); k != ItemNameOID {
+		if k := field.DBName(); k != Fields.OID {
 			r[k] = sch.GetValue(doc.data, k)
 		}
 	}

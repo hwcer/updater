@@ -1,9 +1,12 @@
 package dataset
 
-const (
-	ItemNameOID = "_id"
-	ItemNameVAL = "val"
-)
+var Fields = struct {
+	OID string
+	VAL string
+}{
+	OID: "_id",
+	VAL: "val",
+}
 
 type Model interface {
 	GetOID() string //获取OID
@@ -22,7 +25,7 @@ func GetVal(i any) int64 {
 		return mv.GetVal()
 	}
 	if mg, ok := i.(ModelGet); ok {
-		if v, exist := mg.Get(ItemNameVAL); exist {
+		if v, exist := mg.Get(Fields.VAL); exist {
 			return ParseInt64(v)
 		}
 	}

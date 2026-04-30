@@ -18,7 +18,6 @@ type collectionModel interface {
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
 
-var CollectionValueJSNameDefault = "val"
 
 type collectionModelValueJSName interface {
 	GetValueJSName() string //获取value值的jsname
@@ -63,7 +62,7 @@ func (this *Collection) GetValJSName() string {
 	if f, ok := this.model.(collectionModelValueJSName); ok {
 		return f.GetValueJSName()
 	}
-	return CollectionValueJSNameDefault
+	return dataset.Fields.VAL
 }
 
 func (this *Collection) val(id string) (r int64, ok bool) {

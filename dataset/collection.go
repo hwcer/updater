@@ -103,7 +103,7 @@ func (coll *Collection) Update(id string, data Update) error {
 // Insert 如果已经存在转换成覆盖
 func (coll *Collection) Insert(i any) (err error) {
 	doc := NewDoc(i)
-	id := doc.GetString(ItemNameOID)
+	id := doc.GetString(Fields.OID)
 	if id == "" {
 		return fmt.Errorf("item id emtpy:%v", i)
 	}
@@ -201,7 +201,7 @@ func (coll *Collection) Receive(id string, data any) {
 }
 func (coll *Collection) create(i any) (err error) {
 	doc := NewDoc(i)
-	if id := doc.GetString(ItemNameOID); id != "" {
+	if id := doc.GetString(Fields.OID); id != "" {
 		coll.dataset.Set(id, doc)
 	} else {
 		err = fmt.Errorf("item id empty:%+v", i)
