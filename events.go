@@ -99,7 +99,7 @@ func (e *Events) LoadOrCreate(name string, creator func() Middleware) (v Middlew
 }
 
 func (e *Events) emit(u *Updater, t EventType) {
-	if u.Error != nil {
+	if u.Error != nil && t != EventTypeRelease {
 		return
 	}
 	e.triggerGlobal(u, t)
@@ -113,7 +113,6 @@ func (e *Events) triggerGlobal(u *Updater, t EventType) {
 			h(u)
 		}
 	}
-	return
 }
 func (e *Events) triggerEvents(u *Updater, t EventType) {
 	if events := e.events[t]; len(events) > 0 {
@@ -125,7 +124,6 @@ func (e *Events) triggerEvents(u *Updater, t EventType) {
 		}
 		e.events[t] = es
 	}
-	return
 }
 
 func (e *Events) triggerMiddleware(u *Updater, t EventType) {
@@ -136,24 +134,20 @@ func (e *Events) triggerMiddleware(u *Updater, t EventType) {
 		e.triggerMiddlewareRelease(u)
 		return
 	}
-	mw := map[string]Middleware{}
 	for k, p := range e.middlewares {
-		if p.Emit(u, t) {
-			mw[k] = p
+		if !p.Emit(u, t) {
+			delete(e.middlewares, k)
 		}
 	}
-	e.middlewares = mw
 }
 
 func (e *Events) triggerMiddlewareRelease(u *Updater) {
 	if len(e.middlewares) == 0 {
 		return
 	}
-	mw := map[string]Middleware{}
 	for k, p := range e.middlewares {
-		if p.Release(u) {
-			mw[k] = p
+		if !p.Release(u) {
+			delete(e.middlewares, k)
 		}
 	}
-	e.middlewares = mw
 }

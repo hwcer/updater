@@ -10,10 +10,9 @@ type mappingModel interface {
 	Has(u *Updater, k any) bool
 	Get(u *Updater, k any) (r any)
 	Val(u *Updater, k any) (r int64)
-	Dirty(u *Updater, k, v any)
+	Update(u *Updater, k, v any)
 	Select(u *Updater, keys ...any)
 	Reload(u *Updater) error
-	GetRAMType(u *Updater) RAMType // RAMType,Mapping的RAMType永远和依赖的数据源一致
 }
 
 // Mapping 数字型键值对
@@ -27,7 +26,6 @@ func NewMapping(u *Updater, m *Model) Handle {
 	r := &Mapping{}
 	r.name = m.name
 	r.model = m.model.(mappingModel)
-	r.ram = r.model.GetRAMType(u)
 	r.statement = *newStatement(u, m, r.operator, r.Has)
 	return r
 }
@@ -134,12 +132,12 @@ func (this *Mapping) operator(t operator.Types, k any, v int64, r any) {
 	}
 	op := operator.New(t, v, r)
 	switch rk := k.(type) {
-	case int32:
-		op.IID = rk
-		this.statement.Select(op.IID)
 	case string:
 		op.Key = rk
 		this.statement.Select(op.Key)
+	default:
+		op.IID = dataset.ParseInt32(rk)
+		this.statement.Select(op.IID)
 	}
 
 	it := this.IType(op.IID)

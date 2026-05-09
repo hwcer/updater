@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -14,15 +13,12 @@ func overflow(update *Updater, handle Handle, op *operator.Operator) (err error)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
 	}
-	val := dataset.ParseInt64(op.Value)
+	val := op.Value
 	num := handle.Val(op.IID)
 	tot := val + num
 	imax := Config.IMax(op.IID)
 	if imax > 0 && tot > imax {
-		n := tot - imax
-		if n > val {
-			n = val //imax有改动
-		}
+		n := min(tot-imax, val)
 		val -= n
 		op.Value = val
 		if resolve, ok := it.(ITypeResolve); ok {

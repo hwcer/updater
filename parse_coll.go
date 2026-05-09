@@ -118,9 +118,8 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 	for i := int64(1); i <= op.Value; i++ {
 		if item, err = it.New(coll.Updater, cc); err != nil {
 			return
-		} else {
-			items = append(items, item)
 		}
+		items = append(items, item)
 	}
 	op.Result, op.OID, err = collectionHandleInsert(coll, items...)
 	return
@@ -154,8 +153,10 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error
 func collectionHandleInsert(coll *Collection, vs ...any) (r []any, oid string, err error) {
 	for _, v := range vs {
 		doc := dataset.NewDoc(v)
+		if err = coll.dataset.Insert(doc); err != nil {
+			return
+		}
 		r = append(r, v)
-		err = coll.dataset.Insert(doc)
 		if oid == "" {
 			oid = doc.GetString("_id")
 		}

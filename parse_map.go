@@ -39,7 +39,7 @@ func mappingParseAdd(this *Mapping, op *operator.Operator) (err error) {
 	r := this.Val(k)
 	r += op.Value
 	op.Result = r
-	this.model.Dirty(this.Updater, k, r)
+	this.model.Update(this.Updater, k, r)
 	return
 }
 
@@ -51,13 +51,13 @@ func mappingParseSub(this *Mapping, op *operator.Operator) error {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	op.Result = r
-	this.model.Dirty(this.Updater, k, r)
+	this.model.Update(this.Updater, k, r)
 	return nil
 }
 
 func mappingParseSet(this *Mapping, op *operator.Operator) (err error) {
 	k := getMappingOperatorKey(op)
 	op.Type = operator.TypesSet
-	this.model.Dirty(this.Updater, k, op.Result)
+	this.model.Update(this.Updater, k, op.Result)
 	return
 }

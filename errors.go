@@ -87,7 +87,7 @@ func onSaveErrorHandle(updater *Updater, err error) (bool, error) {
 	case SaveErrorTypeProgram:
 		retain = false
 	case SaveErrorTypeDisaster:
-		disaster.Swap(2)
+		disaster.Store(1)
 	}
 	return retain, newErr
 }

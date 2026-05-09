@@ -23,11 +23,6 @@ type collectionModelValueJSName interface {
 	GetValueJSName() string //获取value值的jsname
 }
 
-// collectionUpsert set时如果不存在,是否自动转换为new
-//type collectionUpsert interface {
-//	Upsert(update *Updater, op *operator.Operator) bool
-//}
-
 type Collection struct {
 	statement
 	name      string
@@ -111,6 +106,7 @@ func (this *Collection) reload() error {
 }
 func (this *Collection) release() {
 	this.statement.release()
+	this.remove = nil
 	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil //实时读写
 	} else {

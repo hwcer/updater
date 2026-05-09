@@ -4,37 +4,13 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-var cacheFilterRule = map[int32]any{}
-
 var Config = struct {
 	IMax    func(iid int32) int64                                     //通过道具iid查找上限
 	IType   func(iid int32) int32                                     //通过道具iid查找IType ID
 	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
 	Filter  func(*operator.Operator) bool                             //过滤cache,返回false时不返回给前端
 }{
-	Filter: cacheFilterDefault,
-}
-
-func cacheFilterDefault(o *operator.Operator) bool {
-	rule, ok := cacheFilterRule[o.Mod]
-	if !ok {
-		return true
-	}
-	switch v := rule.(type) {
-	case bool:
-		return v
-	case func(*operator.Operator) bool:
-		return v(o)
-	default:
-		return true
-	}
-}
-
-// SetCacheFilter 设置Updater cache过滤规则
-// rule bool
-// rule func(*operator.Operator) bool  自定义规则
-func SetCacheFilter(it int32, rule any) {
-	cacheFilterRule[it] = rule
+	Filter: func(*operator.Operator) bool { return true },
 }
 
 // IType 一个IType对于一种数据类型·
@@ -64,16 +40,6 @@ type ITypeResolve interface {
 type ITypeListener interface {
 	Listener(u *Updater, op *operator.Operator)
 }
-
-// ModelIType 获取默认IType,仅仅doc模型使用
-//type ModelIType interface {
-//	IType() int32
-//}
-
-// ModelListener 监听数据变化
-//type ModelListener interface {
-//	Listener(u *Updater, op *operator.Operator)
-//}
 
 type Keys map[any]struct{}
 

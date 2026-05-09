@@ -48,12 +48,6 @@ func (stmt *statement) has(key any) bool {
 }
 
 func (stmt *statement) reset() {
-	//if stmt.values == nil {
-	//	stmt.values = map[any]int64{}
-	//}
-	//if stmt.keys == nil && stmt.ram != RAMTypeAlways {
-	//	stmt.keys = Keys{}
-	//}
 }
 func (stmt *statement) reload() {
 	stmt.loader = false

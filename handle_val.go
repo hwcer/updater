@@ -18,7 +18,7 @@ type Values struct {
 	statement
 	name    string //model database name
 	model   valuesModel
-	dirty   dataset.Data //需要写入数据的数据
+	setter  dataset.Data //需要写入数据的数据
 	dataset *dataset.Values
 }
 
@@ -53,19 +53,21 @@ func (this *Values) loading() error {
 }
 
 func (this *Values) save() (err error) {
-	dirty := this.dirty
-	if len(dirty) == 0 {
+	if this.setter == nil {
+		this.setter = dataset.Data{}
+	}
+	this.dataset.Save(this.setter)
+	if len(this.setter) == 0 {
 		return nil
 	}
-	this.dataset.Save(dirty)
-	if err = this.model.Setter(this.statement.Updater, dirty); err == nil {
-		this.dirty = nil
+	if err = this.model.Setter(this.statement.Updater, this.setter); err == nil {
+		this.setter = nil
 	} else {
-		ds, _ := json.Marshal(dirty)
+		ds, _ := json.Marshal(this.setter)
 		logger.Alert("database save error,uid:%s,Collection:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
 		var s bool
 		if s, err = onSaveErrorHandle(this.Updater, err); !s {
-			this.dirty = nil
+			this.setter = nil
 		}
 	}
 	return
@@ -198,10 +200,10 @@ func (this *Values) IType(iid int32) IType {
 }
 
 func (this *Values) Dirty(k int32, v int64) {
-	if this.dirty == nil {
-		this.dirty = dataset.Data{}
+	if this.setter == nil {
+		this.setter = dataset.Data{}
 	}
-	this.dirty[k] = v
+	this.setter[k] = v
 }
 
 func (this *Values) operator(t operator.Types, k any, v int64, r any) {

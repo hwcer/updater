@@ -17,19 +17,19 @@ import (
 	各模式下的有效字段：
 
 	1. ParserTypeValues (数字型键值对) :
-	   - ADD : IID (int32), Value (int32), Result (int32), Mod (int32)
-	   - SUB : IID (int32), Value (int32), Result (int32), Mod (int32)
-	   - SET : IID (int32), Result (int32), Mod (int32)
+	   - ADD : IID (int32), Value (int64), Result (int64), Mod (int32)
+	   - SUB : IID (int32), Value (int64), Result (int64), Mod (int32)
+	   - SET : IID (int32), Result (int64), Mod (int32)
 	   - DEL : IID (int32), Mod (int32)
 
 	2. ParserTypeDocument (文档存储) :
-	   - ADD : Key(string), Value(any), Result(any), Mod (int32)
-	   - SUB : Key(string), Value(any), Result(any), Mod (int32)
+	   - ADD : Key(string), Value(int64), Result(int64), Mod (int32)
+	   - SUB : Key(string), Value(int64), Result(int64), Mod (int32)
 	   - SET : Key(string), Result(any), Mod (int32) {m=10  t = set  k=lv r=10}
 
 	3. ParserTypeCollection (文档集合) :
-	   - ADD : OID(string), IID(int32), Value(int32), Result(int32), Mod (int32)
-	   - SUB : OID(string), IID(int32), Value(int32), Result(int32), Mod (int32)
+	   - ADD : OID(string), IID(int32), Value(int64), Result(int64), Mod (int32) //默认添加数量(val)
+	   - SUB : OID(string), IID(int32), Value(int64), Result(int64), Mod (int32)  //默认扣除数量(val)
 	   - DEL : OID(string), IID(int32), Mod (int32)
 	   - SET : OID(string), IID(int32), Result(map[string]any), Mod (int32)
 	   - NEW : OID(string), IID(int32), Result([]any), Mod (int32)
@@ -91,7 +91,7 @@ func (op *Operator) String() string {
 
 // 兼容旧版
 func (op *Operator) MarshalJSON() ([]byte, error) {
-	data := make(map[string]interface{})
+	data := make(map[string]any)
 	if op.OID != "" {
 		data["o"] = op.OID
 	}
@@ -101,12 +101,9 @@ func (op *Operator) MarshalJSON() ([]byte, error) {
 	if op.Key != "" {
 		data["k"] = op.Key
 	}
-	if op.Mod != 0 {
-		data["m"] = op.Mod
-		data["b"] = op.Mod //兼容旧版
-	}
 
 	data["m"] = op.Mod
+	data["b"] = op.Mod
 	data["t"] = op.Type
 	data["v"] = op.Value
 	data["r"] = op.Result

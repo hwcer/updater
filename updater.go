@@ -158,7 +158,6 @@ func (u *Updater) Release() {
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
 	}
-	return
 }
 
 func (u *Updater) emit(t EventType) {
@@ -208,7 +207,7 @@ func (u *Updater) Del(id any) {
 func (u *Updater) Select(keys ...any) {
 	for _, k := range keys {
 		if w := u.handle(k); w != nil {
-			w.Select(keys...)
+			w.Select(k)
 		}
 	}
 }
