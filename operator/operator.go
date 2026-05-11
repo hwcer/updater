@@ -23,13 +23,13 @@ import (
 	   - DEL : IID (int32), Mod (int32)
 
 	2. ParserTypeDocument (文档存储) :
-	   - ADD : Key(string), Value(int64), Result(int64), Mod (int32)
-	   - SUB : Key(string), Value(int64), Result(int64), Mod (int32)
-	   - SET : Key(string), Result(any), Mod (int32) {m=10  t = set  k=lv r=10}
+	   - ADD : Value(int64), Result(map[string]any), Mod (int32)
+	   - SUB : Value(int64), Result(map[string]any), Mod (int32)
+	   - SET : Result(map[string]any), Mod (int32) {m=10  t = set  r={"lv":10}}
 
 	3. ParserTypeCollection (文档集合) :
-	   - ADD : OID(string), IID(int32), Value(int64), Result(int64), Mod (int32) //默认添加数量(val)
-	   - SUB : OID(string), IID(int32), Value(int64), Result(int64), Mod (int32)  //默认扣除数量(val)
+	   - ADD : OID(string), IID(int32), Value(int64), Result(map[string]any), Mod (int32) //默认添加数量(val)
+	   - SUB : OID(string), IID(int32), Value(int64), Result(map[string]any), Mod (int32)  //默认扣除数量(val)
 	   - DEL : OID(string), IID(int32), Mod (int32)
 	   - SET : OID(string), IID(int32), Result(map[string]any), Mod (int32)
 	   - NEW : OID(string), IID(int32), Result([]any), Mod (int32)
@@ -65,7 +65,7 @@ func New(t Types, v int64, r any) *Operator {
 type Operator struct {
 	OID    string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
 	IID    int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
-	Key    string `json:"k,omitempty"` // 字段名，用于标识文档中的字段
+	Key    string `json:"-"`           // 字段名，内部临时变量，不参与序列化
 	Mod    int32  `json:"m,omitempty"` // 物品类型 model ID，用于标识数据模型
 	Type   Types  `json:"t"`           // 操作类型，如 add、sub、set、del、new 等
 	Value  int64  `json:"v"`           // 增量值，add、sub、new 时有效
@@ -98,10 +98,6 @@ func (op *Operator) MarshalJSON() ([]byte, error) {
 	if op.IID != 0 {
 		data["i"] = op.IID
 	}
-	if op.Key != "" {
-		data["k"] = op.Key
-	}
-
 	data["m"] = op.Mod
 	data["b"] = op.Mod
 	data["t"] = op.Type

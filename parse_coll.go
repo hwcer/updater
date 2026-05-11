@@ -69,8 +69,11 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 	if v, ok := coll.val(op.OID); !ok {
 		return collectionHandleNewItem(coll, op)
 	} else {
-		op.Result = op.Value + v
-		err = coll.dataset.Set(op.OID, coll.GetValJSName(), op.Result)
+		r := op.Value + v
+		field := coll.GetValJSName()
+		if err = coll.dataset.Set(op.OID, field, r); err == nil {
+			op.Result = map[string]any{field: r}
+		}
 	}
 	return
 }
@@ -81,8 +84,12 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) error {
 	if d < op.Value && !coll.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
-	op.Result = r
-	return coll.dataset.Set(op.OID, coll.GetValJSName(), r)
+	field := coll.GetValJSName()
+	if err := coll.dataset.Set(op.OID, field, r); err != nil {
+		return err
+	}
+	op.Result = map[string]any{field: r}
+	return nil
 }
 
 func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {

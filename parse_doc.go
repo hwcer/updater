@@ -31,8 +31,8 @@ func documentParseResolve(this *Document, op *operator.Operator) (err error) {
 func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 	r, _ := this.val(op.Key)
 	r += op.Value
-	op.Result = r
 	this.dataset.Set(op.Key, r)
+	op.Result = map[string]any{op.Key: r}
 	return
 }
 
@@ -42,13 +42,14 @@ func documentParseSub(this *Document, op *operator.Operator) error {
 	if d < op.Value && !this.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
-	op.Result = r
 	this.dataset.Set(op.Key, r)
+	op.Result = map[string]any{op.Key: r}
 	return nil
 }
 
 func documentParseSet(this *Document, op *operator.Operator) (err error) {
 	op.Type = operator.TypesSet
 	this.dataset.Set(op.Key, op.Result)
+	op.Result = map[string]any{op.Key: op.Result}
 	return
 }

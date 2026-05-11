@@ -15,7 +15,7 @@ type mappingModel interface {
 	Reload(u *Updater) error
 }
 
-// Mapping 数字型键值对
+// Mapping 数字型键值对,操作结果直接丢弃（实际修改的是其他模块）
 type Mapping struct {
 	statement
 	name  string //model database name
