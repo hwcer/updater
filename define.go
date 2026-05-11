@@ -10,7 +10,7 @@ var Config = struct {
 	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
 	Filter  func(*operator.Operator) bool                             //过滤cache,返回false时不返回给前端
 }{
-	Filter: func(*operator.Operator) bool { return true },
+	Filter: func(op *operator.Operator) bool { return op.Type.IsValid() },
 }
 
 // IType 一个IType对于一种数据类型·
