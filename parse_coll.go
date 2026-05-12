@@ -23,13 +23,13 @@ func (this *Collection) Parse(op *operator.Operator) (err error) {
 	if err = overflow(this.Updater, this, op); err != nil {
 		return
 	}
-	if f, ok := collectionParseHandle[op.Type]; ok {
+	if f, ok := collectionParseHandle[op.OType]; ok {
 		return f(this, op)
 	}
-	return fmt.Errorf("collection operator type not exist:%v", op.Type.ToString())
+	return fmt.Errorf("collection operator type not exist:%v", op.OType.ToString())
 }
 
-// hmapHandleResolve 仅仅标记不做任何处理
+// collectionHandleResolve 仅仅标记不做任何处理
 func collectionHandleResolve(coll *Collection, op *operator.Operator) error {
 	return nil
 }
@@ -59,6 +59,9 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 }
 
 func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
+	if op.Value <= 0 {
+		return ErrArgsIllegal(op.IID, op.Value)
+	}
 	if it := coll.ITypeCollection(op.IID); it != nil && !it.Stacked(op.IID) {
 		return collectionHandleNewEquip(coll, op) //不可以堆叠装备类道具
 	}
@@ -66,30 +69,36 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrObjectIdEmpty(op.IID)
 	}
-	if v, ok := coll.val(op.OID); !ok {
+	if !coll.dataset.Has(op.OID) {
 		return collectionHandleNewItem(coll, op)
-	} else {
-		r := op.Value + v
-		field := coll.GetValJSName()
-		if err = coll.dataset.Set(op.OID, field, r); err == nil {
-			op.Result = map[string]any{field: r}
-		}
+	}
+	doc := coll.dataset.Val(op.OID)
+	v := doc.GetInt64(op.Field)
+	r := op.Value + v
+	if err = coll.dataset.Set(op.OID, op.Field, r); err == nil {
+		op.Result = map[string]any{op.Field: r}
 	}
 	return
 }
 
-func collectionHandleSub(coll *Collection, op *operator.Operator) error {
-	d, _ := coll.val(op.OID)
+func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
+	if op.Value <= 0 {
+		return ErrArgsIllegal(op.IID, op.Value)
+	}
+	doc := coll.dataset.Val(op.OID)
+	if doc == nil {
+		return ErrItemNotExist(op.OID)
+	}
+	d := doc.GetInt64(op.Field)
 	r := d - op.Value
 	if d < op.Value && !coll.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
-	field := coll.GetValJSName()
-	if err := coll.dataset.Set(op.OID, field, r); err != nil {
-		return err
+	if err = coll.dataset.Set(op.OID, op.Field, r); err == nil {
+		op.Result = map[string]any{op.Field: r}
 	}
-	op.Result = map[string]any{field: r}
-	return nil
+
+	return
 }
 
 func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
@@ -108,7 +117,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 
 // collectionHandleNewEquip
 func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err error) {
-	op.Type = operator.TypesNew
+	op.OType = operator.TypesNew
 	it := coll.ITypeCollection(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
@@ -143,16 +152,16 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error
 		return err
 	}
 
-	if op.Type == operator.TypesSet {
+	if op.OType == operator.TypesSet {
 		doc := dataset.NewDoc(i)
 		doc.Update(op.Result.(dataset.Update))
 		if err = doc.Save(nil); err != nil {
 			return
 		}
-		op.Value = doc.GetInt64(coll.GetValJSName())
+		op.Value = doc.GetInt64(coll.Field())
 	}
 
-	op.Type = operator.TypesNew
+	op.OType = operator.TypesNew
 	op.Result, _, err = collectionHandleInsert(coll, i)
 	return
 }

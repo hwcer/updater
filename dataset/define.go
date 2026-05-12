@@ -20,17 +20,17 @@ type ModelGet interface {
 	Get(string) (v any, ok bool)
 }
 
-func GetVal(i any) int64 {
-	if mv, ok := i.(ModelVal); ok {
-		return mv.GetVal()
-	}
-	if mg, ok := i.(ModelGet); ok {
-		if v, exist := mg.Get(Fields.VAL); exist {
-			return ParseInt64(v)
-		}
-	}
-	return 0
-}
+//func GetVal(i any) int64 {
+//	if mv, ok := i.(ModelVal); ok {
+//		return mv.GetVal()
+//	}
+//	if mg, ok := i.(ModelGet); ok {
+//		if v, exist := mg.Get(Fields.VAL); exist {
+//			return ParseInt64(v)
+//		}
+//	}
+//	return 0
+//}
 
 // ModelSet 内存写入
 //

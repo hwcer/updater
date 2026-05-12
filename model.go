@@ -13,7 +13,7 @@ const (
 	ParserTypeValues     Parser = iota //Map[string]int64模式
 	ParserTypeDocument                 //Document 单文档模式
 	ParserTypeCollection               //Collection 文档集合模式
-	ParserTypeMapping                  //Mapping 映射模式,本身不会存储数据，依赖于其他模块数据，如 日常 依赖 历史数据
+	ParserTypeVirtual                  //Virtual 虚拟模式,本身不会存储数据，依赖于其他模块数据，如 日常 依赖 历史数据
 )
 
 type handleFunc func(updater *Updater, model *Model) Handle
@@ -24,7 +24,7 @@ func init() {
 	NewHandle(ParserTypeValues, NewValues)
 	NewHandle(ParserTypeDocument, NewDocument)
 	NewHandle(ParserTypeCollection, NewCollection)
-	NewHandle(ParserTypeMapping, NewMapping)
+	NewHandle(ParserTypeVirtual, NewVirtual)
 }
 
 type TableOrder interface {
@@ -72,10 +72,15 @@ func Models(f func(int32, any) bool) {
 		}
 	}
 }
-func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
+func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 	if _, ok := handles[parser]; !ok {
 		return fmt.Errorf("parser unknown:%v", parser)
 	}
+
+	if err := verifyModel(parser, model); err != nil {
+		return err
+	}
+
 	mod := &Model{ram: ram, model: model, parser: parser}
 	if t, ok := model.(schema.Tabler); ok {
 		mod.name = t.TableName()
@@ -97,9 +102,9 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 		return modelsRank[i].order > modelsRank[j].order
 	})
 
-	for _, it := range itypes {
-		if parser == ParserTypeCollection {
-			it = it.(ITypeCollection)
+	for _, it := range its {
+		if err := verifyIType(parser, mod.name, it); err != nil {
+			return err
 		}
 		id := it.ID()
 		if _, ok := modelsDict[id]; ok {
@@ -107,6 +112,40 @@ func Register(parser Parser, ram RAMType, model any, itypes ...IType) error {
 		}
 		modelsDict[id] = mod
 		itypesDict[id] = it
+	}
+	return nil
+}
+
+func verifyModel(parser Parser, model any) error {
+	switch parser {
+	case ParserTypeValues:
+		if _, ok := model.(valuesModel); !ok {
+			return fmt.Errorf("model %T does not implement valuesModel", model)
+		}
+	case ParserTypeDocument:
+		if _, ok := model.(documentModel); !ok {
+			return fmt.Errorf("model %T does not implement documentModel", model)
+		}
+	case ParserTypeCollection:
+		if _, ok := model.(collectionModel); !ok {
+			return fmt.Errorf("model %T does not implement collectionModel", model)
+		}
+	case ParserTypeVirtual:
+		if _, ok := model.(virtualModel); !ok {
+			return fmt.Errorf("model %T does not implement virtualModel", model)
+		}
+	}
+	return nil
+}
+
+func verifyIType(parser Parser, name string, it IType) error {
+	switch parser {
+	case ParserTypeCollection:
+		if _, ok := it.(ITypeCollection); !ok {
+			return fmt.Errorf("IType(%d) does not implement ITypeCollection for model %s", it.ID(), name)
+		}
+	default:
+		return nil
 	}
 	return nil
 }

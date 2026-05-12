@@ -4,9 +4,13 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-// 溢出判断
+// overflow 仅对 Add 操作生效。当 val+num 超过 IMax 上限时：
+// 1. 截断 op.Value 到上限可容纳的量
+// 2. 溢出部分交给 ITypeResolve.Resolve 处理（如分解成其他道具）
+// 3. 若无 Resolve 实现则溢出丢弃
+// 4. 截断后 Value==0 时标记为 TypesResolve（不再执行实际 Add）
 func overflow(update *Updater, handle Handle, op *operator.Operator) (err error) {
-	if op.Type != operator.TypesAdd || op.IID == 0 {
+	if op.OType != operator.TypesAdd || op.IID == 0 {
 		return nil
 	}
 	it := handle.IType(op.IID)
@@ -24,16 +28,14 @@ func overflow(update *Updater, handle Handle, op *operator.Operator) (err error)
 		if resolve, ok := it.(ITypeResolve); ok {
 			if err = resolve.Resolve(update, op.IID, n); err != nil {
 				return
-			} else {
-				n = 0
 			}
+			n = 0
 		}
 		if n > 0 {
-			//this.Adapter.overflow[cache.IID] += overflow
 		}
 	}
 	if val == 0 {
-		op.Type = operator.TypesResolve
+		op.OType = operator.TypesResolve
 	}
 	return
 }

@@ -1,10 +1,5 @@
 package operator
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
 /*
 	Operator 操作对象
 
@@ -17,10 +12,10 @@ import (
 	各模式下的有效字段：
 
 	1. ParserTypeValues (数字型键值对) :
-	   - ADD : IID (int32), Value (int64), Result (int64), Mod (int32)
-	   - SUB : IID (int32), Value (int64), Result (int64), Mod (int32)
-	   - SET : IID (int32), Result (int64), Mod (int32)
-	   - DEL : IID (int32), Mod (int32)
+	   - ADD : IID (int32), Value (int64), Result (map[int32]int64)
+	   - SUB : IID (int32), Value (int64), Result (map[int32]int64)
+	   - SET : IID (int32), Result (map[int32]int64)
+	   - DEL : IID (int32)
 
 	2. ParserTypeDocument (文档存储) :
 	   - ADD : Value(int64), Result(map[string]any), Mod (int32)
@@ -56,8 +51,8 @@ import (
 // t: 操作类型
 // v: 增量值，add、sub、new 时有效
 // r: 最终结果
-func New(t Types, v int64, r any) *Operator {
-	return &Operator{Type: t, Value: v, Result: r}
+func New(opt Types, field string, value int64, result any) *Operator {
+	return &Operator{OType: opt, Field: field, Value: value, Result: result}
 }
 
 // Operator 操作对象，用于描述对数据的各种操作
@@ -65,11 +60,11 @@ func New(t Types, v int64, r any) *Operator {
 type Operator struct {
 	OID    string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
 	IID    int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
-	Key    string `json:"-"`           // 字段名，内部临时变量，不参与序列化
-	Mod    int32  `json:"m,omitempty"` // 物品类型 model ID，用于标识数据模型
-	Type   Types  `json:"t"`           // 操作类型，如 add、sub、set、del、new 等
+	OType  Types  `json:"op"`          // 操作类型，如 add、sub、set、del、new 等
+	IType  int32  `json:"it"`          // 物品类型 ID，用于标识数据模型
+	Field  string `json:"-"`           // 字段名，内部临时变量，不参与序列化
 	Value  int64  `json:"v"`           // 增量值，add、sub、new 时有效
-	Result any    `json:"r"`           // 最终结果，根据操作类型和数据模型不同而不同
+	Result any    `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
 }
 
 // Clone 克隆一个操作对象，并可选择性地修改增量值
@@ -80,29 +75,4 @@ func (op *Operator) Clone(v ...int64) *Operator {
 		r.Value = v[0]
 	}
 	return &r
-}
-
-// String 将操作对象转换为字符串
-// 返回操作对象的字符串表示
-func (op *Operator) String() string {
-	return fmt.Sprintf("Operator{OID:%s, IID:%d, Key:%s, Mod:%d, Type:%s, Value:%d, Result:%v}",
-		op.OID, op.IID, op.Key, op.Mod, op.Type.ToString(), op.Value, op.Result)
-}
-
-// 兼容旧版
-func (op *Operator) MarshalJSON() ([]byte, error) {
-	data := make(map[string]any)
-	if op.OID != "" {
-		data["o"] = op.OID
-	}
-	if op.IID != 0 {
-		data["i"] = op.IID
-	}
-	data["m"] = op.Mod
-	data["b"] = op.Mod
-	data["t"] = op.Type
-	data["v"] = op.Value
-	data["r"] = op.Result
-
-	return json.Marshal(data)
 }

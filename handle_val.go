@@ -9,6 +9,7 @@ import (
 )
 
 type valuesModel interface {
+	IType(iid int32) int32
 	Getter(u *Updater, data *dataset.Values, keys []int32) (err error) //获取数据接口
 	Setter(u *Updater, data dataset.Data) error                        //保存数据接口
 }
@@ -26,30 +27,64 @@ func NewValues(u *Updater, m *Model) Handle {
 	r := &Values{}
 	r.name = m.name
 	r.model = m.model.(valuesModel)
-	r.statement = *newStatement(u, m, r.operator, r.Has)
+	r.statement = *newStatement(u, m, r.Has)
 	return r
+}
+
+// ===================== Handle 接口公开方法 =====================
+
+func (this *Values) Get(k any) any {
+	return this.dataset.Val(dataset.ParseInt32(k))
+}
+func (this *Values) Val(k any) (r int64) {
+	return this.dataset.Val(dataset.ParseInt32(k))
+}
+
+func (this *Values) Data() (err error) {
+	if this.Updater.Error != nil {
+		return this.Updater.Error
+	}
+	if len(this.keys) == 0 {
+		return nil
+	}
+	keys := this.keys.ToInt32()
+	if err = this.model.Getter(this.statement.Updater, this.dataset, keys); err == nil {
+		this.statement.date()
+	}
+	return
+}
+
+func (this *Values) IType(iid int32) IType {
+	it := this.model.IType(iid)
+	if it == 0 {
+		return nil
+	}
+	return itypesDict[it]
+}
+
+// Select 指定需要从数据库更新的字段
+func (this *Values) Select(keys ...any) {
+	if this.ram == RAMTypeAlways {
+		return
+	}
+	for _, k := range keys {
+		if iid, ok := dataset.TryParseInt32(k); ok {
+			this.statement.Select(iid)
+		}
+	}
 }
 
 func (this *Values) Parser() Parser {
 	return ParserTypeValues
 }
 
-func (this *Values) reload() error {
-	this.dataset = nil
-	this.statement.reload()
-	return this.loading()
-}
+// ===================== Handle 接口私有方法 =====================
 
-func (this *Values) loading() error {
-	if this.dataset == nil {
-		this.dataset = dataset.NewValues()
-	}
-	if this.statement.loading() {
-		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
-			this.statement.loader = true
-		}
-	}
-	return this.Updater.Error
+func (this *Values) increase(k int32, v int64) {
+	this.operator(operator.TypesAdd, k, v)
+}
+func (this *Values) decrease(k int32, v int64) {
+	this.operator(operator.TypesSub, k, v)
 }
 
 func (this *Values) save() (err error) {
@@ -73,7 +108,6 @@ func (this *Values) save() (err error) {
 	return
 }
 
-// reset 运行时开始时
 func (this *Values) reset() {
 	this.statement.reset()
 	if this.dataset == nil {
@@ -86,7 +120,24 @@ func (this *Values) reset() {
 	}
 }
 
-// release 运行时释放
+func (this *Values) reload() error {
+	this.dataset = nil
+	this.statement.reload()
+	return this.loading()
+}
+
+func (this *Values) loading() error {
+	if this.dataset == nil {
+		this.dataset = dataset.NewValues()
+	}
+	if this.statement.loading() {
+		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
+			this.statement.loader = true
+		}
+	}
+	return this.Updater.Error
+}
+
 func (this *Values) release() {
 	this.statement.release()
 	if this.statement.ram == RAMTypeNone {
@@ -96,67 +147,18 @@ func (this *Values) release() {
 	}
 }
 
-// 关闭时执行,玩家下线
 func (this *Values) destroy() (err error) {
 	return this.save()
 }
-func (this *Values) Len() int {
-	return this.dataset.Len()
-}
-func (this *Values) Has(k any) bool {
-	return this.dataset.Has(dataset.ParseInt32(k))
-}
 
-func (this *Values) Get(k any) (r any) {
-	if id, ok := dataset.TryParseInt32(k); ok {
-		r, _ = this.dataset.Get(id)
-	}
-	return
-}
-func (this *Values) Val(k any) (r int64) {
-	if id, ok := dataset.TryParseInt32(k); ok {
-		r = this.dataset.Val(id)
-	}
-	return
-}
-
-func (this *Values) All() dataset.Data {
-	return this.dataset.All()
-}
-
-// Set 设置
-// Set(k int32,v int64)
-func (this *Values) Set(k any, v ...any) {
-	switch len(v) {
-	case 1:
-		this.operator(operator.TypesSet, k, 0, dataset.ParseInt64(v[0]))
-	default:
-		this.Updater.Error = ErrArgsIllegal(k, v)
-	}
-}
-
-// Select 指定需要从数据库更新的字段
-func (this *Values) Select(keys ...any) {
-	if this.ram == RAMTypeAlways {
+func (this *Values) submit() (err error) {
+	if err = this.Updater.WriteAble(); err != nil {
 		return
 	}
-	for _, k := range keys {
-		if iid, ok := dataset.TryParseInt32(k); ok {
-			this.statement.Select(iid)
-		}
-	}
-}
-
-func (this *Values) Data() (err error) {
-	if this.Updater.Error != nil {
-		return this.Updater.Error
-	}
-	if len(this.keys) == 0 {
-		return nil
-	}
-	keys := this.keys.ToInt32()
-	if err = this.model.Getter(this.statement.Updater, this.dataset, keys); err == nil {
-		this.statement.date()
+	this.statement.submit()
+	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
+		err = nil
 	}
 	return
 }
@@ -174,64 +176,62 @@ func (this *Values) verify() (err error) {
 	return
 }
 
-func (this *Values) submit() (err error) {
-	if err = this.Updater.WriteAble(); err != nil {
-		return
-	}
-	this.statement.submit()
-	if err = this.save(); err != nil && this.ram != RAMTypeNone {
-		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
-		err = nil
-	}
-	return
+// ===================== 类型特有公开方法 =====================
+
+func (this *Values) Add(k int32, v any) *operator.Operator {
+	return this.operator(operator.TypesAdd, k, dataset.ParseInt64(v))
+}
+
+func (this *Values) Sub(k int32, v any) *operator.Operator {
+	return this.operator(operator.TypesSub, k, dataset.ParseInt64(v))
+}
+
+func (this *Values) Set(k int32, v any) *operator.Operator {
+	return this.operator(operator.TypesSet, k, dataset.ParseInt64(v))
+}
+
+func (this *Values) Delete(k int32) *operator.Operator {
+	return this.operator(operator.TypesDel, k, 0)
+}
+
+func (this *Values) Len() int {
+	return this.dataset.Len()
+}
+func (this *Values) Has(k any) bool {
+	return this.dataset.Has(dataset.ParseInt32(k))
+}
+
+func (this *Values) All() dataset.Data {
+	return this.dataset.All()
 }
 
 func (this *Values) Range(f func(int32, int64) bool) {
 	this.dataset.Range(f)
 }
 
-func (this *Values) IType(iid int32) IType {
-	if h, ok := this.model.(modelIType); ok {
-		v := h.IType(iid)
-		return itypesDict[v]
-	} else {
-		return this.Updater.IType(iid)
-	}
+func (this *Values) Insert(op *operator.Operator, before ...bool) {
+	this.statement.insert(op, before...)
 }
 
-func (this *Values) Dirty(k int32, v int64) {
-	if this.setter == nil {
-		this.setter = dataset.Data{}
-	}
-	this.setter[k] = v
-}
+// ===================== 类型特有私有方法 =====================
 
-func (this *Values) operator(t operator.Types, k any, v int64, r any) {
+func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Operator {
 	if err := this.Updater.WriteAble(); err != nil {
-		return
+		return nil
 	}
-	id, ok := dataset.TryParseInt32(k)
-	if !ok {
-		_ = this.Errorf("updater Hash Operator key must int32:%v", k)
-		return
-	}
-	//if t != operator.TypesDel {
-	//	if _, ok = dataset.TryParseInt64(v); !ok {
-	//		_ = this.Errorf("updater Hash Operator val must int64:%v", v)
-	//		return
-	//	}
-	//}
-	op := operator.New(t, v, r)
-	op.IID = id
-	this.statement.Select(id)
+
+	op := operator.New(t, "", v, nil)
+	op.IID = k
+	this.statement.Select(k)
 	it := this.IType(op.IID)
 	if it == nil {
 		logger.Debug("IType not exist:%v", op.IID)
-		return
+		return nil
 	}
-	op.Mod = it.ID()
+	op.IType = it.ID()
 	if listen, ok := it.(ITypeListener); ok {
 		listen.Listener(this.Updater, op)
 	}
-	this.statement.Operator(op)
+	this.statement.insert(op)
+	return op
 }

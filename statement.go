@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -13,27 +12,22 @@ const (
 	RAMTypeAlways                //内存运行
 )
 
-// 通过MODEL直接获取IType
-type modelIType interface {
-	IType(iid int32) int32
-}
-
-type stmHandleOptCreate func(t operator.Types, k any, v int64, r any)
 type stmHandleDataExist func(k any) bool
 
+// statement 所有 Handle 类型的公共基类，管理操作流水线
+// 数据流: operator(待处理) → verify过滤 → cache(已校验) → submit合并到 Updater.dirty(返回前端)
 type statement struct {
 	ram             RAMType
-	keys            Keys
-	cache           []*operator.Operator
-	loader          bool                 //是否已经完成加载
-	Updater         *Updater             //Updater
-	operator        []*operator.Operator //操作
-	handleOptCreate stmHandleOptCreate   //Create
-	handleDataExist stmHandleDataExist   //查询数据集中是否存在
+	keys            Keys                 //待拉取的数据库 key，Data 阶段消费后清空
+	cache           []*operator.Operator //已通过 verify 校验的操作，等待 submit
+	loader          bool                 //是否已完成初始数据加载
+	Updater         *Updater
+	operator        []*operator.Operator //待处理的操作，verify 阶段消费
+	handleDataExist stmHandleDataExist   //查询数据集中是否已存在指定 key
 }
 
-func newStatement(u *Updater, m *Model, opt stmHandleOptCreate, exist stmHandleDataExist) *statement {
-	return &statement{ram: m.ram, handleOptCreate: opt, handleDataExist: exist, Updater: u}
+func newStatement(u *Updater, m *Model, exist stmHandleDataExist) *statement {
+	return &statement{ram: m.ram, handleDataExist: exist, Updater: u}
 }
 
 // Has 查询key(DBName)是否已经初始化
@@ -49,13 +43,14 @@ func (stmt *statement) has(key any) bool {
 
 func (stmt *statement) reset() {
 }
+
 func (stmt *statement) reload() {
 	stmt.loader = false
 }
 
 // 是否需要执行加载
-func (this *statement) loading() bool {
-	if this.Updater.init && !this.loader && (this.ram == RAMTypeMaybe || this.ram == RAMTypeAlways) {
+func (stmt *statement) loading() bool {
+	if stmt.Updater.init && !stmt.loader && (stmt.ram == RAMTypeMaybe || stmt.ram == RAMTypeAlways) {
 		return true
 	}
 	return false
@@ -73,7 +68,7 @@ func (stmt *statement) date() {
 	stmt.keys = nil
 }
 
-// verify 执行verify后操作
+// verify 将 operator 通过 Config.Filter 过滤后转入 cache
 func (stmt *statement) verify() {
 	if len(stmt.operator) == 0 {
 		return
@@ -82,11 +77,24 @@ func (stmt *statement) verify() {
 		stmt.cache = make([]*operator.Operator, 0, len(stmt.operator))
 	}
 	for _, v := range stmt.operator {
+		stmt.result(v)
 		if Config.Filter(v) {
 			stmt.cache = append(stmt.cache, v)
 		}
 	}
 	stmt.operator = nil
+}
+
+func (stmt *statement) result(opt *operator.Operator) {
+	it := itypesDict[opt.IType]
+	if it == nil {
+		return
+	}
+	itr, ok := it.(ITypeResult)
+	if !ok {
+		return
+	}
+	opt.Result = itr.Result(stmt.Updater, opt)
 }
 
 func (stmt *statement) submit() {
@@ -96,10 +104,20 @@ func (stmt *statement) submit() {
 	}
 }
 
-func (this *statement) Loader() bool {
-	return this.loader
+func (stmt *statement) insert(c *operator.Operator, before ...bool) {
+	if len(before) > 0 && before[0] {
+		stmt.operator = append([]*operator.Operator{c}, stmt.operator...)
+	} else {
+		stmt.operator = append(stmt.operator, c)
+	}
+	stmt.Updater.operated = true
 }
 
+func (stmt *statement) Loader() bool {
+	return stmt.loader
+}
+
+// Select 标记 key 待拉取，触发 Updater.changed 使 Data 阶段执行
 func (stmt *statement) Select(key any) {
 	if stmt.has(key) {
 		return
@@ -113,45 +131,4 @@ func (stmt *statement) Select(key any) {
 
 func (stmt *statement) Errorf(format any, args ...any) error {
 	return stmt.Updater.Errorf(format, args...)
-}
-
-// Operator 直接调用有问题
-func (stmt *statement) Operator(c *operator.Operator, before ...bool) {
-	if len(before) > 0 && before[0] {
-		stmt.operator = append([]*operator.Operator{c}, stmt.operator...)
-	} else {
-		stmt.operator = append(stmt.operator, c)
-	}
-	stmt.Updater.operated = true
-}
-
-func (stmt *statement) Add(k any, v any) {
-	n := dataset.ParseInt64(v)
-	if n <= 0 {
-		return
-	}
-	stmt.handleOptCreate(operator.TypesAdd, k, n, nil)
-}
-
-func (stmt *statement) Sub(k any, v any) {
-	n := dataset.ParseInt64(v)
-	if n == 0 {
-		return
-	} else if n < 0 {
-		_ = stmt.Updater.Errorf("sub items error:%d", n)
-		return
-	}
-	stmt.handleOptCreate(operator.TypesSub, k, n, nil)
-}
-
-//func (stmt *statement) Max(k any, v int64) {
-//	stmt.handleOptCreate(operator.TypesMax, k, v, nil)
-//}
-//
-//func (stmt *statement) Min(k any, v int64) {
-//	stmt.handleOptCreate(operator.TypesMin, k, v, nil)
-//}
-
-func (stmt *statement) Del(k any) {
-	stmt.handleOptCreate(operator.TypesDel, k, 0, nil)
 }

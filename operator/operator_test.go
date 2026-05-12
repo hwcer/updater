@@ -7,12 +7,10 @@ import (
 
 func TestNew(t *testing.T) {
 	op := &Operator{
-		OID:  "sss",
-		IID:  1001,
-		Type: TypesAdd,
+		OID:   "sss",
+		IID:   1001,
+		OType: TypesAdd,
 	}
 
-	//op.String()
-	//b, _ := json.Marshal(op)
-	fmt.Printf("%v", op.String())
+	fmt.Printf("%+v", op)
 }

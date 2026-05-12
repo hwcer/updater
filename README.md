@@ -6,12 +6,12 @@
 > 困惑、血压升高以及不可逆的颈椎损伤。
 > 如您执意阅读，请确保身边备有降压药和颈托。
 
-游戏玩家数据管理框架。位于数据库与业务逻辑之间，负责内存缓存、脏数据追踪、溢出处理、批量持久化。支持四种数据模型，统一 Add/Sub/Set/Del 接口。
+游戏玩家数据管理框架。位于数据库与业务逻辑之间，负责内存缓存、脏数据追踪、溢出处理、批量持久化。支持四种数据模型，统一 Add/Sub/Get/Val/Set/Del 接口。
 
 ## 生命周期
 
 ```
-Loading → Reset → 业务操作(Add/Sub/Set/Del) → Data(按需拉DB) → Verify(校验+溢出) → Submit(落库) → Release
+Loading → Reset → 业务操作(Add/Sub/Set/Del/Get/Val) → Data(按需拉DB) → Verify(校验+溢出) → Submit(落库) → Release
 ```
 
 ```go
@@ -19,8 +19,10 @@ u := updater.New(player)
 u.Loading(true)            // 加载全部数据
 
 u.Reset()                  // 每次请求开始
-u.Add(1001, int64(100))    // 加 100 金币
-u.Sub(1002, int64(5))      // 扣 5 钻石
+u.Add(1001, 100)           // 加 100 金币（num 支持 int32/int64）
+u.Sub(1002, 5)             // 扣 5 钻石
+u.Val(1001)                // 获取金币数值
+u.Get(1001)                // 获取原始数据
 ops, err := u.Submit()     // 校验+落库，返回变更列表
 u.Release()                // 请求结束，清理临时状态
 
@@ -34,7 +36,7 @@ u.Destroy()                // 玩家下线，强制刷盘
 | **Values** | 纯数值道具（金币、钻石） | `map[int32]int64` | Add/Sub/Set/Del |
 | **Document** | 单文档（玩家信息） | struct 字段级读写 | Add/Sub/Set |
 | **Collection** | 文档集合（背包物品） | `map[oid]*Document` | Add/Sub/Set/Del/New |
-| **Mapping** | 映射模式（日常任务） | 依赖其他模块数据 | Add/Sub/Set |
+| **Virtual** | 虚拟层（日常任务） | 委托其他模块数据 | Add/Sub/Set |
 
 ## 注册模型
 
@@ -92,46 +94,53 @@ u.On(updater.EventTypeVerify, func(u *updater.Updater) bool {
 | `EventTypeSuccess` | 全部操作成功后 |
 | `EventTypeRelease` | Release 释放前 |
 
-## 本轮修复
+## Virtual 前端转发
 
-| 修复 | 说明 |
-|------|------|
-| getMappingOperatorKey 逻辑反转 | Key 为空时错误返回空字符串而非 IID，导致 Mapping 的 Add/Sub/Set 全部读写到错误的 key |
-| Collection.Release 循环内赋 nil | `coll.dirty = nil` 从循环体内移到循环外 |
-| debug.Stack() 热路径移除 | Reset() 中移除 debug.Stack()，避免闭包逃逸 |
-| 死代码清理 | 移除注释代码块、简化 range 表达式 |
-| 依赖升级 | cosgo v1.8.0, mongo-driver v2.5.1 |
+Virtual 默认不产生 Operator 记录。开启 `Forward(true)` 后，Add/Sub/Set 操作会生成 Operator 并在 Submit 时返回给前端，但 Virtual 本身不做任何数据持久化。
+
+```go
+v := u.Virtual("daily")
+v.Forward(true)
+v.Add(2001, 1)  // 委托给其他模块处理，同时生成 Operator 返回前端
+```
+
+## 依赖
+
+| 包 | 版本 |
+|----|------|
+| `github.com/hwcer/cosgo` | v1.8.1 |
+| `github.com/hwcer/logger` | v0.2.8 |
+| `go.mongodb.org/mongo-driver/v2` | v2.6.0 |
 
 ## 目录结构
 
 ```
 updater/
-├── updater.go       Updater 核心生命周期（Reset/Submit/Release/Destroy）
-├── define.go        IType 接口 + Config 全局配置 + Keys 工具类
-├── model.go         模型注册（Register）+ Parser 类型
-├── statement.go     语句基类（Select/Operator/Add/Sub/Del）
-├── handle.go        Handle 接口定义
-├── handle_val.go    Values 实现
-├── handle_doc.go    Document 实现
-├── handle_coll.go   Collection 实现
-├── handle_map.go    Mapping 实现
-├── parse_val.go     Values 操作解析（Add/Sub/Set/Del）
-├── parse_doc.go     Document 操作解析
-├── parse_coll.go    Collection 操作解析（含 New/叠加/不叠加）
-├── parse_map.go     Mapping 操作解析
-├── funcs.go         溢出处理（overflow → Resolve）
-├── errors.go        错误定义 + 灾难熔断机制
-├── events.go        事件系统（Listener/Middleware）
-├── process.go       Process 注册表
+├── updater.go          Updater 核心生命周期（Reset/Submit/Release/Destroy）
+├── define.go           IType 接口 + Config 全局配置 + Keys 工具类
+├── model.go            模型注册（Register）+ Parser 类型
+├── statement.go        语句基类（Select/insert/verify/submit）
+├── handle.go           Handle 接口定义
+├── handle_val.go       Values 实现
+├── handle_doc.go       Document 实现
+├── handle_coll.go      Collection 实现
+├── handle_virtual.go   Virtual 实现（委托模式 + 可选前端转发）
+├── parse_val.go        Values 操作解析（Add/Sub/Set/Del）
+├── parse_doc.go        Document 操作解析
+├── parse_coll.go       Collection 操作解析（含 New/叠加/不叠加）
+├── funcs.go            溢出处理（overflow → Resolve）
+├── errors.go           错误定义 + 灾难熔断机制
+├── events.go           事件系统（Listener/Middleware）
+├── process.go          Process 注册表
 ├── dataset/
-│   ├── document.go    Document 数据封装（Get/Set/Save/Clone）
-│   ├── collection.go  Collection 数据集（Insert/Update/Delete/BulkWrite）
-│   ├── dirty.go       脏数据追踪（Insert/Update/Delete 三态标记）
-│   ├── values.go      Values 数据封装（map[int32]int64）
-│   ├── update.go      Update map 封装
-│   ├── define.go      Model/BulkWrite 接口定义
-│   └── utils.go       类型转换工具
+│   ├── document.go     Document 数据封装（Get/Set/Save/Clone）
+│   ├── collection.go   Collection 数据集（Insert/Update/Delete/BulkWrite）
+│   ├── dirty.go        脏数据追踪（Insert/Update/Delete 三态标记）
+│   ├── values.go       Values 数据封装（map[int32]int64）
+│   ├── update.go       Update map 封装
+│   ├── define.go       Model/BulkWrite 接口定义
+│   └── utils.go        类型转换工具
 └── operator/
-    ├── operator.go    Operator 结构体 + MarshalJSON
-    └── types.go       操作类型枚举（Add/Sub/Set/Del/New/Drop/Resolve）
+    ├── operator.go     Operator 结构体（Opt/IID/OID/IType/Value/Result）
+    └── types.go        操作类型枚举（Add/Sub/Set/Del/New/Drop/Resolve）
 ```

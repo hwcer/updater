@@ -1,8 +1,8 @@
 package updater
 
 import (
-	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/hwcer/logger"
@@ -121,7 +121,6 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 
 // Reset 重置,每次请求开始时调用
 func (u *Updater) Reset(t ...time.Time) {
-	//u.ReadOnly = readOnly
 	if len(t) > 0 {
 		u.now = t[0]
 	} else {
@@ -153,7 +152,6 @@ func (u *Updater) Release() {
 	u.operated = false
 	u.Error = nil
 	u.CreditAllowed = false
-	//u.ReadOnly = false
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
@@ -164,46 +162,37 @@ func (u *Updater) emit(t EventType) {
 	u.Events.emit(u, t)
 }
 
-func (u *Updater) Get(id any) (r any) {
-	if w := u.handle(id); w != nil {
-		r = w.Get(id)
-	}
-	return
-}
-
-func (u *Updater) Set(id any, v ...any) {
-	if w := u.handle(id); w != nil {
-		w.Set(id, v...)
-	}
-}
-
-// Add 添加道具,num int32|int64
+// Add 添加道具,num 支持 int32|int64
 func (u *Updater) Add(iid int32, num any) {
 	if w := u.handle(iid); w != nil {
-		w.Add(iid, num)
+		w.increase(iid, dataset.ParseInt64(num))
 	}
 }
 
-// Sub 扣除道具,num int32|int64
+// Sub 扣除道具,num 支持 int32|int64
 func (u *Updater) Sub(iid int32, num any) {
 	if w := u.handle(iid); w != nil {
-		w.Sub(iid, num)
+		w.decrease(iid, dataset.ParseInt64(num))
 	}
 }
 
-func (u *Updater) Val(id any) (r int64) {
-	if w := u.handle(id); w != nil {
-		r = w.Val(id)
+// Get 通过 iid 获取原始数据，返回类型取决于 Handle 类型
+func (u *Updater) Get(iid int32) (r any) {
+	if w := u.handle(iid); w != nil {
+		r = w.Get(iid)
 	}
 	return
 }
 
-func (u *Updater) Del(id any) {
-	if w := u.handle(id); w != nil {
-		w.Del(id)
+// Val 通过 iid 获取数值
+func (u *Updater) Val(iid int32) (r int64) {
+	if w := u.handle(iid); w != nil {
+		r = w.Val(iid)
 	}
+	return
 }
 
+// Select 预拉取指定 key 的数据，非内存模式时在 Data 阶段从数据库加载
 func (u *Updater) Select(keys ...any) {
 	for _, k := range keys {
 		if w := u.handle(k); w != nil {
@@ -260,7 +249,8 @@ func (u *Updater) verify(hs []Handle) (err error) {
 	return
 }
 
-// Submit 按照MODEL的倒序执行
+// Submit 收敛循环执行 data→verify→submit 直到无新操作产生，最多100轮防止死循环
+// 返回本次请求所有操作的 Operator 列表，用于同步给前端
 func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if err = u.WriteAble(); err != nil {
 		return nil, err
@@ -311,7 +301,7 @@ func (u *Updater) ParseId(key any) (iid int32, err error) {
 	return
 }
 
-// Handle 根据 name(string) || itype(int32)
+// Handle 根据 name(string) || itype(int32) 查找，支持命名整型（如 protobuf 枚举）
 func (u *Updater) Handle(name any) Handle {
 	switch k := name.(type) {
 	case string:
@@ -322,11 +312,15 @@ func (u *Updater) Handle(name any) Handle {
 		return u.handleByIType(k)
 	case int64:
 		return u.handleByIType(int32(k))
+	default:
+		if rv := reflect.ValueOf(name); rv.CanInt() {
+			return u.handleByIType(int32(rv.Int()))
+		}
+		return nil
 	}
-	return nil
 }
 
-// Handle 根据iid,oid获取模型不支持Hash,Document的字段查询
+// handle 通过 iid 或 oid 路由到对应的 Handle 实例
 func (u *Updater) handle(k any) Handle {
 	iid, err := u.ParseId(k)
 	if err != nil {
@@ -358,38 +352,9 @@ func (u *Updater) Handles() (r []Handle) {
 	return
 }
 
-// Create 创建一批新对象,仅仅适用于coll类型，不触发任何事件
-func (u *Updater) Create(data dataset.Model) (err error) {
-	op := &operator.Operator{OID: data.GetOID(), IID: data.GetIID(), Type: operator.TypesNew, Value: 1, Result: []any{data}}
-	return u.Operator(op)
-}
-
-// Operator 直接插入，不触发任何事件
-func (u *Updater) Operator(op *operator.Operator, before ...bool) error {
-	iid := op.IID
-	if iid <= 0 {
-		return errors.New("operator iid empty")
-	}
-	if op.Mod == 0 {
-		op.Mod = Config.IType(iid)
-	}
-	handle := u.handle(iid)
-	if handle == nil {
-		return errors.New("handle unknown")
-	}
-	if op.Type == operator.TypesSet && handle.Parser() == ParserTypeCollection {
-		if _, ok := op.Result.(dataset.Update); !ok {
-			return errors.New("operator set result type must be dataset.Update")
-		}
-	}
-	handle.Operator(op, before...)
-	return nil
-}
-
 // Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
 // 仅缓存模式下需要且必要执行
 func (u *Updater) Destroy() (err error) {
-	//u.emit(PlugsTypeDestroy)
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].destroy(); err != nil {
@@ -422,12 +387,12 @@ func (u *Updater) Values(name any) *Values {
 	r, _ := i.(*Values)
 	return r
 }
-func (u *Updater) Mapping(name any) *Mapping {
+func (u *Updater) Virtual(name any) *Virtual {
 	i := u.Handle(name)
 	if i == nil {
 		return nil
 	}
-	r, _ := i.(*Mapping)
+	r, _ := i.(*Virtual)
 	return r
 }
 func (u *Updater) Document(name any) *Document {

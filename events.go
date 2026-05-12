@@ -36,9 +36,8 @@ type Middleware interface {
 }
 
 type Events struct {
-	events map[EventType][]Listener //过程事件
-	//emitter     map[EventType][]Listener //常驻事件
-	middlewares map[string]Middleware //中间件
+	events      map[EventType][]Listener
+	middlewares map[string]Middleware
 }
 
 // On 监听事件,必须在事件回调返回false时删除事件

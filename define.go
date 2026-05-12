@@ -10,7 +10,7 @@ var Config = struct {
 	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
 	Filter  func(*operator.Operator) bool                             //过滤cache,返回false时不返回给前端
 }{
-	Filter: func(op *operator.Operator) bool { return op.Type.IsValid() },
+	Filter: func(op *operator.Operator) bool { return op.OType.IsValid() },
 }
 
 // IType 一个IType对于一种数据类型·
@@ -18,13 +18,13 @@ var Config = struct {
 type IType interface {
 	ID() int32 //IType 唯一标志
 }
-type ITypeObjectId interface {
-	ObjectId(u *Updater, iid int32) (oid string) //使用IID创建OID,仅限于可以叠加道具,不可以叠加道具返回空,使用NEW来创建
+type ITypeOID interface {
+	GetOID(u *Updater, iid int32) (oid string) //使用IID创建OID,仅限于可以叠加道具,不可以叠加道具返回空,使用NEW来创建
 }
 
 type ITypeCollection interface {
 	IType
-	ITypeObjectId
+	ITypeOID
 	New(u *Updater, op *operator.Operator) (item any, err error) //根据Operator信息生成新对象
 	Stacked(int32) bool                                          //是否可以叠加
 }
@@ -37,6 +37,10 @@ type ITypeResolve interface {
 	Resolve(u *Updater, iid int32, val int64) error
 }
 
+// ITypeResult 设置返回结果
+type ITypeResult interface {
+	Result(u *Updater, opt *operator.Operator) any
+}
 type ITypeListener interface {
 	Listener(u *Updater, op *operator.Operator)
 }
