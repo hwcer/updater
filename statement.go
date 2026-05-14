@@ -50,10 +50,7 @@ func (stmt *statement) reload() {
 
 // 是否需要执行加载
 func (stmt *statement) loading() bool {
-	if stmt.Updater.init && !stmt.loader && (stmt.ram == RAMTypeMaybe || stmt.ram == RAMTypeAlways) {
-		return true
-	}
-	return false
+	return stmt.Updater.init && !stmt.loader && (stmt.ram == RAMTypeMaybe || stmt.ram == RAMTypeAlways)
 }
 
 // 每一个执行时都会执行 release

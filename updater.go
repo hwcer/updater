@@ -30,9 +30,8 @@ type Updater struct {
 	CreditAllowed bool //是否扣钱时是否允许负债，每次设置仅仅一次性有效
 }
 
-func New(p Player) (u *Updater) {
-	u = &Updater{player: p, Process: Process{}}
-	return u
+func New(p Player) *Updater {
+	return &Updater{player: p, Process: Process{}}
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
@@ -147,6 +146,9 @@ func (u *Updater) Reset(t ...time.Time) {
 func (u *Updater) Release() {
 	u.emit(EventTypeRelease)
 	u.last = u.now.Unix()
+	for _, op := range u.dirty {
+		op.Release()
+	}
 	u.dirty = nil
 	u.changed = false
 	u.operated = false
@@ -362,8 +364,11 @@ func (u *Updater) Destroy() (err error) {
 		}
 	}
 	u.player = nil
-	u.handles = nil // 清理handles，释放对所有Handle的引用
-	u.dirty = nil   // 清理dirty，释放对所有Operator的引用
+	for _, op := range u.dirty {
+		op.Release()
+	}
+	u.handles = nil
+	u.dirty = nil
 	return
 }
 

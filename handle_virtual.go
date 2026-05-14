@@ -124,21 +124,27 @@ func (this *Virtual) verify() (err error) {
 func (this *Virtual) Add(k any, v any) {
 	value := dataset.ParseInt64(v)
 	this.model.Add(this.Updater, k, value)
-	r := map[any]any{k: value}
-	this.operator(operator.TypesAdd, k, value, r)
+	if this.forward {
+		r := map[any]any{k: value}
+		this.operator(operator.TypesAdd, k, value, r)
+	}
 }
 
 func (this *Virtual) Sub(k any, v any) {
 	value := dataset.ParseInt64(v)
 	this.model.Sub(this.Updater, k, value)
-	r := map[any]any{k: value}
-	this.operator(operator.TypesSub, k, value, r)
+	if this.forward {
+		r := map[any]any{k: value}
+		this.operator(operator.TypesSub, k, value, r)
+	}
 }
 
 func (this *Virtual) Set(k any, v any) {
 	this.model.Set(this.Updater, k, v)
-	r := map[any]any{k: v}
-	this.operator(operator.TypesSet, k, 0, r)
+	if this.forward {
+		r := map[any]any{k: v}
+		this.operator(operator.TypesSet, k, 0, r)
+	}
 }
 
 func (this *Virtual) Has(k any) bool {
@@ -154,9 +160,6 @@ func (this *Virtual) Forward(v bool) {
 // operator 当 forward 开启时，将操作记录到 statement 用于返回给前端
 // key 为 string 时存入 Field，为 int32 时存入 IID
 func (this *Virtual) operator(t operator.Types, k any, v int64, r any) {
-	if !this.forward {
-		return
-	}
 	op := operator.New(t, "", v, r)
 	switch s := k.(type) {
 	case string:

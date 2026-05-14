@@ -34,8 +34,7 @@ func hashParseAdd(this *Values, op *operator.Operator) (err error) {
 	if op.Value <= 0 {
 		return ErrArgsIllegal(op.IID, op.Value)
 	}
-	r := this.Val(op.IID)
-	r += op.Value
+	r := this.dataset.Val(op.IID) + op.Value
 	op.Result = map[int32]int64{op.IID: r}
 	this.dataset.Set(op.IID, r)
 	return
@@ -45,7 +44,7 @@ func hashParseSub(this *Values, op *operator.Operator) error {
 	if op.Value <= 0 {
 		return ErrArgsIllegal(op.IID, op.Value)
 	}
-	d := this.Val(op.IID)
+	d := this.dataset.Val(op.IID)
 	r := d - op.Value
 	if d < op.Value && !this.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)

@@ -54,6 +54,8 @@ func (at Types) ToString() string {
 		return "resolve"
 	case TypesDrop:
 		return "discard"
+	case TypesOverflow:
+		return "overflow"
 	default:
 		return "unknown"
 	}

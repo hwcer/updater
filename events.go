@@ -115,7 +115,7 @@ func (e *Events) triggerGlobal(u *Updater, t EventType) {
 }
 func (e *Events) triggerEvents(u *Updater, t EventType) {
 	if events := e.events[t]; len(events) > 0 {
-		var es []Listener
+		es := make([]Listener, 0, len(events))
 		for _, h := range events {
 			if h(u) {
 				es = append(es, h)

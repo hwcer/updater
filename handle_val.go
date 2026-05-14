@@ -93,6 +93,7 @@ func (this *Values) save() (err error) {
 	}
 	this.dataset.Save(this.setter)
 	if len(this.setter) == 0 {
+		this.setter = nil
 		return nil
 	}
 	if err = this.model.Setter(this.statement.Updater, this.setter); err == nil {

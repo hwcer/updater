@@ -1,58 +1,57 @@
 package operator
 
+import "sync"
+
 /*
-	Operator 操作对象
+Operator 操作对象
 
-	数据结构以及有效字段说明
+数据结构以及有效字段说明
 
-	公共字段，所有模式下都存在，且意义相同：
-	- Mod: 物品类型 model ID，用于标识数据模型
-	- Type: 操作类型
+公共字段，所有模式下都存在，且意义相同：
+  - IType: 物品类型 ID，用于标识数据模型
+  - OType: 操作类型
 
-	各模式下的有效字段：
+各模式下的有效字段：
 
-	1. ParserTypeValues (数字型键值对) :
-	   - ADD : IID (int32), Value (int64), Result (map[int32]int64)
-	   - SUB : IID (int32), Value (int64), Result (map[int32]int64)
-	   - SET : IID (int32), Result (map[int32]int64)
-	   - DEL : IID (int32)
+ 1. ParserTypeValues (数字型键值对) :
+    - ADD : IID(int32), Value(int64), Result(map[int32]int64)
+    - SUB : IID(int32), Value(int64), Result(map[int32]int64)
+    - SET : IID(int32), Value(int64), Result(map[int32]int64)
+    - DEL : IID(int32), Result(map[int32]int64)
 
-	2. ParserTypeDocument (文档存储) :
-	   - ADD : Value(int64), Result(map[string]any), Mod (int32)
-	   - SUB : Value(int64), Result(map[string]any), Mod (int32)
-	   - SET : Result(map[string]any), Mod (int32) {m=10  t = set  r={"lv":10}}
+ 2. ParserTypeDocument (文档存储) :
+    - ADD : Field(string), Value(int64), Result(map[string]any), IType(int32)
+    - SUB : Field(string), Value(int64), Result(map[string]any), IType(int32)
+    - SET : Field(string), Result(map[string]any), IType(int32)
 
-	3. ParserTypeCollection (文档集合) :
-	   - ADD : OID(string), IID(int32), Value(int64), Result(map[string]any), Mod (int32) //默认添加数量(val)
-	   - SUB : OID(string), IID(int32), Value(int64), Result(map[string]any), Mod (int32)  //默认扣除数量(val)
-	   - DEL : OID(string), IID(int32), Mod (int32)
-	   - SET : OID(string), IID(int32), Result(map[string]any), Mod (int32)
-	   - NEW : OID(string), IID(int32), Result([]any), Mod (int32)
+ 3. ParserTypeCollection (文档集合) :
+    - ADD : OID(string), IID(int32), Value(int64), Result(map[string]any), IType(int32)
+    - SUB : OID(string), IID(int32), Value(int64), Result(map[string]any), IType(int32)
+    - DEL : OID(string), IID(int32), IType(int32)
+    - SET : OID(string), IID(int32), Result(map[string]any), IType(int32)
+    - NEW : OID(string), IID(int32), Result([]any), IType(int32)
 
-	使用示例：
-	1. 创建一个添加道具的操作
-	   op := operator.New(operator.TypesAdd, 10, 100)
-	   op.IID = 1001
-	   op.Mod = 1
+使用示例：
 
-	2. 创建一个设置文档字段的操作
-	   op := operator.New(operator.TypesSet, 0, 20)
-	   op.Key = "lv"
-	   op.Mod = 2
-
-	3. 创建一个删除集合元素的操作
-	   op := operator.New(operator.TypesDel, 0, nil)
-	   op.OID = "item_123"
-	   op.IID = 2001
-	   op.Mod = 3
+	op := operator.New(operator.TypesAdd, "", 100, nil)
+	op.IID = 1001
 */
 
-// New 创建一个新的操作对象
+var operatorPool = sync.Pool{
+	New: func() any { return &Operator{} },
+}
+
+// New 创建一个新的操作对象，从池中获取以降低 GC 压力
 // t: 操作类型
 // v: 增量值，add、sub、new 时有效
 // r: 最终结果
 func New(opt Types, field string, value int64, result any) *Operator {
-	return &Operator{OType: opt, Field: field, Value: value, Result: result}
+	op := operatorPool.Get().(*Operator)
+	op.OType = opt
+	op.Field = field
+	op.Value = value
+	op.Result = result
+	return op
 }
 
 // Operator 操作对象，用于描述对数据的各种操作
@@ -70,9 +69,25 @@ type Operator struct {
 // Clone 克隆一个操作对象，并可选择性地修改增量值
 // v: 可选参数，用于修改克隆对象的增量值
 func (op *Operator) Clone(v ...int64) *Operator {
-	r := *op
+	r := operatorPool.Get().(*Operator)
+	*r = *op
 	if len(v) > 0 {
 		r.Value = v[0]
 	}
-	return &r
+	return r
+}
+
+// Release 将操作对象归还到池中复用。处理完 Submit() 返回的 Operator 后调用。
+func (op *Operator) Release() {
+	if op == nil {
+		return
+	}
+	op.OID = ""
+	op.IID = 0
+	op.OType = 0
+	op.IType = 0
+	op.Field = ""
+	op.Value = 0
+	op.Result = nil
+	operatorPool.Put(op)
 }

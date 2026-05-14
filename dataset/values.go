@@ -85,7 +85,6 @@ func (val *Values) Save(dirty Data) {
 		val.data[k] = v
 	}
 	val.dirty = nil
-	return
 }
 
 func (val *Values) Release() {
@@ -105,10 +104,6 @@ func (val *Values) Reset(data Data) {
 	}
 	val.data = data
 }
-
-//func (val *Values) Release() {
-//	val.dirty = nil
-//}
 
 // Receive 接收器，接收外部对象放入列表，不进行任何操作，一般用于初始化
 func (val *Values) Receive(k int32, v int64) {

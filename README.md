@@ -33,7 +33,7 @@ u.Destroy()                // 玩家下线，强制刷盘
 
 | 模型 | 适用场景 | 数据结构 | 操作 |
 |------|----------|----------|------|
-| **Values** | 纯数值道具（金币、钻石） | `map[int32]int64` | Add/Sub/Set/Del |
+| **Values** | 纯数值道具（金币、钻石） | `map[int32]int64` | Add/Sub/Set/Del/Resolve/Overflow |
 | **Document** | 单文档（玩家信息） | struct 字段级读写 | Add/Sub/Set |
 | **Collection** | 文档集合（背包物品） | `map[oid]*Document` | Add/Sub/Set/Del/New |
 | **Virtual** | 虚拟层（日常任务） | 委托其他模块数据 | Add/Sub/Set |
@@ -62,7 +62,7 @@ updater.Register(updater.ParserTypeCollection, updater.RAMTypeAlways, &BagModel{
 Add(金币, 1000) → 当前 9500, 上限 10000
   → 实际增加 500, 溢出 500
   → 如果 IType 实现了 ITypeResolve → Resolve(溢出部分)
-  → 否则丢弃
+  → 否则生成 TypesOverflow 操作（可用于邮件等替代发放）
 ```
 
 ## 灾难熔断
@@ -73,6 +73,7 @@ Add(金币, 1000) → 当前 9500, 上限 10000
 |------|------|
 | `SaveErrorTypeNone` | 忽略，等待下次同步 |
 | `SaveErrorTypeNetwork` | 启动数据库监控协程，30s 未恢复升级为灾难 |
+| `SaveErrorTypeProgram` | 程序级错误，立即标记灾难 |
 | `SaveErrorTypeDisaster` | 拒绝所有写操作，直到 DB 恢复 |
 
 ## 事件系统
@@ -141,6 +142,6 @@ updater/
 │   ├── define.go       Model/BulkWrite 接口定义
 │   └── utils.go        类型转换工具
 └── operator/
-    ├── operator.go     Operator 结构体（Opt/IID/OID/IType/Value/Result）
-    └── types.go        操作类型枚举（Add/Sub/Set/Del/New/Drop/Resolve）
+    ├── operator.go     Operator 结构体（OType/IID/OID/IType/Value/Result）
+    └── types.go        操作类型枚举（Add/Sub/Set/Del/New/Drop/Resolve/Overflow）
 ```

@@ -17,24 +17,6 @@ func NewDoc(i any) *Document {
 	return &Document{data: i}
 }
 
-//type DocumentDirty map[string]any
-//
-//func (dirty DocumentDirty) Has(k string) bool {
-//	_, ok := dirty[k]
-//	return ok
-//}
-//func (dirty DocumentDirty) Get(k string) (any, bool) {
-//	r, ok := dirty[k]
-//	return r, ok
-//}
-//func (dirty DocumentDirty) Set(k string, v any) {
-//	if dirty != nil {
-//		dirty[k] = v
-//	} else {
-//		logger.Alert("updater/dataset Document Dirty is nil,key:%v", k)
-//	}
-//}
-
 type Document struct {
 	//sch   *schema.Schema
 	data  any
@@ -132,9 +114,9 @@ func (doc *Document) Save(dirty Update) error {
 		if r, err := doc.setter(k, v); err != nil {
 			logger.Alert("Document Save Update:%v,Error:%v,", dirty, err)
 		} else if dirty != nil {
-			switch d := r.(type) {
+			switch vv := r.(type) {
 			case Update:
-				dirty.Merge(d)
+				dirty.Merge(vv)
 			default:
 				dirty[k] = r
 			}
@@ -215,10 +197,6 @@ func (doc *Document) Reset(v any) {
 	doc.data = v
 	doc.dirty = nil
 }
-
-//func (doc *Document) Release() {
-//	doc.dirty = nil
-//}
 
 func (doc *Document) Range(handle func(string, any) bool) {
 	sch, err := doc.Schema()

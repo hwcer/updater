@@ -68,14 +68,6 @@ func (c Dirty) Insert(k string, doc *Document) {
 	d.op.Delete(collOperatorUpdate) //Insert取消Update操作
 }
 
-//func (c Dirty) Release() {
-//	for _, v := range c {
-//		if v.op.Has(collOperatorInsert) {
-//			v.doc.Release()
-//		}
-//	}
-//}
-
 func (c Dirty) Operator(k string) (r *Operator) {
 	r, ok := c[k]
 	if !ok {

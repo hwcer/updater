@@ -11,13 +11,8 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-/*
-切记不要直接修改dataset
-建议使用dataset中实现以下接口提高性能
-
-	Get(k string) any              //获取k的值
-	Set(k string, v any) error    //设置k值的为v
-*/
+// documentModel 文档模型接口
+// 建议在业务model中实现 dataset.ModelGet 和 dataset.ModelSet 接口提高性能
 type documentModel interface {
 	New(update *Updater) any                                             //初始化对象
 	IType(int32) int32                                                   //DOC使用FIELD操作时，无法通过IID获取类型，必须明确指定
@@ -30,9 +25,8 @@ type documentModel interface {
 type Document struct {
 	statement
 	name    string
-	model   documentModel     //handle model
-	dirty   dataset.Update    //外部直接置脏数据，内存数据已经处理过，会自动同步到数据库
-	setter  dataset.Update    //需要持久化到数据库的数据
+	model   documentModel  //handle model
+	setter  dataset.Update //需要持久化到数据库的数据
 	dataset *dataset.Document //数据
 }
 
@@ -113,15 +107,13 @@ func (this *Document) decrease(id int32, v int64) {
 
 func (this *Document) save() (err error) {
 	if this.setter == nil {
-		this.setter = make(dataset.Update)
+		this.setter = dataset.Update{}
 	}
 	if err = this.dataset.Save(this.setter); err != nil {
 		return err
 	}
-	//for k, v := range this.dirty {
-	//	this.setter[k] = v
-	//}
 	if len(this.setter) == 0 {
+		this.setter = nil
 		return nil
 	}
 	if err = this.model.Setter(this.Updater, this.setter); err == nil {
@@ -171,7 +163,6 @@ func (this *Document) loading() (err error) {
 
 func (this *Document) release() {
 	this.statement.release()
-	//this.dirty = nil
 	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
 	} else {
@@ -240,14 +231,6 @@ func (this *Document) Has(k any) bool {
 	return false
 }
 
-// Dirty 设置脏数据,手动修改内存后置脏同步到数据库
-//func (this *Document) Dirty(k string, v any) {
-//	if this.dirty == nil {
-//		this.dirty = map[string]any{}
-//	}
-//	this.dirty[k] = v
-//}
-
 func (this *Document) Range(f func(k string, v any) bool) {
 	this.dataset.Range(f)
 }
@@ -295,7 +278,7 @@ func (this *Document) Field(k any) (key string, err error) {
 	if err != nil {
 		return
 	}
-	if strings.Index(key, ".") > 0 {
+	if strings.Contains(key, ".") {
 		return
 	}
 	key, err = this.Name(key)

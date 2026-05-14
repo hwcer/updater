@@ -100,7 +100,7 @@ func (coll *Collection) Update(id string, data Update) error {
 	return nil
 }
 
-// Insert 如果已经存在转换成覆盖
+// Insert 插入新对象，已存在则返回错误
 func (coll *Collection) Insert(i any) (err error) {
 	doc := NewDoc(i)
 	id := doc.GetString(Fields.OID)
