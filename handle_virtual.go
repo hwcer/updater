@@ -8,13 +8,8 @@ import (
 type virtualModel interface {
 	Has(u *Updater, k any) bool
 	Get(u *Updater, k any) (r any)
-	Val(u *Updater, k any) (r int64)
-
-	Add(u *Updater, k any, v int64)
-	Sub(u *Updater, k any, v int64)
-	Set(u *Updater, k any, v any)
-
 	IType() int32
+	Update(u *Updater, op *operator.Operator)
 	Select(u *Updater, keys ...any)
 	Reload(u *Updater) error
 }
@@ -24,13 +19,14 @@ type Virtual struct {
 	statement
 	name    string //model database name
 	model   virtualModel
-	forward bool // 是否将操作记录发送给前端，默认关闭
+	forward bool // 是否将操作记录发送给前端，默认开启
 }
 
 func NewVirtual(u *Updater, m *Model) Handle {
 	r := &Virtual{}
 	r.name = m.name
 	r.model = m.model.(virtualModel)
+	r.forward = true
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -41,7 +37,7 @@ func (this *Virtual) Get(k any) (r any) {
 	return this.model.Get(this.Updater, k)
 }
 func (this *Virtual) Val(k any) (r int64) {
-	return this.model.Val(this.Updater, k)
+	return dataset.ParseInt64(this.model.Get(this.Updater, k))
 }
 
 func (this *Virtual) Data() (err error) {
@@ -123,27 +119,33 @@ func (this *Virtual) verify() (err error) {
 
 func (this *Virtual) Add(k any, v any) {
 	value := dataset.ParseInt64(v)
-	this.model.Add(this.Updater, k, value)
+	op := this.newOperator(operator.TypesAdd, k, value, map[any]any{k: value})
+	this.model.Update(this.Updater, op)
 	if this.forward {
-		r := map[any]any{k: value}
-		this.operator(operator.TypesAdd, k, value, r)
+		this.statement.insert(op)
+	} else {
+		op.Release()
 	}
 }
 
 func (this *Virtual) Sub(k any, v any) {
 	value := dataset.ParseInt64(v)
-	this.model.Sub(this.Updater, k, value)
+	op := this.newOperator(operator.TypesSub, k, value, map[any]any{k: value})
+	this.model.Update(this.Updater, op)
 	if this.forward {
-		r := map[any]any{k: value}
-		this.operator(operator.TypesSub, k, value, r)
+		this.statement.insert(op)
+	} else {
+		op.Release()
 	}
 }
 
 func (this *Virtual) Set(k any, v any) {
-	this.model.Set(this.Updater, k, v)
+	op := this.newOperator(operator.TypesSet, k, 0, map[any]any{k: v})
+	this.model.Update(this.Updater, op)
 	if this.forward {
-		r := map[any]any{k: v}
-		this.operator(operator.TypesSet, k, 0, r)
+		this.statement.insert(op)
+	} else {
+		op.Release()
 	}
 }
 
@@ -157,9 +159,7 @@ func (this *Virtual) Forward(v bool) {
 
 // ===================== 类型特有私有方法 =====================
 
-// operator 当 forward 开启时，将操作记录到 statement 用于返回给前端
-// key 为 string 时存入 Field，为 int32 时存入 IID
-func (this *Virtual) operator(t operator.Types, k any, v int64, r any) {
+func (this *Virtual) newOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
 	op := operator.New(t, "", v, r)
 	switch s := k.(type) {
 	case string:
@@ -170,5 +170,5 @@ func (this *Virtual) operator(t operator.Types, k any, v int64, r any) {
 	if it := this.IType(op.IID); it != nil {
 		op.IType = it.ID()
 	}
-	this.statement.insert(op)
+	return op
 }
