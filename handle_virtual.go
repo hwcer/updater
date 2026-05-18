@@ -14,19 +14,21 @@ type virtualModel interface {
 	Reload(u *Updater) error
 }
 
+type virtualNotify interface {
+	Notify() bool
+}
+
 // Virtual 虚拟数据层,本身不存储数据，操作委托给其他模块
 type Virtual struct {
 	statement
-	name    string //model database name
-	model   virtualModel
-	forward bool // 是否将操作记录发送给前端，默认开启
+	name  string //model database name
+	model virtualModel
 }
 
 func NewVirtual(u *Updater, m *Model) Handle {
 	r := &Virtual{}
 	r.name = m.name
 	r.model = m.model.(virtualModel)
-	r.forward = true
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -100,16 +102,16 @@ func (this *Virtual) destroy() (err error) {
 	return nil
 }
 
-// verify/submit 仅在 forward 开启时生效，将操作记录推入 Updater.dirty 返回前端
+// verify/submit 仅在 Notify 开启时生效，将操作记录推入 Updater.dirty 返回前端
 func (this *Virtual) submit() (err error) {
-	if this.forward {
+	if this.Notify() {
 		this.statement.submit()
 	}
 	return
 }
 
 func (this *Virtual) verify() (err error) {
-	if this.forward {
+	if this.Notify() {
 		this.statement.verify()
 	}
 	return
@@ -122,7 +124,7 @@ func (this *Virtual) Add(k any, v any) {
 	d := this.Val(k)
 	op := this.newOperator(operator.TypesAdd, k, value, map[any]any{k: d + value})
 	this.model.Update(this.Updater, op)
-	if this.forward {
+	if this.Notify() {
 		this.statement.insert(op)
 	} else {
 		op.Release()
@@ -138,7 +140,7 @@ func (this *Virtual) Sub(k any, v any) {
 	}
 	op := this.newOperator(operator.TypesSub, k, value, map[any]any{k: d - value})
 	this.model.Update(this.Updater, op)
-	if this.forward {
+	if this.Notify() {
 		this.statement.insert(op)
 	} else {
 		op.Release()
@@ -148,7 +150,7 @@ func (this *Virtual) Sub(k any, v any) {
 func (this *Virtual) Set(k any, v any) {
 	op := this.newOperator(operator.TypesSet, k, 0, map[any]any{k: v})
 	this.model.Update(this.Updater, op)
-	if this.forward {
+	if this.Notify() {
 		this.statement.insert(op)
 	} else {
 		op.Release()
@@ -159,8 +161,11 @@ func (this *Virtual) Has(k any) bool {
 	return this.model.Has(this.Updater, k)
 }
 
-func (this *Virtual) Forward(v bool) {
-	this.forward = v
+func (this *Virtual) Notify() bool {
+	if f, ok := this.model.(virtualNotify); ok {
+		return f.Notify()
+	}
+	return true
 }
 
 // ===================== 类型特有私有方法 =====================
