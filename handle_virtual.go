@@ -119,7 +119,8 @@ func (this *Virtual) verify() (err error) {
 
 func (this *Virtual) Add(k any, v any) {
 	value := dataset.ParseInt64(v)
-	op := this.newOperator(operator.TypesAdd, k, value, map[any]any{k: value})
+	d := this.Val(k)
+	op := this.newOperator(operator.TypesAdd, k, value, map[any]any{k: d + value})
 	this.model.Update(this.Updater, op)
 	if this.forward {
 		this.statement.insert(op)
@@ -130,7 +131,12 @@ func (this *Virtual) Add(k any, v any) {
 
 func (this *Virtual) Sub(k any, v any) {
 	value := dataset.ParseInt64(v)
-	op := this.newOperator(operator.TypesSub, k, value, map[any]any{k: value})
+	d := this.Val(k)
+	if d < value && !this.Updater.CreditAllowed {
+		this.Updater.Error = ErrItemNotEnough(dataset.ParseInt32(k), value, d)
+		return
+	}
+	op := this.newOperator(operator.TypesSub, k, value, map[any]any{k: d - value})
 	this.model.Update(this.Updater, op)
 	if this.forward {
 		this.statement.insert(op)
