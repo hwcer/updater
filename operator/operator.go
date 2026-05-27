@@ -57,13 +57,14 @@ func New(opt Types, field string, value int64, result any) *Operator {
 // Operator 操作对象，用于描述对数据的各种操作
 
 type Operator struct {
-	OID    string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
-	IID    int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
-	OType  Types  `json:"op"`          // 操作类型，如 add、sub、set、del、new 等
-	IType  int32  `json:"it"`          // 物品类型 ID，用于标识数据模型
-	Field  string `json:"-"`           // 字段名，内部临时变量，不参与序列化
-	Value  int64  `json:"v"`           // 增量值，add、sub、new 时有效
-	Result any    `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
+	OID     string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
+	IID     int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
+	OType   Types  `json:"op"`          // 操作类型，如 add、sub、set、del、new 等
+	IType   int32  `json:"it"`          // 物品类型 ID，用于标识数据模型
+	Field   string `json:"-"`           // 字段名，内部临时变量，不参与序列化
+	Value   int64  `json:"v"`           // 增量值，add、sub、new 时有效
+	Result  any    `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
+	Display bool   `json:"ds"`          // 仅仅展示不会修改数据，数据映射使用
 }
 
 // Clone 克隆一个操作对象，并可选择性地修改增量值
