@@ -66,6 +66,7 @@ func (stmt *statement) date() {
 }
 
 // verify 将 operator 通过 Config.Filter 过滤后转入 cache
+// FlagIgnoreDisplay 标记的操作直接释放，不会推入前端
 func (stmt *statement) verify() {
 	if len(stmt.operator) == 0 {
 		return
@@ -75,6 +76,10 @@ func (stmt *statement) verify() {
 	}
 	for _, v := range stmt.operator {
 		stmt.result(v)
+		if v.Flag.Has(operator.FlagIgnoreDisplay) {
+			v.Release()
+			continue
+		}
 		if Config.Filter(v) {
 			stmt.cache = append(stmt.cache, v)
 		}

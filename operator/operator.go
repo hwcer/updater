@@ -37,6 +37,33 @@ Operator 操作对象
 	op.IID = 1001
 */
 
+// Flag 操作标志位，按位组合多个行为特征
+type Flag uint8
+
+const (
+	FlagIgnoreUpdate  Flag = 1 << iota // 忽略更新
+	FlagIgnoreDisplay                  // 忽略展示
+)
+
+// Has 判断是否包含指定标志位
+func (f *Flag) Has(flag Flag) bool {
+	return *f&flag != 0
+}
+
+// Set 设置标志位
+func (f *Flag) Set(flags ...Flag) {
+	for _, v := range flags {
+		*f |= v
+	}
+}
+
+// Unset 清除指定标志位
+func (f *Flag) Unset(flags ...Flag) {
+	for _, v := range flags {
+		*f &^= v
+	}
+}
+
 var operatorPool = sync.Pool{
 	New: func() any { return &Operator{} },
 }
@@ -57,14 +84,14 @@ func New(opt Types, field string, value int64, result any) *Operator {
 // Operator 操作对象，用于描述对数据的各种操作
 
 type Operator struct {
-	OID     string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
-	IID     int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
-	OType   Types  `json:"op"`          // 操作类型，如 add、sub、set、del、new 等
-	IType   int32  `json:"it"`          // 物品类型 ID，用于标识数据模型
-	Field   string `json:"-"`           // 字段名，内部临时变量，不参与序列化
-	Value   int64  `json:"v"`           // 增量值，add、sub、new 时有效
-	Result  any    `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
-	Display bool   `json:"ds"`          // 仅仅展示不会修改数据，数据映射使用
+	OID    string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
+	IID    int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
+	Flag   Flag   `json:"f"`           // 操作标志位，按位组合控制更新和展示行为
+	OType  Types  `json:"op"`          // 操作类型，如 add、sub、set、del、new 等
+	IType  int32  `json:"it"`          // 物品类型 ID，用于标识数据模型
+	Field  string `json:"-"`           // 字段名，内部临时变量，不参与序列化
+	Value  int64  `json:"v"`           // 增量值，add、sub、new 时有效
+	Result any    `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
 }
 
 // Clone 克隆一个操作对象，并可选择性地修改增量值
@@ -85,6 +112,7 @@ func (op *Operator) Release() {
 	}
 	op.OID = ""
 	op.IID = 0
+	op.Flag = 0
 	op.OType = 0
 	op.IType = 0
 	op.Field = ""

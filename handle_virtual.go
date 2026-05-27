@@ -14,10 +14,6 @@ type virtualModel interface {
 	Reload(u *Updater) error
 }
 
-type virtualNotify interface {
-	Notify() bool
-}
-
 // Virtual 虚拟数据层,本身不存储数据，操作委托给其他模块
 type Virtual struct {
 	statement
@@ -98,23 +94,18 @@ func (this *Virtual) release() {
 	this.statement.release()
 }
 
+func (this *Virtual) verify() (err error) {
+	this.statement.verify()
+	return
+}
+
+func (this *Virtual) submit() (err error) {
+	this.statement.submit()
+	return
+}
+
 func (this *Virtual) destroy() (err error) {
 	return nil
-}
-
-// verify/submit 仅在 Notify 开启时生效，将操作记录推入 Updater.dirty 返回前端
-func (this *Virtual) submit() (err error) {
-	if this.Notify() {
-		this.statement.submit()
-	}
-	return
-}
-
-func (this *Virtual) verify() (err error) {
-	if this.Notify() {
-		this.statement.verify()
-	}
-	return
 }
 
 // ===================== 类型特有公开方法 =====================
@@ -124,11 +115,7 @@ func (this *Virtual) Add(k any, v any) {
 	d := this.Val(k)
 	op := this.newOperator(operator.TypesAdd, k, value, map[any]any{k: d + value})
 	this.model.Update(this.Updater, op)
-	if this.Notify() {
-		this.statement.insert(op)
-	} else {
-		op.Release()
-	}
+	this.statement.insert(op)
 }
 
 func (this *Virtual) Sub(k any, v any) {
@@ -140,32 +127,17 @@ func (this *Virtual) Sub(k any, v any) {
 	}
 	op := this.newOperator(operator.TypesSub, k, value, map[any]any{k: d - value})
 	this.model.Update(this.Updater, op)
-	if this.Notify() {
-		this.statement.insert(op)
-	} else {
-		op.Release()
-	}
+	this.statement.insert(op)
 }
 
 func (this *Virtual) Set(k any, v any) {
 	op := this.newOperator(operator.TypesSet, k, 0, map[any]any{k: v})
 	this.model.Update(this.Updater, op)
-	if this.Notify() {
-		this.statement.insert(op)
-	} else {
-		op.Release()
-	}
+	this.statement.insert(op)
 }
 
 func (this *Virtual) Has(k any) bool {
 	return this.model.Has(this.Updater, k)
-}
-
-func (this *Virtual) Notify() bool {
-	if f, ok := this.model.(virtualNotify); ok {
-		return f.Notify()
-	}
-	return true
 }
 
 // ===================== 类型特有私有方法 =====================
