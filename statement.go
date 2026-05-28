@@ -82,10 +82,6 @@ func (stmt *statement) verify() {
 	}
 	for _, v := range stmt.operator {
 		stmt.result(v)
-		if !v.Flag.Has(operator.FlagDisplay) {
-			v.Release()
-			continue
-		}
 		if Config.Filter(v) {
 			stmt.cache = append(stmt.cache, v)
 		} else {
