@@ -313,6 +313,7 @@ func (this *Document) operator(t operator.Types, k string, v int64, r any) *oper
 	it := this.IType(0)
 	if it == nil {
 		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
+		op.Release()
 		return nil
 	}
 	op.IType = it.ID()

@@ -252,6 +252,7 @@ func (this *Collection) New(v dataset.Model) (err error) {
 	op.OID = v.GetOID()
 	op.IID = v.GetIID()
 	if err = this.mayChange(op); err != nil {
+		op.Release()
 		return this.Updater.Errorf(err)
 	}
 	this.statement.insert(op)
@@ -377,9 +378,11 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 	}
 
 	if this.Updater.Error != nil {
+		op.Release()
 		return nil
 	}
 	if this.Updater.Error = this.mayChange(op); this.Updater.Error != nil {
+		op.Release()
 		return nil
 	}
 	this.format(op)

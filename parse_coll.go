@@ -131,6 +131,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 	var item any
 	var items []any
 	cc := op.Clone(1)
+	defer cc.Release()
 	for i := int64(1); i <= op.Value; i++ {
 		if item, err = it.New(coll.Updater, cc); err != nil {
 			return

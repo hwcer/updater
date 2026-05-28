@@ -227,6 +227,7 @@ func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Opera
 	it := this.IType(op.IID)
 	if it == nil {
 		logger.Debug("IType not exist:%v", op.IID)
+		op.Release()
 		return nil
 	}
 	op.IType = it.ID()

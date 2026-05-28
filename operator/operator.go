@@ -41,9 +41,11 @@ Operator 操作对象
 type Flag uint8
 
 const (
-	FlagIgnoreUpdate  Flag = 1 << iota // 忽略更新
-	FlagIgnoreDisplay                  // 忽略展示
+	FlagUpdate  Flag = 1 << iota // 更新
+	FlagDisplay                  // 展示
 )
+
+const FlagDefault = FlagUpdate | FlagDisplay
 
 // Has 判断是否包含指定标志位
 func (f *Flag) Has(flag Flag) bool {
@@ -65,7 +67,11 @@ func (f *Flag) Unset(flags ...Flag) {
 }
 
 var operatorPool = sync.Pool{
-	New: func() any { return &Operator{} },
+	New: func() any {
+		op := &Operator{}
+		op.Flag = FlagDefault
+		return op
+	},
 }
 
 // New 创建一个新的操作对象，从池中获取以降低 GC 压力
@@ -74,6 +80,7 @@ var operatorPool = sync.Pool{
 // r: 最终结果
 func New(opt Types, field string, value int64, result any) *Operator {
 	op := operatorPool.Get().(*Operator)
+	op.Flag = FlagDefault
 	op.OType = opt
 	op.Field = field
 	op.Value = value
@@ -84,6 +91,7 @@ func New(opt Types, field string, value int64, result any) *Operator {
 // Operator 操作对象，用于描述对数据的各种操作
 
 type Operator struct {
+	_      struct{} `json:"-"` // 禁止外部使用字段名方式构造 Operator{Field: Value}
 	OID    string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
 	IID    int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
 	Flag   Flag   `json:"f"`           // 操作标志位，按位组合控制更新和展示行为
@@ -112,7 +120,7 @@ func (op *Operator) Release() {
 	}
 	op.OID = ""
 	op.IID = 0
-	op.Flag = 0
+	op.Flag = FlagDefault
 	op.OType = 0
 	op.IType = 0
 	op.Field = ""

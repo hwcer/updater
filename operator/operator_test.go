@@ -6,11 +6,9 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	op := &Operator{
-		OID:   "sss",
-		IID:   1001,
-		OType: TypesAdd,
-	}
+	op := New(TypesAdd, "", 0, nil)
+	op.OID = "sss"
+	op.IID = 1001
 
 	fmt.Printf("%+v", op)
 }

@@ -56,7 +56,13 @@ func (stmt *statement) loading() bool {
 // 每一个执行时都会执行 release
 func (stmt *statement) release() {
 	stmt.keys = nil
+	for _, v := range stmt.cache {
+		v.Release()
+	}
 	stmt.cache = nil
+	for _, v := range stmt.operator {
+		v.Release()
+	}
 	stmt.operator = nil
 }
 
@@ -66,7 +72,7 @@ func (stmt *statement) date() {
 }
 
 // verify 将 operator 通过 Config.Filter 过滤后转入 cache
-// FlagIgnoreDisplay 标记的操作直接释放，不会推入前端
+// 未设置 FlagDisplay 的操作直接释放，不会推入前端
 func (stmt *statement) verify() {
 	if len(stmt.operator) == 0 {
 		return
@@ -76,12 +82,14 @@ func (stmt *statement) verify() {
 	}
 	for _, v := range stmt.operator {
 		stmt.result(v)
-		if v.Flag.Has(operator.FlagIgnoreDisplay) {
+		if !v.Flag.Has(operator.FlagDisplay) {
 			v.Release()
 			continue
 		}
 		if Config.Filter(v) {
 			stmt.cache = append(stmt.cache, v)
+		} else {
+			v.Release()
 		}
 	}
 	stmt.operator = nil
