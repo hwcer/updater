@@ -5,10 +5,11 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-type virtualModel interface {
+type VirtualModel interface {
 	Has(u *Updater, k any) bool
 	Get(u *Updater, k any) (r any)
 	IType() int32
+	Field(int32) (string, bool) //格式化字段
 	Update(u *Updater, op *operator.Operator)
 	Select(u *Updater, keys ...any)
 	Reload(u *Updater) error
@@ -18,13 +19,13 @@ type virtualModel interface {
 type Virtual struct {
 	statement
 	name  string //model database name
-	model virtualModel
+	model VirtualModel
 }
 
 func NewVirtual(u *Updater, m *Model) Handle {
 	r := &Virtual{}
 	r.name = m.name
-	r.model = m.model.(virtualModel)
+	r.model = m.model.(VirtualModel)
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -110,10 +111,28 @@ func (this *Virtual) destroy() (err error) {
 
 // ===================== 类型特有公开方法 =====================
 
+func (this *Virtual) key(i any) (iid int32, key string, ok bool) {
+	switch v := i.(type) {
+	case string:
+		key = v
+		ok = true
+	default:
+		if iid = dataset.ParseInt32(i); iid > 0 {
+			key, ok = this.model.Field(iid)
+		}
+	}
+	return
+}
 func (this *Virtual) Add(k any, v any) {
 	value := dataset.ParseInt64(v)
 	d := this.Val(k)
-	op := this.newOperator(operator.TypesAdd, k, value, map[any]any{k: d + value})
+	iid, key, ok := this.key(k)
+	if !ok {
+		_ = this.Updater.Errorf("Virtual Add Args Error,name:%s,key:%v", this.name, k)
+		return
+	}
+
+	op := this.newOperator(operator.TypesAdd, iid, key, value, map[string]any{key: d + value})
 	this.model.Update(this.Updater, op)
 	this.statement.insert(op)
 }
@@ -121,17 +140,27 @@ func (this *Virtual) Add(k any, v any) {
 func (this *Virtual) Sub(k any, v any) {
 	value := dataset.ParseInt64(v)
 	d := this.Val(k)
-	if d < value && !this.Updater.CreditAllowed {
-		this.Updater.Error = ErrItemNotEnough(dataset.ParseInt32(k), value, d)
+	iid, key, ok := this.key(k)
+	if !ok {
+		_ = this.Updater.Errorf("Virtual Sub Args Error,name:%s,key:%v", this.name, k)
 		return
 	}
-	op := this.newOperator(operator.TypesSub, k, value, map[any]any{k: d - value})
+	if d < value && !this.Updater.CreditAllowed {
+		this.Updater.Error = ErrItemNotEnough(iid, value, d)
+		return
+	}
+	op := this.newOperator(operator.TypesSub, iid, key, value, map[string]any{key: d - value})
 	this.model.Update(this.Updater, op)
 	this.statement.insert(op)
 }
 
 func (this *Virtual) Set(k any, v any) {
-	op := this.newOperator(operator.TypesSet, k, 0, map[any]any{k: v})
+	iid, key, ok := this.key(k)
+	if !ok {
+		_ = this.Updater.Errorf("Virtual Set Args Error,name:%s,key:%v", this.name, k)
+		return
+	}
+	op := this.newOperator(operator.TypesSet, iid, key, 0, map[string]any{key: v})
 	this.model.Update(this.Updater, op)
 	this.statement.insert(op)
 }
@@ -142,14 +171,9 @@ func (this *Virtual) Has(k any) bool {
 
 // ===================== 类型特有私有方法 =====================
 
-func (this *Virtual) newOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
-	op := operator.New(t, "", v, r)
-	switch s := k.(type) {
-	case string:
-		op.Field = s
-	default:
-		op.IID = dataset.ParseInt32(k)
-	}
+func (this *Virtual) newOperator(t operator.Types, iid int32, key string, v int64, r any) *operator.Operator {
+	op := operator.New(t, key, v, r)
+	op.IID = iid
 	if it := this.IType(op.IID); it != nil {
 		op.IType = it.ID()
 	}

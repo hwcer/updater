@@ -10,7 +10,7 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-type collectionModel interface {
+type CollectionModel interface {
 	IType(iid int32) int32
 	Upsert(update *Updater, op *operator.Operator) bool
 	Schema() *schema.Schema
@@ -19,14 +19,14 @@ type collectionModel interface {
 	BulkWrite(update *Updater) dataset.BulkWrite
 }
 
-type collectionModelValueJSName interface {
+type CollectionModelValueJSName interface {
 	GetValueJSName() string //获取value值的jsname
 }
 
 type Collection struct {
 	statement
 	name      string
-	model     collectionModel
+	model     CollectionModel
 	remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset   *dataset.Collection
 	monitor   dataset.CollectionMonitor //监控数据的insert 和 delete
@@ -36,7 +36,7 @@ type Collection struct {
 func NewCollection(u *Updater, m *Model) Handle {
 	r := &Collection{}
 	r.name = m.name
-	r.model = m.model.(collectionModel)
+	r.model = m.model.(CollectionModel)
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -293,7 +293,7 @@ func (this *Collection) Field(field ...string) string {
 	if len(field) > 0 {
 		return field[0]
 	}
-	if f, ok := this.model.(collectionModelValueJSName); ok {
+	if f, ok := this.model.(CollectionModelValueJSName); ok {
 		return f.GetValueJSName()
 	}
 	return dataset.Fields.VAL

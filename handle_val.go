@@ -8,7 +8,7 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-type valuesModel interface {
+type ValuesModel interface {
 	IType(iid int32) int32
 	Getter(u *Updater, data *dataset.Values, keys []int32) (err error) //获取数据接口
 	Setter(u *Updater, data dataset.Data) error                        //保存数据接口
@@ -18,7 +18,7 @@ type valuesModel interface {
 type Values struct {
 	statement
 	name    string //model database name
-	model   valuesModel
+	model   ValuesModel
 	setter  dataset.Data //需要写入数据的数据
 	dataset *dataset.Values
 }
@@ -26,7 +26,7 @@ type Values struct {
 func NewValues(u *Updater, m *Model) Handle {
 	r := &Values{}
 	r.name = m.name
-	r.model = m.model.(valuesModel)
+	r.model = m.model.(ValuesModel)
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }

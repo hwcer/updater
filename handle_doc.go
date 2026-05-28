@@ -11,9 +11,9 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-// documentModel 文档模型接口
+// DocumentModel 文档模型接口
 // 建议在业务model中实现 dataset.ModelGet 和 dataset.ModelSet 接口提高性能
-type documentModel interface {
+type DocumentModel interface {
 	New(update *Updater) any                                             //初始化对象
 	IType(int32) int32                                                   //DOC使用FIELD操作时，无法通过IID获取类型，必须明确指定
 	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
@@ -25,7 +25,7 @@ type documentModel interface {
 type Document struct {
 	statement
 	name    string
-	model   documentModel  //handle model
+	model   DocumentModel  //handle model
 	setter  dataset.Update //需要持久化到数据库的数据
 	dataset *dataset.Document //数据
 }
@@ -33,7 +33,7 @@ type Document struct {
 func NewDocument(u *Updater, m *Model) Handle {
 	r := &Document{}
 	r.name = m.name
-	r.model = m.model.(documentModel)
+	r.model = m.model.(DocumentModel)
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }

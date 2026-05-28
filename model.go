@@ -119,20 +119,20 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 func verifyModel(parser Parser, model any) error {
 	switch parser {
 	case ParserTypeValues:
-		if _, ok := model.(valuesModel); !ok {
-			return fmt.Errorf("model %T does not implement valuesModel", model)
+		if _, ok := model.(ValuesModel); !ok {
+			return fmt.Errorf("model %T does not implement ValuesModel", model)
 		}
 	case ParserTypeDocument:
-		if _, ok := model.(documentModel); !ok {
-			return fmt.Errorf("model %T does not implement documentModel", model)
+		if _, ok := model.(DocumentModel); !ok {
+			return fmt.Errorf("model %T does not implement DocumentModel", model)
 		}
 	case ParserTypeCollection:
-		if _, ok := model.(collectionModel); !ok {
-			return fmt.Errorf("model %T does not implement collectionModel", model)
+		if _, ok := model.(CollectionModel); !ok {
+			return fmt.Errorf("model %T does not implement CollectionModel", model)
 		}
 	case ParserTypeVirtual:
-		if _, ok := model.(virtualModel); !ok {
-			return fmt.Errorf("model %T does not implement virtualModel", model)
+		if _, ok := model.(VirtualModel); !ok {
+			return fmt.Errorf("model %T does not implement VirtualModel", model)
 		}
 	}
 	return nil
