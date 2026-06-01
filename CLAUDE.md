@@ -90,16 +90,17 @@ Global events (`RegisterGlobalEvent`) are persistent and fire for all Updater in
 
 ### statement Base
 
-All four Handle types embed `statement`, which manages: `keys` (pending DB fetches), `operator` (pending operations), `cache` (post-verify filtered operators), and the `Select → Data → verify → submit` pipeline. Operators are added via `statement.insert()`. The flow: `statement.operator` → filtered by `Config.Filter` → `statement.cache` → merged into `Updater.dirty`.
+All four Handle types embed `statement`, which manages: `keys` (pending DB fetches), `operator` (pending operations), `cache` (post-verify operators), and the `Select → Data → verify → submit` pipeline. Operators are added via `statement.insert()`. The flow: `statement.operator` → verify(填充 Result) → `statement.cache` → submit(通过 Receiver 分发或默认插入 `Updater.dirty`)。每个 Handle 可通过 `Receiver()` 独立设置操作结果接收器。
 
 ### Operator struct (operator package)
 
 操作类型包括: Add/Sub/Set/Del/New/Drop/Resolve/Overflow（Overflow 用于通过替代方式如邮件处理溢出）。
 
 The operation descriptor passed through the entire pipeline. Key fields:
-- `OType` (operator.Types) — operation type (Add/Sub/Set/Del/New/Drop/Resolve/Overflow)
+- `OType` (operator.Types) — operation type (Add/Sub/Set/Del/New/Drop/Resolve/Overflow)。修改 OType 应使用 `SetOType()`，非有效类型(Drop/Resolve/Overflow)会自动清除 `FlagDisplay`
 - `IID` (int32) — item ID
 - `OID` (string) — object ID (Collection only)
+- `Flag` (operator.Flag) — 位标志，`FlagUpdate`(更新数据) + `FlagDisplay`(展示给前端)，所有 operator 都会发送到前端，客户端根据 Flag 自行判断是否展示和更新
 - `IType` (int32) — item type ID for routing
 - `Field` (string, `json:"-"`) — internal temporary field name, not serialized
 - `Value` (int64) — numeric operand

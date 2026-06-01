@@ -12,22 +12,24 @@ const (
 	RAMTypeAlways                //内存运行
 )
 
-type stmHandleDataExist func(k any) bool
+type stmHandleExist func(k any) bool
+type stmHandleReceiver func(u *Updater, ops []*operator.Operator)
 
 // statement 所有 Handle 类型的公共基类，管理操作流水线
-// 数据流: operator(待处理) → verify过滤 → cache(已校验) → submit合并到 Updater.dirty(返回前端)
+// 数据流: operator(待处理) → verify(填充Result) → cache(已校验) → submit(通过Receiver分发或默认插入Dirty)
 type statement struct {
-	ram             RAMType
-	keys            Keys                 //待拉取的数据库 key，Data 阶段消费后清空
-	cache           []*operator.Operator //已通过 verify 校验的操作，等待 submit
-	loader          bool                 //是否已完成初始数据加载
-	Updater         *Updater
-	operator        []*operator.Operator //待处理的操作，verify 阶段消费
-	handleDataExist stmHandleDataExist   //查询数据集中是否已存在指定 key
+	ram            RAMType
+	keys           Keys                 //待拉取的数据库 key，Data 阶段消费后清空
+	cache          []*operator.Operator //已通过 verify 校验的操作，等待 submit
+	loader         bool                 //是否已完成初始数据加载
+	Updater        *Updater
+	operator       []*operator.Operator //待处理的操作，verify 阶段消费
+	handleExist    stmHandleExist       //查询数据集中是否已存在指定 key
+	handleReceiver stmHandleReceiver    //接收操作结果，默认插入Dirty
 }
 
-func newStatement(u *Updater, m *Model, exist stmHandleDataExist) *statement {
-	return &statement{ram: m.ram, handleDataExist: exist, Updater: u}
+func newStatement(u *Updater, m *Model, exist stmHandleExist) *statement {
+	return &statement{ram: m.ram, handleExist: exist, Updater: u}
 }
 
 // Has 查询key(DBName)是否已经初始化
@@ -38,7 +40,7 @@ func (stmt *statement) has(key any) bool {
 	if stmt.keys != nil && stmt.keys.Has(key) {
 		return true
 	}
-	return stmt.handleDataExist(key)
+	return stmt.handleExist(key)
 }
 
 func (stmt *statement) reset() {
@@ -71,8 +73,7 @@ func (stmt *statement) date() {
 	stmt.keys = nil
 }
 
-// verify 将 operator 通过 Config.Filter 过滤后转入 cache
-// 未设置 FlagDisplay 的操作直接释放，不会推入前端
+// verify 将 operator 转入 cache，并通过 ITypeResult 填充 Result
 func (stmt *statement) verify() {
 	if len(stmt.operator) == 0 {
 		return
@@ -82,11 +83,7 @@ func (stmt *statement) verify() {
 	}
 	for _, v := range stmt.operator {
 		stmt.result(v)
-		if Config.Filter(v) {
-			stmt.cache = append(stmt.cache, v)
-		} else {
-			v.Release()
-		}
+		stmt.cache = append(stmt.cache, v)
 	}
 	stmt.operator = nil
 }
@@ -103,11 +100,21 @@ func (stmt *statement) result(opt *operator.Operator) {
 	opt.Result = itr.Result(stmt.Updater, opt)
 }
 
+// Receiver 设置操作结果接收器，为nil时恢复默认行为（插入Dirty）
+func (stmt *statement) Receiver(f stmHandleReceiver) {
+	stmt.handleReceiver = f
+}
+
 func (stmt *statement) submit() {
-	if len(stmt.cache) > 0 {
-		stmt.Updater.dirty = append(stmt.Updater.dirty, stmt.cache...)
-		stmt.cache = nil
+	if len(stmt.cache) == 0 {
+		return
 	}
+	if stmt.handleReceiver != nil {
+		stmt.handleReceiver(stmt.Updater, stmt.cache)
+	} else {
+		stmt.Updater.dirty = append(stmt.Updater.dirty, stmt.cache...)
+	}
+	stmt.cache = nil
 }
 
 func (stmt *statement) insert(c *operator.Operator, before ...bool) {

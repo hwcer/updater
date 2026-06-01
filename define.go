@@ -8,10 +8,7 @@ var Config = struct {
 	IMax    func(iid int32) int64                                     //通过道具iid查找上限
 	IType   func(iid int32) int32                                     //通过道具iid查找IType ID
 	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
-	Filter  func(*operator.Operator) bool                             //过滤cache,返回false时不返回给前端
-}{
-	Filter: func(op *operator.Operator) bool { return op.OType.IsValid() },
-}
+}{}
 
 // IType 一个IType对于一种数据类型·
 // 多种数据类型 可以用一种数据模型(model,一张表结构)

@@ -81,7 +81,7 @@ var operatorPool = sync.Pool{
 func New(opt Types, field string, value int64, result any) *Operator {
 	op := operatorPool.Get().(*Operator)
 	op.Flag = FlagDefault
-	op.OType = opt
+	op.SetOType(opt)
 	op.Field = field
 	op.Value = value
 	op.Result = result
@@ -100,6 +100,14 @@ type Operator struct {
 	Field  string `json:"-"`           // 字段名，内部临时变量，不参与序列化
 	Value  int64  `json:"v"`           // 增量值，add、sub、new 时有效
 	Result any    `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
+}
+
+// SetOType 设置操作类型，非有效类型(Drop/Resolve/Overflow)自动清除 FlagDisplay
+func (op *Operator) SetOType(t Types) {
+	op.OType = t
+	if !t.IsValid() {
+		op.Flag.Unset(FlagDisplay)
+	}
 }
 
 // Clone 克隆一个操作对象，并可选择性地修改增量值
