@@ -32,7 +32,6 @@ type Listener func(u *Updater) (next bool)
 // Middleware 监听中间件，所有EventType都会调用 Emit 直到返回false从列表中移除
 type Middleware interface {
 	Emit(u *Updater, t EventType) (next bool)
-	Release(u *Updater) (next bool)
 }
 
 type Events struct {
@@ -129,23 +128,8 @@ func (e *Events) triggerMiddleware(u *Updater, t EventType) {
 	if len(e.middlewares) == 0 {
 		return
 	}
-	if t == EventTypeRelease {
-		e.triggerMiddlewareRelease(u)
-		return
-	}
 	for k, p := range e.middlewares {
 		if !p.Emit(u, t) {
-			delete(e.middlewares, k)
-		}
-	}
-}
-
-func (e *Events) triggerMiddlewareRelease(u *Updater) {
-	if len(e.middlewares) == 0 {
-		return
-	}
-	for k, p := range e.middlewares {
-		if !p.Release(u) {
 			delete(e.middlewares, k)
 		}
 	}

@@ -1,57 +1,47 @@
 package updater
 
-import (
-	"github.com/hwcer/logger"
-)
+import "fmt"
 
-type processCreator func(updater *Updater) any
+//用于 存储临时Handle
 
-var processDefault = map[string]processCreator{}
+type Handler map[string]Handle
 
-func RegisterGlobalProcess(name string, creator processCreator) {
-	if processDefault[name] != nil {
-		logger.Alert("player handle register already registered:%v", name)
-	} else {
-		processDefault[name] = creator
-	}
-}
-
-type Process map[string]any
-
-func (pro Process) Has(name string) bool {
-	_, ok := pro[name]
+func (h Handler) Has(name string) bool {
+	_, ok := h[name]
 	return ok
 }
 
-func (pro Process) Set(name string, value any) bool {
-	if _, ok := pro[name]; ok {
-		return false
-	}
-	pro[name] = value
-	return true
-}
-func (pro Process) Get(name string) any {
-	return pro[name]
+func (h Handler) Get(name string) any {
+	return h[name]
 }
 
-func (pro Process) Delete(name string) {
-	delete(pro, name)
+func (h Handler) Delete(name string) {
+	delete(h, name)
 }
 
-func (pro Process) GetOrCreate(u *Updater, name string, f processCreator) any {
-	i, ok := pro[name]
-	if !ok {
-		i = f(u)
-		pro[name] = i
+func (h Handler) GetOrCreate(u *Updater, name string, parser Parser, ram RAMType, model Model) (Handle, error) {
+	if i, ok := h[name]; ok {
+		return i, nil
 	}
-	return i
-}
+	nh := handles[parser]
+	if nh == nil {
+		u.Error = fmt.Errorf("no handler for %v", parser)
+		return nil, u.Error
+	}
+	mod := Model{
+		ram:    ram,
+		name:   name,
+		model:  model,
+		parser: parser,
+		order:  0,
+	}
+	hh := nh(u, &mod)
+	if u.Error = hh.loading(); u.Error != nil {
+		return nil, u.Error
+	}
+	hh.reset()
 
-func (pro Process) GetOrStore(u *Updater, name string, v any) any {
-	i, ok := pro[name]
-	if !ok {
-		i = v
-		pro[name] = i
-	}
-	return i
+	h[name] = hh
+
+	return hh, nil
 }
