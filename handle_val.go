@@ -100,7 +100,7 @@ func (this *Values) save() (err error) {
 		this.setter = nil
 	} else {
 		ds, _ := json.Marshal(this.setter)
-		logger.Alert("database save error,uid:%s,Collection:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
+		logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
 		var s bool
 		if s, err = onSaveErrorHandle(this.Updater, err); !s {
 			this.setter = nil

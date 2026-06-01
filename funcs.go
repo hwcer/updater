@@ -37,9 +37,9 @@ func overflow(update *Updater, handle Handle, op *operator.Operator) (err error)
 			ov.IType = it.ID()
 			update.Dirty(ov)
 		}
-	}
-	if val == 0 {
-		op.OType = operator.TypesResolve
+		if val == 0 {
+			op.OType = operator.TypesResolve
+		}
 	}
 	return
 }

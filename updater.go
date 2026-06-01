@@ -27,11 +27,12 @@ type Updater struct {
 	Error         error
 	Events        Events
 	Process       Process
-	CreditAllowed bool //是否扣钱时是否允许负债，每次设置仅仅一次性有效
+	Handler       Handler //临时挂载的Handle
+	CreditAllowed bool    //是否扣钱时是否允许负债，每次设置仅仅一次性有效
 }
 
 func New(p Player) *Updater {
-	return &Updater{player: p, Process: Process{}}
+	return &Updater{player: p, Process: Process{}, Handler: Handler{}}
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
@@ -166,21 +167,21 @@ func (u *Updater) emit(t EventType) {
 
 // Add 添加道具,num 支持 int32|int64
 func (u *Updater) Add(iid int32, num any) {
-	if w := u.handle(iid); w != nil {
+	if w := u.handleWithKey(iid); w != nil {
 		w.increase(iid, dataset.ParseInt64(num))
 	}
 }
 
 // Sub 扣除道具,num 支持 int32|int64
 func (u *Updater) Sub(iid int32, num any) {
-	if w := u.handle(iid); w != nil {
+	if w := u.handleWithKey(iid); w != nil {
 		w.decrease(iid, dataset.ParseInt64(num))
 	}
 }
 
 // Get 通过 iid 获取原始数据，返回类型取决于 Handle 类型
 func (u *Updater) Get(iid int32) (r any) {
-	if w := u.handle(iid); w != nil {
+	if w := u.handleWithKey(iid); w != nil {
 		r = w.Get(iid)
 	}
 	return
@@ -188,7 +189,7 @@ func (u *Updater) Get(iid int32) (r any) {
 
 // Val 通过 iid 获取数值
 func (u *Updater) Val(iid int32) (r int64) {
-	if w := u.handle(iid); w != nil {
+	if w := u.handleWithKey(iid); w != nil {
 		r = w.Val(iid)
 	}
 	return
@@ -197,7 +198,7 @@ func (u *Updater) Val(iid int32) (r int64) {
 // Select 预拉取指定 key 的数据，非内存模式时在 Data 阶段从数据库加载
 func (u *Updater) Select(keys ...any) {
 	for _, k := range keys {
-		if w := u.handle(k); w != nil {
+		if w := u.handleWithKey(k); w != nil {
 			w.Select(k)
 		}
 	}
@@ -304,26 +305,9 @@ func (u *Updater) ParseId(key any) (iid int32, err error) {
 }
 
 // Handle 根据 name(string) || itype(int32) 查找，支持命名整型（如 protobuf 枚举）
-func (u *Updater) Handle(name any) Handle {
-	switch k := name.(type) {
-	case string:
-		return u.handles[k]
-	case int:
-		return u.handleByIType(int32(k))
-	case int32:
-		return u.handleByIType(k)
-	case int64:
-		return u.handleByIType(int32(k))
-	default:
-		if rv := reflect.ValueOf(name); rv.CanInt() {
-			return u.handleByIType(int32(rv.Int()))
-		}
-		return nil
-	}
-}
 
 // handle 通过 iid 或 oid 路由到对应的 Handle 实例
-func (u *Updater) handle(k any) Handle {
+func (u *Updater) handleWithKey(k any) Handle {
 	iid, err := u.ParseId(k)
 	if err != nil {
 		logger.Alert("%v", err)
@@ -335,21 +319,43 @@ func (u *Updater) handle(k any) Handle {
 		logger.Debug("Updater.handle not exists,iid:%v IType:%v", k, itk)
 		return nil
 	}
-	return u.Handle(model.name)
+	return u.handleWithAny(model.name)
 }
 
-func (u *Updater) handleByIType(id int32) Handle {
+func (u *Updater) handleWithAny(name any) Handle {
+	switch k := name.(type) {
+	case string:
+		return u.handles[k]
+	case int:
+		return u.handleWithIType(int32(k))
+	case int32:
+		return u.handleWithIType(k)
+	case int64:
+		return u.handleWithIType(int32(k))
+	default:
+		if rv := reflect.ValueOf(name); rv.CanInt() {
+			return u.handleWithIType(int32(rv.Int()))
+		}
+		return nil
+	}
+}
+
+func (u *Updater) handleWithIType(id int32) Handle {
 	mod := modelsDict[id]
 	if mod == nil {
 		return nil
 	}
 	return u.handles[mod.name]
 }
-
 func (u *Updater) Handles() (r []Handle) {
+	if u.handles == nil {
+		return nil
+	}
 	r = make([]Handle, 0, len(modelsRank))
 	for _, model := range modelsRank {
-		r = append(r, u.handles[model.name])
+		if h := u.handles[model.name]; h != nil {
+			r = append(r, h)
+		}
 	}
 	return
 }
@@ -385,7 +391,7 @@ func (u *Updater) WriteAble() error {
 }
 
 func (u *Updater) Values(name any) *Values {
-	i := u.Handle(name)
+	i := u.handleWithAny(name)
 	if i == nil {
 		return nil
 	}
@@ -393,7 +399,7 @@ func (u *Updater) Values(name any) *Values {
 	return r
 }
 func (u *Updater) Virtual(name any) *Virtual {
-	i := u.Handle(name)
+	i := u.handleWithAny(name)
 	if i == nil {
 		return nil
 	}
@@ -401,7 +407,7 @@ func (u *Updater) Virtual(name any) *Virtual {
 	return r
 }
 func (u *Updater) Document(name any) *Document {
-	i := u.Handle(name)
+	i := u.handleWithAny(name)
 	if i == nil {
 		return nil
 	}
@@ -410,7 +416,7 @@ func (u *Updater) Document(name any) *Document {
 }
 
 func (u *Updater) Collection(name any) *Collection {
-	i := u.Handle(name)
+	i := u.handleWithAny(name)
 	if i == nil {
 		return nil
 	}

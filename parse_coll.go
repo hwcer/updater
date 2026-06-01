@@ -85,6 +85,9 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 	if op.Value <= 0 {
 		return ErrArgsIllegal(op.IID, op.Value)
 	}
+	if op.OID == "" {
+		return ErrObjectIdEmpty(op.IID)
+	}
 	doc := coll.dataset.Val(op.OID)
 	if doc == nil {
 		return ErrItemNotExist(op.OID)
