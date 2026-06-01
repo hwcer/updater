@@ -8,7 +8,7 @@ import (
 type VirtualModel interface {
 	Has(u *Updater, k any) bool
 	Get(u *Updater, k any) (r any)
-	IType() int32
+	IType(int32) int32
 	Field(int32) (string, bool) //格式化字段
 	Update(u *Updater, op *operator.Operator)
 	Select(u *Updater, keys ...any)
@@ -45,11 +45,11 @@ func (this *Virtual) Data() (err error) {
 
 // IType iid>0 时按 iid 查找，iid==0 时返回模型默认 IType
 func (this *Virtual) IType(iid int32) IType {
-	if iid > 0 {
-		return this.Updater.IType(iid)
+	it := this.model.IType(iid)
+	if it == 0 {
+		return nil
 	}
-	v := this.model.IType()
-	return itypesDict[v]
+	return itypesDict[it]
 }
 
 func (this *Virtual) Select(keys ...any) {
