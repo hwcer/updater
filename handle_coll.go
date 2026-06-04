@@ -368,6 +368,10 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 	if err := this.Updater.WriteAble(); err != nil {
 		return nil
 	}
+	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
+		return nil
+	}
+
 	op := operator.New(t, k, v, r)
 	switch d := id.(type) {
 	case string:

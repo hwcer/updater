@@ -38,6 +38,14 @@ func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrObjectIdEmpty(op.IID)
 	}
+	doc := coll.dataset.Val(op.OID)
+	if doc == nil {
+		return ErrItemNotExist(op.OID)
+	}
+	op.Value = doc.GetInt64(op.Field)
+	if op.Value == 0 {
+		op.Value = 1
+	}
 	coll.dataset.Delete(op.OID)
 	return
 }

@@ -125,6 +125,9 @@ func (this *Virtual) key(i any) (iid int32, key string, ok bool) {
 }
 func (this *Virtual) Add(k any, v any) {
 	value := dataset.ParseInt64(v)
+	if value <= 0 {
+		return
+	}
 	d := this.Val(k)
 	iid, key, ok := this.key(k)
 	if !ok {
@@ -133,12 +136,18 @@ func (this *Virtual) Add(k any, v any) {
 	}
 
 	op := this.newOperator(operator.TypesAdd, iid, key, value, map[string]any{key: d + value})
+	if op == nil {
+		return
+	}
 	this.model.Update(this.Updater, op)
 	this.statement.insert(op)
 }
 
 func (this *Virtual) Sub(k any, v any) {
 	value := dataset.ParseInt64(v)
+	if value <= 0 {
+		return
+	}
 	d := this.Val(k)
 	iid, key, ok := this.key(k)
 	if !ok {
@@ -150,6 +159,9 @@ func (this *Virtual) Sub(k any, v any) {
 		return
 	}
 	op := this.newOperator(operator.TypesSub, iid, key, value, map[string]any{key: d - value})
+	if op == nil {
+		return
+	}
 	this.model.Update(this.Updater, op)
 	this.statement.insert(op)
 }
@@ -172,6 +184,9 @@ func (this *Virtual) Has(k any) bool {
 // ===================== 类型特有私有方法 =====================
 
 func (this *Virtual) newOperator(t operator.Types, iid int32, key string, v int64, r any) *operator.Operator {
+	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
+		return nil
+	}
 	op := operator.New(t, key, v, r)
 	op.IID = iid
 	if it := this.IType(op.IID); it != nil {

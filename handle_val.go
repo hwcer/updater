@@ -220,7 +220,9 @@ func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Opera
 	if err := this.Updater.WriteAble(); err != nil {
 		return nil
 	}
-
+	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
+		return nil
+	}
 	op := operator.New(t, "", v, nil)
 	op.IID = k
 	this.statement.Select(k)

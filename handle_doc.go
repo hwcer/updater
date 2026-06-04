@@ -25,8 +25,8 @@ type DocumentModel interface {
 type Document struct {
 	statement
 	name    string
-	model   DocumentModel  //handle model
-	setter  dataset.Update //需要持久化到数据库的数据
+	model   DocumentModel     //handle model
+	setter  dataset.Update    //需要持久化到数据库的数据
 	dataset *dataset.Document //数据
 }
 
@@ -304,6 +304,10 @@ func (this *Document) operator(t operator.Types, k string, v int64, r any) *oper
 	}
 	if t == operator.TypesDel {
 		logger.Debug("updater document del is disabled")
+		return nil
+	}
+
+	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
 		return nil
 	}
 
