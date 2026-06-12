@@ -42,7 +42,7 @@ func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 	if doc == nil {
 		return ErrItemNotExist(op.OID)
 	}
-	op.Value = doc.GetInt64(op.Field)
+	op.Value = doc.GetInt64(coll.Field())
 	if op.Value == 0 {
 		op.Value = 1
 	}
@@ -81,7 +81,7 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 		return collectionHandleNewItem(coll, op)
 	}
 	doc := coll.dataset.Val(op.OID)
-	v := doc.GetInt64(op.Field)
+	v := doc.GetInt64(coll.Field())
 	r := op.Value + v
 	if err = coll.dataset.Set(op.OID, op.Field, r); err == nil {
 		op.Result = map[string]any{op.Field: r}
@@ -100,7 +100,7 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 	if doc == nil {
 		return ErrItemNotExist(op.OID)
 	}
-	d := doc.GetInt64(op.Field)
+	d := doc.GetInt64(coll.Field())
 	r := d - op.Value
 	if d < op.Value && !coll.Updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
