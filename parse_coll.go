@@ -98,7 +98,7 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 	}
 	doc := coll.dataset.Val(op.OID)
 	if doc == nil {
-		return ErrItemNotExist(op.OID)
+		return ErrItemNotEnough(op.IID, op.Value, 0)
 	}
 	d := doc.GetInt64(coll.Field())
 	r := d - op.Value
