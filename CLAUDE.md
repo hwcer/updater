@@ -70,6 +70,22 @@ Key interfaces consumers implement:
 
 RAMType affects `statement.has()` logic, `loading()` behavior, and `release()` cleanup.
 
+### Monitor 监控系统
+
+`dataset.Monitor` 接口定义 `Insert(doc)` / `Delete(doc)` 两个回调，在 `Save()` 持久化时触发。`dataset.Monitors`（`map[string]Monitor`）支持多种监控共存，按 key 注册/移除。通过 `Collection.SetMonitor(key, v)` 注册，`RemoveMonitor(key)` 移除。`Monitors` 自身实现 `Monitor` 接口，遍历调用所有注册的监控。
+
+### Cursor 游标 (dataset package)
+
+`dataset.Cursor` 提供 Collection 的内存分页能力。创建时快照当前 dataset 中所有 doc 指针到 `[]*Document` 切片。
+
+- `Collection.Cursor(key)` — 创建或获取已有游标，key 为使用方标记
+- `Cursor.Range(offset, size, func(*Document) bool)` — 按偏移量分页遍历
+- `Cursor.Paging(page, size, func(*Document) bool)` — 按页码分页遍历（page 从 1 开始）
+- `Cursor.Len()` — 快照中的元素总数
+- `Cursor.Close(key)` — 移除使用方，所有使用方关闭后释放资源
+
+多个使用方可共享同一 Cursor 实例（引用计数）。Cursor 通过未导出的 `cursorMonitor` 适配器注册到 Monitor，新元素插入时自动追加到快照尾部。全部使用方 Close 后自动从 Monitor 注销。Release/Reset 不清除 Cursor，Cursor 仅通过 Close 释放。
+
 ### Dirty Tracking (dataset package)
 
 `dataset.Dirty` uses a 3-state bit flag per key (`collOperatorInsert | collOperatorUpdate | collOperatorDelete`). Insert cancels Update. Delete on an inserted item preserves both bits. `Save()` iterates dirty entries and dispatches to `BulkWrite` (Insert/Update/Delete).
