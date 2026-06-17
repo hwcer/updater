@@ -4,9 +4,25 @@ import (
 	"fmt"
 )
 
-type CollectionMonitor interface {
+const CollectionMonitorKey = "_collection_cursor"
+
+type Monitor interface {
 	Insert(doc *Document)
 	Delete(doc *Document)
+}
+
+type Monitors map[string]Monitor
+
+func (m Monitors) Insert(doc *Document) {
+	for _, v := range m {
+		v.Insert(doc)
+	}
+}
+
+func (m Monitors) Delete(doc *Document) {
+	for _, v := range m {
+		v.Delete(doc)
+	}
 }
 
 func NewColl(rows ...any) *Collection {
@@ -42,8 +58,10 @@ func (d Dataset) GetAndDel(k string) (doc *Document) {
 }
 
 type Collection struct {
-	dirty   Dirty   //临时数据
-	dataset Dataset //数据集
+	dirty    Dirty    //临时数据
+	cursor   *Cursor  //游标
+	dataset  Dataset  //数据集
+	monitors Monitors //监控数据的insert 和 delete
 }
 
 func (coll *Collection) Len() int {
@@ -128,7 +146,7 @@ func (coll *Collection) Remove(id ...string) {
 	}
 }
 
-func (coll *Collection) Save(bulkWrite BulkWrite, monitor CollectionMonitor) error {
+func (coll *Collection) Save(bulkWrite BulkWrite, monitor Monitor) error {
 	for k, v := range coll.dirty {
 		if v.op.Has(collOperatorDelete) {
 			doc := coll.dataset.GetAndDel(k)
@@ -163,6 +181,36 @@ func (coll *Collection) Save(bulkWrite BulkWrite, monitor CollectionMonitor) err
 	}
 	coll.dirty = nil
 	return nil
+}
+
+func (coll *Collection) GetMonitor() Monitors {
+	if coll.monitors == nil {
+		coll.monitors = make(Monitors)
+	}
+	return coll.monitors
+}
+
+func (coll *Collection) SetMonitor(key string, v Monitor) {
+	if coll.monitors == nil {
+		coll.monitors = make(Monitors)
+	}
+	coll.monitors[key] = v
+}
+
+func (coll *Collection) RemoveMonitor(key string) {
+	delete(coll.monitors, key)
+}
+
+func (coll *Collection) onCursorRelease() {
+	coll.RemoveMonitor(CollectionMonitorKey)
+}
+func (coll *Collection) Cursor(key string) *Cursor {
+	if coll.cursor == nil || coll.cursor.closed() {
+		coll.cursor = NewCursor(coll.dataset, coll.onCursorRelease)
+		coll.SetMonitor(CollectionMonitorKey, &cursorMonitor{cursor: coll.cursor})
+	}
+	coll.cursor.users[key] = struct{}{}
+	return coll.cursor
 }
 
 func (coll *Collection) Release() {

@@ -29,7 +29,6 @@ type Collection struct {
 	model     CollectionModel
 	remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset   *dataset.Collection
-	monitor   dataset.CollectionMonitor //监控数据的insert 和 delete
 	bulkWrite dataset.BulkWrite
 }
 
@@ -111,7 +110,7 @@ func (this *Collection) save() (err error) {
 	if bulkWrite == nil {
 		return
 	}
-	if err = this.dataset.Save(bulkWrite, this.monitor); err != nil {
+	if err = this.dataset.Save(bulkWrite, this.dataset.GetMonitor()); err != nil {
 		return
 	}
 	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
@@ -285,6 +284,10 @@ func (this *Collection) Range(h func(id string, doc *dataset.Document) bool) {
 	this.dataset.Range(h)
 }
 
+func (this *Collection) Cursor(key string) *dataset.Cursor {
+	return this.dataset.Cursor(key)
+}
+
 // Remove 从内存中移除，用于清理不常用数据，不会改变数据库
 func (this *Collection) Remove(id ...string) {
 	this.remove = append(this.remove, id...)
@@ -304,8 +307,12 @@ func (this *Collection) Schema() *schema.Schema {
 	return this.model.Schema()
 }
 
-func (this *Collection) SetMonitor(v dataset.CollectionMonitor) {
-	this.monitor = v
+func (this *Collection) SetMonitor(key string, v dataset.Monitor) {
+	this.dataset.SetMonitor(key, v)
+}
+
+func (this *Collection) RemoveMonitor(key string) {
+	this.dataset.RemoveMonitor(key)
 }
 
 // ITypeCollection 返回 ITypeCollection 以访问 New/Stacked/ObjectId 等方法
