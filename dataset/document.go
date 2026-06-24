@@ -18,9 +18,9 @@ func NewDoc(i any) *Document {
 }
 
 type Document struct {
-	//sch   *schema.Schema
 	data  any
 	dirty Update
+	unset map[string]struct{}
 }
 
 // Has 是否存在字段
@@ -87,6 +87,38 @@ func (doc *Document) Set(k string, v any) {
 	doc.dirty.Set(k, v)
 }
 
+func (doc *Document) Unset(k string) {
+	if !doc.Has(k) {
+		return
+	}
+	if doc.unset == nil {
+		doc.unset = make(map[string]struct{})
+	}
+	doc.unset[k] = struct{}{}
+	if doc.dirty != nil {
+		delete(doc.dirty, k)
+	}
+	doc.unsetMemory(k)
+}
+
+func (doc *Document) unsetMemory(k string) {
+	if m, ok := doc.data.(ModelUnset); ok {
+		m.Unset(k)
+		return
+	}
+	sch, err := doc.Schema()
+	if err != nil {
+		return
+	}
+	var v any
+	if strings.Contains(k, ".") {
+		v = reflect.Value{}
+	}
+	if err = sch.SetValue(doc.data, v, k); err != nil {
+		logger.Alert("Unset: %s.%s error: %v", sch.Name, k, err)
+	}
+}
+
 func (doc *Document) Add(k string, v int64) (r int64) {
 	r = doc.GetInt64(k) + v
 	doc.Set(k, r)
@@ -106,27 +138,35 @@ func (doc *Document) Update(data Update) {
 	}
 }
 
-func (doc *Document) Save(dirty Update) error {
-	if len(doc.dirty) == 0 {
-		return nil
-	}
-	for k, v := range doc.dirty {
-		if r, err := doc.setter(k, v); err != nil {
-			logger.Alert("Document Save Update:%v,Error:%v,", dirty, err)
-		} else if dirty != nil {
-			switch vv := r.(type) {
-			case Update:
-				dirty.Merge(vv)
-			default:
-				dirty[k] = r
+func (doc *Document) Save() (dirty Update, unsets []string) {
+	if len(doc.dirty) > 0 {
+		dirty = Update{}
+		for k, v := range doc.dirty {
+			if r, err := doc.setter(k, v); err != nil {
+				logger.Alert("Document Save error,key:%v,Error:%v", k, err)
+			} else {
+				switch vv := r.(type) {
+				case Update:
+					dirty.Merge(vv)
+				default:
+					dirty[k] = r
+				}
 			}
 		}
+		doc.dirty = nil
 	}
-	doc.dirty = nil
-	return nil
+	if len(doc.unset) > 0 {
+		unsets = make([]string, 0, len(doc.unset))
+		for k := range doc.unset {
+			unsets = append(unsets, k)
+		}
+		doc.unset = nil
+	}
+	return
 }
 func (doc *Document) Release() {
 	doc.dirty = nil
+	doc.unset = nil
 }
 
 func (doc *Document) setter(k string, v any) (r any, err error) {
@@ -196,6 +236,7 @@ func (doc *Document) Json() (map[string]any, error) {
 func (doc *Document) Reset(v any) {
 	doc.data = v
 	doc.dirty = nil
+	doc.unset = nil
 }
 
 func (doc *Document) Range(handle func(string, any) bool) {

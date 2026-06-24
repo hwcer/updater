@@ -5,10 +5,20 @@ import (
 )
 
 var Config = struct {
-	IMax    func(iid int32) int64                                     //通过道具iid查找上限
-	IType   func(iid int32) int32                                     //通过道具iid查找IType ID
-	ParseId func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
+	IMax      func(iid int32) int64                                     //通过道具iid查找上限
+	IType     func(iid int32) int32                                     //通过道具iid查找IType ID
+	ParseId   func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
+	BulkWrite func(u *Updater) BulkWrite                                //全局 BulkWrite 工厂
 }{}
+
+// BulkWrite 跨集合批量写入接口
+type BulkWrite interface {
+	Submit() error
+	Update(model any, data any, where ...any)
+	Insert(model any, documents ...any)
+	Delete(model any, where ...any)
+	String() string
+}
 
 // IType 一个IType对于一种数据类型·
 // 多种数据类型 可以用一种数据模型(model,一张表结构)

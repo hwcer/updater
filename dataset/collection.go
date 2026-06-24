@@ -146,15 +146,20 @@ func (coll *Collection) Remove(id ...string) {
 	}
 }
 
-func (coll *Collection) Save(bulkWrite BulkWrite, monitor Monitor) error {
+// CollectionWriter Collection 持久化所需的操作接口
+type CollectionWriter interface {
+	Delete(where ...any)
+	Insert(documents ...any)
+	Setter(_id string, dirty Update, unset []string) error
+}
+
+func (coll *Collection) Save(w CollectionWriter) (err error) {
 	for k, v := range coll.dirty {
 		if v.op.Has(collOperatorDelete) {
 			doc := coll.dataset.GetAndDel(k)
-			if bulkWrite != nil {
-				bulkWrite.Delete(k)
-			}
-			if monitor != nil && doc != nil {
-				monitor.Delete(doc)
+			w.Delete(k)
+			if coll.monitors != nil && doc != nil {
+				coll.monitors.Delete(doc)
 			}
 		}
 		if v.op.Has(collOperatorInsert) {
@@ -162,25 +167,22 @@ func (coll *Collection) Save(bulkWrite BulkWrite, monitor Monitor) error {
 			if v.op.Has(collOperatorUpdate) {
 				doc = doc.Clone()
 			}
-			if err := doc.Save(nil); err == nil {
-				coll.dataset.Set(k, doc)
-				if bulkWrite != nil {
-					bulkWrite.Insert(doc.Any())
-				}
-			}
-			if monitor != nil {
-				monitor.Insert(doc)
+			doc.Save()
+			coll.dataset.Set(k, doc)
+			w.Insert(doc.Any())
+			if coll.monitors != nil {
+				coll.monitors.Insert(doc)
 			}
 		} else if v.op.Has(collOperatorUpdate) {
 			doc, _ := coll.dataset.Get(k)
-			dirty := make(Update)
-			if err := doc.Save(dirty); err == nil && len(dirty) > 0 && bulkWrite != nil {
-				bulkWrite.Update(dirty, k)
+			dirty, unsets := doc.Save()
+			if len(dirty) > 0 || len(unsets) > 0 {
+				err = w.Setter(k, dirty, unsets)
 			}
 		}
 	}
 	coll.dirty = nil
-	return nil
+	return
 }
 
 func (coll *Collection) GetMonitor() Monitors {

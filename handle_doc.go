@@ -14,20 +14,19 @@ import (
 // DocumentModel 文档模型接口
 // 建议在业务model中实现 dataset.ModelGet 和 dataset.ModelSet 接口提高性能
 type DocumentModel interface {
-	New(update *Updater) any                                             //初始化对象
-	IType(int32) int32                                                   //DOC使用FIELD操作时，无法通过IID获取类型，必须明确指定
-	Field(update *Updater, iid int32) (string, error)                    //使用IID映射字段名
-	Getter(update *Updater, data *dataset.Document, keys []string) error //获取数据接口,需要对data进行赋值,keys==nil 获取所有
-	Setter(update *Updater, dirty dataset.Update) error                  //保存数据接口
+	New(update *Updater) any
+	IType(int32) int32
+	Field(update *Updater, iid int32) (string, error)
+	Getter(update *Updater, data *dataset.Document, keys []string) error
+	Setter(update *Updater, bulkWrite BulkWrite, dirty dataset.Update, unset []string) error
 }
 
 // Document 文档存储
 type Document struct {
 	statement
 	name    string
-	model   DocumentModel     //handle model
-	setter  dataset.Update    //需要持久化到数据库的数据
-	dataset *dataset.Document //数据
+	model   DocumentModel
+	dataset *dataset.Document
 }
 
 func NewDocument(u *Updater, m *Model) Handle {
@@ -106,27 +105,18 @@ func (this *Document) decrease(id int32, v int64) {
 }
 
 func (this *Document) save() (err error) {
-	if this.setter == nil {
-		this.setter = dataset.Update{}
+	bw := this.Updater.BulkWrite()
+	if bw == nil {
+		return ErrBulkWriteNotInit
 	}
-	if err = this.dataset.Save(this.setter); err != nil {
-		return err
-	}
-	if len(this.setter) == 0 {
-		this.setter = nil
-		return nil
-	}
-	if err = this.model.Setter(this.Updater, this.setter); err == nil {
-		this.setter = nil
-	} else {
-		ds, _ := json.Marshal(this.setter)
-		logger.Alert("database save error,uid:%s,Collection:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
-		var s bool
-		if s, err = onSaveErrorHandle(this.Updater, err); !s {
-			this.setter = nil
+	dirty, unsets := this.dataset.Save()
+	if len(dirty) > 0 || len(unsets) > 0 {
+		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
+			ds, _ := json.Marshal(dirty)
+			logger.Alert("database save error,uid:%s,Document:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
 		}
 	}
-	return err
+	return
 }
 
 func (this *Document) reset() {
@@ -223,6 +213,14 @@ func (this *Document) Set(k any, v any) *operator.Operator {
 	var field string
 	if field, this.Updater.Error = this.Field(k); this.Updater.Error == nil {
 		return this.operator(operator.TypesSet, field, 0, v)
+	}
+	return nil
+}
+
+func (this *Document) Unset(k any) *operator.Operator {
+	var field string
+	if field, this.Updater.Error = this.Field(k); this.Updater.Error == nil {
+		return this.operator(operator.TypesUnset, field, 0, nil)
 	}
 	return nil
 }

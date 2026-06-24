@@ -12,6 +12,7 @@ func init() {
 	documentParseHandle[operator.TypesAdd] = documentParseAdd
 	documentParseHandle[operator.TypesSet] = documentParseSet
 	documentParseHandle[operator.TypesSub] = documentParseSub
+	documentParseHandle[operator.TypesUnset] = documentParseUnset
 	documentParseHandle[operator.TypesDrop] = documentParseResolve
 	documentParseHandle[operator.TypesResolve] = documentParseResolve
 }
@@ -57,5 +58,11 @@ func documentParseSet(this *Document, op *operator.Operator) (err error) {
 	r := op.Result
 	this.dataset.Set(op.Field, r)
 	op.Result = map[string]any{op.Field: r}
+	return
+}
+
+func documentParseUnset(this *Document, op *operator.Operator) (err error) {
+	this.dataset.Unset(op.Field)
+	op.Result = map[string]any{op.Field: nil}
 	return
 }

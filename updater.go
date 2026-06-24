@@ -24,6 +24,7 @@ type Updater struct {
 	changed       bool                 //数据变动,需要使用Data更新数据
 	operated      bool                 //新操作需要重执行Verify检查数据
 	handles       map[string]Handle    //Handle
+	bulkWrite     BulkWrite    //共享 BulkWrite 实例
 	Error         error
 	Events        Events
 	Process       Process
@@ -37,6 +38,13 @@ func New(p Player) *Updater {
 
 func (u *Updater) On(t EventType, handle Listener) {
 	u.Events.On(t, handle)
+}
+
+func (u *Updater) BulkWrite() BulkWrite {
+	if u.bulkWrite == nil && Config.BulkWrite != nil {
+		u.bulkWrite = Config.BulkWrite(u)
+	}
+	return u.bulkWrite
 }
 
 func (u *Updater) Uid() string {
@@ -153,6 +161,7 @@ func (u *Updater) Release() {
 	u.dirty = nil
 	u.changed = false
 	u.operated = false
+	u.bulkWrite = nil
 	u.Error = nil
 	u.CreditAllowed = false
 	hs := u.Handles()
@@ -280,6 +289,11 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			return
 		}
 	}
+	if u.bulkWrite != nil {
+		if err = u.bulkWrite.Submit(); err != nil {
+			return
+		}
+	}
 	u.emit(EventTypeSuccess)
 	r = u.dirty
 	u.dirty = nil
@@ -368,6 +382,10 @@ func (u *Updater) Destroy() (err error) {
 		if err = hs[i].destroy(); err != nil {
 			return
 		}
+	}
+	if u.bulkWrite != nil {
+		err = u.bulkWrite.Submit()
+		u.bulkWrite = nil
 	}
 	u.player = nil
 	for _, op := range u.dirty {

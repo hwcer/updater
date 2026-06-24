@@ -28,10 +28,7 @@ type ModelClone interface {
 	Clone() any
 }
 
-type BulkWrite interface {
-	Submit() error
-	Update(data Update, where ...any)
-	Insert(documents ...any)
-	Delete(where ...any)
-	String() string
+type ModelUnset interface {
+	Unset(k string)
 }
+

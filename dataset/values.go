@@ -24,6 +24,7 @@ func (d Data) Del(k int32) {
 type Values struct {
 	data  Data
 	dirty Data
+	unset map[int32]struct{}
 }
 
 func (val *Values) Len() int {
@@ -71,24 +72,42 @@ func (val *Values) Sub(k int32, v int64) (r int64) {
 	return r
 }
 
-func (val *Values) Save(dirty Data) {
-	if len(val.dirty) == 0 {
-		return
+func (val *Values) Unset(k int32) {
+	if val.unset == nil {
+		val.unset = make(map[int32]struct{})
 	}
-	if val.data == nil {
-		val.data = Data{}
+	val.unset[k] = struct{}{}
+	if val.dirty != nil {
+		delete(val.dirty, k)
 	}
-	for k, v := range val.dirty {
-		if dirty != nil {
-			dirty[k] = v
+	val.data.Del(k)
+}
+
+func (val *Values) Save() (dirty Data, unsets []int32) {
+	if len(val.dirty) > 0 {
+		if val.data == nil {
+			val.data = Data{}
 		}
-		val.data[k] = v
+		dirty = make(Data, len(val.dirty))
+		for k, v := range val.dirty {
+			dirty[k] = v
+			val.data[k] = v
+		}
+		val.dirty = nil
 	}
-	val.dirty = nil
+	if len(val.unset) > 0 {
+		unsets = make([]int32, 0, len(val.unset))
+		for k := range val.unset {
+			unsets = append(unsets, k)
+		}
+		val.unset = nil
+	}
+	return
 }
 
 func (val *Values) Release() {
 	val.dirty = nil
+	val.unset = nil
 }
 
 func (val *Values) Range(handle func(int32, int64) bool) {

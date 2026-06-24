@@ -14,9 +14,8 @@ type CollectionModel interface {
 	IType(iid int32) int32
 	Upsert(update *Updater, op *operator.Operator) bool
 	Schema() *schema.Schema
-	Getter(update *Updater, data *dataset.Collection, keys []string) error //keys==nil 初始化所有
-	Setter(update *Updater, bulkWrite dataset.BulkWrite) error
-	BulkWrite(update *Updater) dataset.BulkWrite
+	Getter(update *Updater, data *dataset.Collection, keys []string) error
+	Setter(update *Updater, bulkWrite BulkWrite, _id string, dirty dataset.Update, unset []string) error
 }
 
 type CollectionModelValueJSName interface {
@@ -25,11 +24,10 @@ type CollectionModelValueJSName interface {
 
 type Collection struct {
 	statement
-	name      string
-	model     CollectionModel
-	remove    []string //需要移除内存的数据,仅仅RAMMaybe有效
-	dataset   *dataset.Collection
-	bulkWrite dataset.BulkWrite
+	name    string
+	model   CollectionModel
+	remove  []string //需要移除内存的数据,仅仅RAMMaybe有效
+	dataset *dataset.Collection
 }
 
 func NewCollection(u *Updater, m *Model) Handle {
@@ -44,7 +42,7 @@ func NewCollection(u *Updater, m *Model) Handle {
 
 // Get 返回item,不可叠加道具只能使用oid获取
 func (this *Collection) Get(key any) (r any) {
-	if doc := this.Doc(key); doc != nil {
+	if doc := this.Document(key); doc != nil {
 		r = doc.Any()
 	}
 	return
@@ -106,23 +104,10 @@ func (this *Collection) decrease(id int32, v int64) {
 }
 
 func (this *Collection) save() (err error) {
-	bulkWrite := this.BulkWrite()
-	if bulkWrite == nil {
-		return
+	if this.Updater.BulkWrite() == nil {
+		return ErrBulkWriteNotInit
 	}
-	if err = this.dataset.Save(bulkWrite, this.dataset.GetMonitor()); err != nil {
-		return
-	}
-	if err = this.model.Setter(this.statement.Updater, bulkWrite); err == nil {
-		this.bulkWrite = nil
-	} else {
-		logger.Alert("database save error,uid:%s,Collection:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, this.bulkWrite.String(), err.Error())
-		var s bool
-		if s, err = onSaveErrorHandle(this.Updater, err); !s {
-			this.bulkWrite = nil
-		}
-	}
-	return
+	return this.dataset.Save(&CollectionBulkWrite{coll: this})
 }
 
 func (this *Collection) reset() {
@@ -213,6 +198,14 @@ func (this *Collection) Delete(id any) *operator.Operator {
 	return this.operator(operator.TypesDel, id, "", 0, nil)
 }
 
+func (this *Collection) Unset(id any, fields ...string) *operator.Operator {
+	data := dataset.Update{}
+	for _, f := range fields {
+		data[f] = nil
+	}
+	return this.operator(operator.TypesUnset, id, "", 0, data)
+}
+
 // Set 设置 k= oid||iid
 // Set(oid||iid,map[string]any)
 // Set(oid||iid,key string,val any)
@@ -271,15 +264,6 @@ func (this *Collection) Has(id any) (r bool) {
 	return
 }
 
-func (this *Collection) Doc(key any) (r *dataset.Document) {
-	if oid, err := this.GetOID(key); err == nil {
-		r = this.dataset.Val(oid)
-	} else {
-		logger.Debug(err)
-	}
-	return
-}
-
 func (this *Collection) Range(h func(id string, doc *dataset.Document) bool) {
 	this.dataset.Range(h)
 }
@@ -325,13 +309,6 @@ func (this *Collection) ITypeCollection(iid int32) ITypeCollection {
 	return r
 }
 
-func (this *Collection) BulkWrite() dataset.BulkWrite {
-	if this.bulkWrite == nil {
-		this.bulkWrite = this.model.BulkWrite(this.Updater)
-	}
-	return this.bulkWrite
-}
-
 func (this *Collection) GetOID(key any) (oid string, err error) {
 	if v, ok := key.(string); ok {
 		return v, nil
@@ -357,6 +334,15 @@ func (this *Collection) Insert(op *operator.Operator, before ...bool) {
 
 func (this *Collection) Dataset() *dataset.Collection {
 	return this.dataset
+}
+
+func (this *Collection) Document(key any) (r *dataset.Document) {
+	if oid, err := this.GetOID(key); err == nil {
+		r = this.dataset.Val(oid)
+	} else {
+		logger.Debug(err)
+	}
+	return
 }
 
 // ===================== 类型特有私有方法 =====================
@@ -423,7 +409,7 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 }
 
 func (this *Collection) format(op *operator.Operator) {
-	if op.OType != operator.TypesSet {
+	if op.OType != operator.TypesSet && op.OType != operator.TypesUnset {
 		return
 	}
 	data := dataset.Update{}
@@ -448,4 +434,24 @@ func (this *Collection) format(op *operator.Operator) {
 		}
 	}
 	op.Result = data
+}
+
+// ===================== CollectionBulkWrite =====================
+
+// CollectionBulkWrite 实现 dataset.CollectionWriter，封装 Collection 的持久化逻辑
+type CollectionBulkWrite struct {
+	coll *Collection
+}
+
+func (w *CollectionBulkWrite) Delete(where ...any) {
+	w.coll.Updater.BulkWrite().Delete(w.coll.model, where...)
+}
+
+func (w *CollectionBulkWrite) Insert(documents ...any) {
+	w.coll.Updater.BulkWrite().Insert(w.coll.model, documents...)
+}
+
+func (w *CollectionBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
+	bw := w.coll.Updater.BulkWrite()
+	return w.coll.model.Setter(w.coll.Updater, bw, _id, dirty, unset)
 }

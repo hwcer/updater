@@ -11,7 +11,8 @@ const (
 	TypesSub  Types = 2 // 扣除操作，用于减少数值或移除元素
 	TypesSet  Types = 3 // 设置操作，用于直接设置字段值
 	TypesDel  Types = 4 // 删除操作，用于删除元素或字段
-	TypesNew  Types = 5 // 新对象操作，等同于add，但是装备之类不能叠加时，会走NEW生成新对象
+	TypesNew   Types = 5 // 新对象操作，等同于add，但是装备之类不能叠加时，会走NEW生成新对象
+	TypesUnset Types = 6 // Unset操作，从文档中移除字段（MongoDB $unset），仅适用于 map 类型字段
 
 	TypesDrop     Types = 90 // 抛弃操作，不执行任何操作
 	TypesResolve  Types = 91 // 自动分解操作，用于自动分解道具
@@ -21,7 +22,7 @@ const (
 // IsValid 判断操作类型是否有效
 // 有效的操作类型包括：Add、Sub、Set、Del、New
 func (at Types) IsValid() bool {
-	return at == TypesAdd || at == TypesSub || at == TypesSet || at == TypesDel || at == TypesNew
+	return at == TypesAdd || at == TypesSub || at == TypesSet || at == TypesDel || at == TypesNew || at == TypesUnset
 }
 
 // MustSelect 判断操作是否需要选择
@@ -50,6 +51,8 @@ func (at Types) ToString() string {
 		return "del"
 	case TypesNew:
 		return "insert"
+	case TypesUnset:
+		return "unset"
 	case TypesResolve:
 		return "resolve"
 	case TypesDrop:

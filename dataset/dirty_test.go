@@ -31,6 +31,7 @@ func TestName(t *testing.T) {
 	if err := player.Save(nil, nil); err != nil {
 		t.Logf("Save Err:%v", err)
 	}
+	// Note: Document.Save() signature changed to return (Update, []string)
 	t.Logf("修改结果：%+v", doc.data)
 	player.Release()
 }

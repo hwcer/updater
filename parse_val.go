@@ -12,7 +12,7 @@ func init() {
 	hashParseHandle[operator.TypesAdd] = hashParseAdd
 	hashParseHandle[operator.TypesSub] = hashParseSub
 	hashParseHandle[operator.TypesSet] = hashParseSet
-	hashParseHandle[operator.TypesDel] = hashParseDel
+	hashParseHandle[operator.TypesUnset] = hashParseUnset
 	hashParseHandle[operator.TypesDrop] = hashParseResolve
 	hashParseHandle[operator.TypesResolve] = hashParseResolve
 }
@@ -61,8 +61,8 @@ func hashParseSet(this *Values, op *operator.Operator) (err error) {
 	return
 }
 
-func hashParseDel(this *Values, op *operator.Operator) (err error) {
+func hashParseUnset(this *Values, op *operator.Operator) (err error) {
 	op.Result = map[int32]int64{op.IID: 0}
-	this.dataset.Set(op.IID, 0)
+	this.dataset.Unset(op.IID)
 	return
 }

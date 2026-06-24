@@ -15,6 +15,7 @@ func init() {
 	collectionParseHandle[operator.TypesSub] = collectionHandleSub
 	collectionParseHandle[operator.TypesSet] = collectionHandleSet
 	collectionParseHandle[operator.TypesDel] = collectionHandleDel
+	collectionParseHandle[operator.TypesUnset] = collectionHandleUnset
 	collectionParseHandle[operator.TypesDrop] = collectionHandleResolve
 	collectionParseHandle[operator.TypesResolve] = collectionHandleResolve
 }
@@ -31,6 +32,22 @@ func (this *Collection) Parse(op *operator.Operator) (err error) {
 
 // collectionHandleResolve 仅仅标记不做任何处理
 func collectionHandleResolve(coll *Collection, op *operator.Operator) error {
+	return nil
+}
+
+func collectionHandleUnset(coll *Collection, op *operator.Operator) error {
+	if op.OID == "" {
+		return ErrObjectIdEmpty(op.IID)
+	}
+	doc := coll.dataset.Val(op.OID)
+	if doc == nil {
+		return ErrItemNotExist(op.OID)
+	}
+	fields, _ := op.Result.(dataset.Update)
+	for k := range fields {
+		doc.Unset(k)
+	}
+	coll.dataset.Dirty().Update(op.OID)
 	return nil
 }
 
@@ -167,9 +184,7 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error
 	if op.OType == operator.TypesSet {
 		doc := dataset.NewDoc(i)
 		doc.Update(op.Result.(dataset.Update))
-		if err = doc.Save(nil); err != nil {
-			return
-		}
+		doc.Save()
 		op.Value = doc.GetInt64(coll.Field())
 	}
 

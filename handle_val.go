@@ -10,16 +10,15 @@ import (
 
 type ValuesModel interface {
 	IType(iid int32) int32
-	Getter(u *Updater, data *dataset.Values, keys []int32) (err error) //获取数据接口
-	Setter(u *Updater, data dataset.Data) error                        //保存数据接口
+	Getter(u *Updater, data *dataset.Values, keys []int32) error
+	Setter(u *Updater, bulkWrite BulkWrite, dirty dataset.Data, unset []int32) error
 }
 
 // Values 数字型键值对
 type Values struct {
 	statement
-	name    string //model database name
+	name    string
 	model   ValuesModel
-	setter  dataset.Data //需要写入数据的数据
 	dataset *dataset.Values
 }
 
@@ -88,22 +87,15 @@ func (this *Values) decrease(k int32, v int64) {
 }
 
 func (this *Values) save() (err error) {
-	if this.setter == nil {
-		this.setter = dataset.Data{}
+	bw := this.Updater.BulkWrite()
+	if bw == nil {
+		return ErrBulkWriteNotInit
 	}
-	this.dataset.Save(this.setter)
-	if len(this.setter) == 0 {
-		this.setter = nil
-		return nil
-	}
-	if err = this.model.Setter(this.statement.Updater, this.setter); err == nil {
-		this.setter = nil
-	} else {
-		ds, _ := json.Marshal(this.setter)
-		logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
-		var s bool
-		if s, err = onSaveErrorHandle(this.Updater, err); !s {
-			this.setter = nil
+	dirty, unsets := this.dataset.Save()
+	if len(dirty) > 0 || len(unsets) > 0 {
+		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
+			ds, _ := json.Marshal(dirty)
+			logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
 		}
 	}
 	return
@@ -191,8 +183,8 @@ func (this *Values) Set(k int32, v any) *operator.Operator {
 	return this.operator(operator.TypesSet, k, dataset.ParseInt64(v))
 }
 
-func (this *Values) Delete(k int32) *operator.Operator {
-	return this.operator(operator.TypesDel, k, 0)
+func (this *Values) Unset(k int32) *operator.Operator {
+	return this.operator(operator.TypesUnset, k, 0)
 }
 
 func (this *Values) Len() int {
