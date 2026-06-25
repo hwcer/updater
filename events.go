@@ -3,134 +3,48 @@ package updater
 type EventType int8
 
 const (
-	EventTypeInit    EventType = iota //加载之后执行,需要判断数据有无加载到内存中
-	EventTypeReset                    //Reset 必定触发
-	EventTypeData                     //Data 之前执行,仅仅需要读数据库时才会触发
-	EventTypeVerify                   //Verify 触发数据检查前,有可能多次触发,可以在事件中安全的继续修改数据
-	EventTypeSubmit                   //Submit 提交数据前触发，有可能多次触发,可以在事件中安全的继续修改数据
-	EventTypeSuccess                  //Success 成功执行所有数据操作活执行
-	EventTypeRelease                  //Release释放前,必然触发一次，需要自行判断updater.Error )
+	EventTypeInit    EventType = iota // Loading 完成后触发一次，可用于初始化业务数据
+	EventTypeReset                    // Reset 时必定触发，每次请求开始
+	EventTypeData                     // Data 阶段前触发，仅 StatusChanged 时执行，可能多次
+	EventTypeVerify                   // Verify 阶段前触发，仅 StatusOperated 时执行，可能多次，可安全追加操作
+	EventTypeSubmit                   // Submit 收敛循环每轮触发，无错误时至少触发一次，可安全追加操作
+	EventTypeSuccess                  // Submit 成功且 BulkWrite 提交后触发，数据已持久化，不可再追加操作
+	EventTypeRelease                  // Release 时必定触发，无论成功或失败，需自行检查 Updater.Error
 )
 
-// 全局事件,会持续触发
+// Listener 事件监听器，返回 true 继续监听，false 从列表中移除
+type Listener func(u *Updater) (next bool)
+
+// 全局事件，持续触发，不会取消
 var globalEvents = map[EventType][]func(u *Updater){}
 
-// RegisterGlobalEvent 必须在初始化话时调用
-
+// RegisterGlobalEvent 注册全局事件，必须在初始化时调用
 func RegisterGlobalEvent(t EventType, handle func(u *Updater)) {
 	globalEvents[t] = append(globalEvents[t], handle)
 }
 
-// Emit 通过外部触发事件
-func Emit(u *Updater, t EventType) {
-	u.emit(t)
+// Events 生命周期事件
+type Events map[EventType][]Listener
+
+func (e Events) On(t EventType, handle Listener) {
+	e[t] = append(e[t], handle)
 }
 
-// Listener 监听任务,返回true表示继续监听,false 从监听列表中移除
-type Listener func(u *Updater) (next bool)
-
-// Middleware 监听中间件，所有EventType都会调用 Emit 直到返回false从列表中移除
-type Middleware interface {
-	Emit(u *Updater, t EventType) (next bool)
-}
-
-type Events struct {
-	events      map[EventType][]Listener
-	middlewares map[string]Middleware
-}
-
-// On 监听事件,必须在事件回调返回false时删除事件
-func (e *Events) On(t EventType, handle Listener) {
-	if e.events == nil {
-		e.events = map[EventType][]Listener{}
-	}
-	e.events[t] = append(e.events[t], handle)
-}
-
-// Get 获取中间件
-func (e *Events) Get(name string) Middleware {
-	if e.middlewares != nil && e.middlewares[name] != nil {
-		return e.middlewares[name]
-	}
-	return nil
-}
-func (e *Events) Use(name string, handle Middleware) bool {
-	return e.Set(name, handle)
-}
-
-// Set 设置中间件,如果已存在返回false
-func (e *Events) Set(name string, handle Middleware, replace ...bool) bool {
-	if e.middlewares == nil {
-		e.middlewares = map[string]Middleware{}
-	}
-	var r bool
-	if len(replace) > 0 {
-		r = replace[0]
-	}
-	if _, ok := e.middlewares[name]; ok && !r {
-		return false
-	}
-	e.middlewares[name] = handle
-	return true
-}
-
-func (e *Events) LoadOrStore(name string, handle Middleware) (v Middleware) {
-	if e.middlewares == nil {
-		e.middlewares = map[string]Middleware{}
-	}
-	if v = e.middlewares[name]; v == nil {
-		v = handle
-		e.middlewares[name] = handle
-	}
-	return
-}
-
-func (e *Events) LoadOrCreate(name string, creator func() Middleware) (v Middleware) {
-	if e.middlewares == nil {
-		e.middlewares = map[string]Middleware{}
-	}
-	if v = e.middlewares[name]; v == nil {
-		v = creator()
-		e.middlewares[name] = v
-	}
-	return
-}
-
-func (e *Events) emit(u *Updater, t EventType) {
+func (e Events) emit(u *Updater, t EventType) {
 	if u.Error != nil && t != EventTypeRelease {
 		return
 	}
-	e.triggerGlobal(u, t)
-	e.triggerEvents(u, t)
-	e.triggerMiddleware(u, t)
-}
-
-func (e *Events) triggerGlobal(u *Updater, t EventType) {
-	if l := globalEvents[t]; len(l) > 0 {
-		for _, h := range l {
-			h(u)
-		}
+	for _, h := range globalEvents[t] {
+		h(u)
 	}
-}
-func (e *Events) triggerEvents(u *Updater, t EventType) {
-	if events := e.events[t]; len(events) > 0 {
+	events := e[t]
+	if len(events) > 0 {
 		es := make([]Listener, 0, len(events))
 		for _, h := range events {
 			if h(u) {
 				es = append(es, h)
 			}
 		}
-		e.events[t] = es
-	}
-}
-
-func (e *Events) triggerMiddleware(u *Updater, t EventType) {
-	if len(e.middlewares) == 0 {
-		return
-	}
-	for k, p := range e.middlewares {
-		if !p.Emit(u, t) {
-			delete(e.middlewares, k)
-		}
+		e[t] = es
 	}
 }

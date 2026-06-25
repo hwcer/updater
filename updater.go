@@ -14,26 +14,26 @@ type Player interface {
 	Uid() string
 }
 
+// Updater 玩家数据更新器，管理所有 Handle 的生命周期和持久化
+// 每个玩家持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
 type Updater struct {
-	now           time.Time
-	init          bool                 //初始化,false-不初始化，实时读写数据库  true-按照模块预设进行初始化，
-	last          int64                //上次请求的时间时间戳，用于判断数据是否需要重置
-	dirty         []*operator.Operator //临时操作,不涉及数据,直接返回给客户端
-	player        Player               //业务层角色对象
-	submit        bool                 //是否需要触发提交，默认每次都强制触发一次
-	changed       bool                 //数据变动,需要使用Data更新数据
-	operated      bool                 //新操作需要重执行Verify检查数据
-	handles       map[string]Handle    //Handle
-	bulkWrite     BulkWrite    //共享 BulkWrite 实例
-	Error         error
-	Events        Events
-	Process       Process
-	Handler       Handler //临时挂载的Handle
-	CreditAllowed bool    //是否扣钱时是否允许负债，每次设置仅仅一次性有效
+	now       time.Time            //当前请求时间
+	last      int64                //上次请求时间戳，用于判断数据是否需要重置
+	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
+	player    Player               //业务层角色对象
+	status    Status               //状态位：Init/Submit/Changed/Operated
+	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
+	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
+
+	Error         error       //请求过程中的错误
+	Events        Events      //生命周期事件
+	Middleware    Middlewares //中间件，所有事件类型都会触发
+	Handler       Handler     //临时挂载的 Handle
+	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
 }
 
 func New(p Player) *Updater {
-	return &Updater{player: p, Process: Process{}, Handler: Handler{}}
+	return &Updater{player: p, Handler: Handler{}, Events: Events{}, Middleware: Middlewares{}}
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
@@ -88,17 +88,17 @@ func (u *Updater) Save() (err error) {
 }
 
 func (u *Updater) Loader() bool {
-	return u.init
+	return u.status.Has(StatusInit)
 }
 
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(init bool, cb ...func()) (err error) {
-	if u.init {
+	if u.status.Has(StatusInit) {
 		return
 	}
 	if init {
-		u.init = true
+		u.status.Set(StatusInit)
 	}
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
@@ -117,11 +117,8 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 	for _, f := range cb {
 		f()
 	}
-	for k, f := range processDefault {
-		u.Process.GetOrCreate(u, k, f)
-	}
-	if u.init {
-		u.emit(EventTypeInit)
+	if u.status.Has(StatusInit) {
+		u.Emit(EventTypeInit)
 	}
 	u.last = u.now.Unix()
 	return
@@ -137,7 +134,7 @@ func (u *Updater) Reset(t ...time.Time) {
 	if u.now.IsZero() {
 		_ = u.Errorf("获取系统时间失败")
 	}
-	u.submit = true
+	u.status.Set(StatusSubmit) // 确保 Submit 收敛循环至少执行一次
 	for _, w := range u.Handles() {
 		w.reset()
 	}
@@ -145,7 +142,7 @@ func (u *Updater) Reset(t ...time.Time) {
 	if disaster.Load() > 0 {
 		u.Error = ErrServerDeniedService //存在灾难性错误，拒绝服务
 	} else {
-		u.emit(EventTypeReset)
+		u.Emit(EventTypeReset)
 	}
 }
 
@@ -153,14 +150,13 @@ func (u *Updater) Reset(t ...time.Time) {
 // 无论有无错误,都应该执行Release
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
-	u.emit(EventTypeRelease)
+	u.Emit(EventTypeRelease)
 	u.last = u.now.Unix()
 	for _, op := range u.dirty {
 		op.Release()
 	}
 	u.dirty = nil
-	u.changed = false
-	u.operated = false
+	u.status &= StatusInit
 	u.bulkWrite = nil
 	u.Error = nil
 	u.CreditAllowed = false
@@ -170,8 +166,9 @@ func (u *Updater) Release() {
 	}
 }
 
-func (u *Updater) emit(t EventType) {
+func (u *Updater) Emit(t EventType) {
 	u.Events.emit(u, t)
+	u.Middleware.emit(u, t)
 }
 
 // Add 添加道具,num 支持 int32|int64
@@ -231,11 +228,11 @@ func (u *Updater) data(hs []Handle) (err error) {
 	if err = u.Error; err != nil {
 		return
 	}
-	if !u.changed {
+	if !u.status.Has(StatusChanged) {
 		return
 	}
-	u.changed = false
-	u.emit(EventTypeData)
+	u.status.Unset(StatusChanged)
+	u.Emit(EventTypeData)
 	for _, w := range hs {
 		if err = w.Data(); err != nil {
 			return
@@ -248,11 +245,11 @@ func (u *Updater) verify(hs []Handle) (err error) {
 	if err = u.Error; err != nil {
 		return
 	}
-	if !u.operated {
+	if !u.status.Has(StatusOperated) {
 		return
 	}
-	u.operated = false
-	u.emit(EventTypeVerify)
+	u.status.Unset(StatusOperated)
+	u.Emit(EventTypeVerify)
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].verify(); err != nil {
 			return
@@ -270,15 +267,15 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	hs := u.Handles()
 
 	loop := int8(1)
-	for u.submit || u.changed || u.operated {
+	for u.status.Has(StatusSubmit, StatusChanged, StatusOperated) {
 		if err = u.data(hs); err != nil {
 			return
 		}
 		if err = u.verify(hs); err != nil {
 			return
 		}
-		u.submit = false
-		u.emit(EventTypeSubmit)
+		u.status.Unset(StatusSubmit)
+		u.Emit(EventTypeSubmit)
 		if loop = loop + 1; loop >= 100 {
 			u.Error = ErrSubmitEndlessLoop
 			return nil, u.Error
@@ -294,7 +291,7 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			return
 		}
 	}
-	u.emit(EventTypeSuccess)
+	u.Emit(EventTypeSuccess)
 	r = u.dirty
 	u.dirty = nil
 	return

@@ -52,7 +52,7 @@ func (stmt *statement) reload() {
 
 // 是否需要执行加载
 func (stmt *statement) loading() bool {
-	return stmt.Updater.init && !stmt.loader && (stmt.ram == RAMTypeMaybe || stmt.ram == RAMTypeAlways)
+	return stmt.Updater.status.Has(StatusInit) && !stmt.loader && (stmt.ram == RAMTypeMaybe || stmt.ram == RAMTypeAlways)
 }
 
 // 每一个执行时都会执行 release
@@ -123,7 +123,7 @@ func (stmt *statement) insert(c *operator.Operator, before ...bool) {
 	} else {
 		stmt.operator = append(stmt.operator, c)
 	}
-	stmt.Updater.operated = true
+	stmt.Updater.status.Set(StatusOperated)
 }
 
 func (stmt *statement) Loader() bool {
@@ -139,7 +139,7 @@ func (stmt *statement) Select(key any) {
 		stmt.keys = Keys{}
 	}
 	stmt.keys.Select(key)
-	stmt.Updater.changed = true
+	stmt.Updater.status.Set(StatusChanged)
 }
 
 func (stmt *statement) Errorf(format any, args ...any) error {

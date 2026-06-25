@@ -31,10 +31,6 @@ type TableOrder interface {
 	TableOrder() int32
 }
 
-type ModelLoading interface {
-	Loading() RAMType
-}
-
 // ModelReset 返回true时 重新调用 model.Getter
 type ModelReset interface {
 	Reset(*Updater, int64) bool
@@ -50,12 +46,11 @@ var modelsDict = make(map[int32]*Model)
 var itypesDict = make(map[int32]IType) //ITypeId = IType
 
 type Model struct {
-	ram     RAMType
-	name    string
-	model   any
-	parser  Parser
-	order   int32   //倒序排列
-	loading RAMType //加载时内存模式
+	ram    RAMType
+	name   string
+	model  any
+	parser Parser
+	order  int32 //倒序排列
 }
 
 func ITypes(f func(int32, IType) bool) {
@@ -91,11 +86,6 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 		mod.order = o.TableOrder()
 	} else {
 		mod.order = -1
-	}
-	if o, ok := model.(ModelLoading); ok {
-		mod.loading = o.Loading()
-	} else {
-		mod.loading = RAMTypeNone
 	}
 	modelsRank = append(modelsRank, mod)
 	sort.SliceStable(modelsRank, func(i, j int) bool {

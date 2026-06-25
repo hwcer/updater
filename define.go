@@ -11,6 +11,35 @@ var Config = struct {
 	BulkWrite func(u *Updater) BulkWrite                                //全局 BulkWrite 工厂
 }{}
 
+// Status 状态位标记
+type Status uint8
+
+const (
+	StatusInit     Status = 1 << iota // 已初始化，按模块预设加载数据
+	StatusSubmit                      // 需要触发提交
+	StatusChanged                     // 数据变动，需要 Data 更新
+	StatusOperated                    // 新操作，需要 Verify 检查
+)
+
+func (s *Status) Has(flags ...Status) bool {
+	for _, f := range flags {
+		if *s&f != 0 {
+			return true
+		}
+	}
+	return false
+}
+func (s *Status) Set(flags ...Status) {
+	for _, f := range flags {
+		*s |= f
+	}
+}
+func (s *Status) Unset(flags ...Status) {
+	for _, f := range flags {
+		*s &^= f
+	}
+}
+
 // BulkWrite 跨集合批量写入接口
 type BulkWrite interface {
 	Submit() error
