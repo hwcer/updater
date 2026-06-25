@@ -48,11 +48,11 @@ func (m Middlewares) LoadOrStore(name string, handle Middleware) Middleware {
 }
 
 // LoadOrCreate 获取已有中间件，不存在时通过 creator 创建并存入
-func (m Middlewares) LoadOrCreate(name string, creator func() Middleware) Middleware {
+func (m Middlewares) LoadOrCreate(u *Updater, name string, creator func(*Updater) Middleware) Middleware {
 	if v := m[name]; v != nil {
 		return v
 	}
-	v := creator()
+	v := creator(u)
 	m[name] = v
 	return v
 }

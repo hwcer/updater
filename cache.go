@@ -2,6 +2,19 @@ package updater
 
 import "github.com/hwcer/cosgo/values"
 
+type CacheCreator func(*Updater) any
+
+// 全局中间件，所有 Updater 实例共享，每次 emit 都触发，永不移除
+var globalCache map[string]CacheCreator
+
+// RegisterGlobalCache 注册全局缓存，必须在初始化时调用
+func RegisterGlobalCache(name string, creator CacheCreator) {
+	if globalCache == nil {
+		globalCache = make(map[string]CacheCreator)
+	}
+	globalCache[name] = creator
+}
+
 // Cache 自定义缓存
 type Cache map[string]any
 
@@ -38,20 +51,20 @@ func (c Cache) Set(name string, value any) {
 }
 
 // LoadOrStore 获取已有值，不存在时存入并返回
-func (c Cache) LoadOrStore(name string, value any) (result any, loaded bool) {
+func (c Cache) LoadOrStore(name string, value any) any {
 	if v, ok := c[name]; ok {
-		return v, true
+		return v
 	}
 	c[name] = value
-	return value, false
+	return value
 }
 
 // LoadOrCreate 获取已有值，不存在时通过 creator 创建并存入
-func (c Cache) LoadOrCreate(u *Updater, name string, creator func(*Updater) any) (result any, loaded bool) {
+func (c Cache) LoadOrCreate(u *Updater, name string, creator func(*Updater) any) any {
 	if v, ok := c[name]; ok {
-		return v, true
+		return v
 	}
 	v := creator(u)
 	c[name] = v
-	return v, false
+	return v
 }

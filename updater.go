@@ -94,13 +94,12 @@ func (u *Updater) Loader() bool {
 
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
-func (u *Updater) Loading(init bool, cb ...func()) (err error) {
+func (u *Updater) Loading(cb ...func()) (err error) {
 	if u.status.Has(StatusInit) {
 		return
 	}
-	if init {
-		u.status.Set(StatusInit)
-	}
+	u.status.Set(StatusInit)
+
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
 	}
@@ -115,16 +114,21 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 			return
 		}
 	}
-	for _, f := range cb {
-		f()
-	}
-	if u.status.Has(StatusInit) {
-		u.Emit(EventTypeInit)
-	}
+
 	if u.now.IsZero() {
 		u.now = time.Now()
 	}
 	u.last = u.now.Unix()
+
+	for _, f := range cb {
+		f()
+	}
+
+	for k, v := range globalCache {
+		_ = u.Cache.LoadOrCreate(u, k, v)
+	}
+	u.Emit(EventTypeInit)
+
 	return
 }
 
