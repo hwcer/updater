@@ -25,6 +25,7 @@ type Updater struct {
 	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
 	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
 
+	Cache         Cache       //自定义缓存数据
 	Error         error       //请求过程中的错误
 	Events        Events      //生命周期事件
 	Middleware    Middlewares //中间件，所有事件类型都会触发
@@ -33,7 +34,7 @@ type Updater struct {
 }
 
 func New(p Player) *Updater {
-	return &Updater{player: p, Handler: Handler{}, Events: Events{}, Middleware: Middlewares{}}
+	return &Updater{player: p, Cache: Cache{}, Handler: Handler{}, Events: Events{}, Middleware: Middlewares{}}
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
@@ -119,6 +120,9 @@ func (u *Updater) Loading(init bool, cb ...func()) (err error) {
 	}
 	if u.status.Has(StatusInit) {
 		u.Emit(EventTypeInit)
+	}
+	if u.now.IsZero() {
+		u.now = time.Now()
 	}
 	u.last = u.now.Unix()
 	return

@@ -175,9 +175,14 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 			}
 		} else if v.op.Has(collOperatorUpdate) {
 			doc, _ := coll.dataset.Get(k)
+			if doc == nil {
+				continue
+			}
 			dirty, unsets := doc.Save()
 			if len(dirty) > 0 || len(unsets) > 0 {
-				err = w.Setter(k, dirty, unsets)
+				if err = w.Setter(k, dirty, unsets); err != nil {
+					break
+				}
 			}
 		}
 	}

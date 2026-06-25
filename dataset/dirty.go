@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	collOperatorInsert int = 1
-	collOperatorUpdate int = 2
-	collOperatorDelete int = 3
+	collOperatorInsert int = 1 << iota // 0b001
+	collOperatorUpdate                 // 0b010
+	collOperatorDelete                 // 0b100
 )
 
 type Operator struct {
@@ -42,7 +42,7 @@ func (c Dirty) Remove(k string) {
 	delete(c, k)
 }
 
-// Delete 标记为删除
+// Delete 清除所有标记，仅设 Delete
 func (c Dirty) Delete(k string) {
 	d := c.Operator(k)
 	d.op = 0
@@ -50,22 +50,22 @@ func (c Dirty) Delete(k string) {
 	d.op.Set(collOperatorDelete)
 }
 
-// Update 标记为更新
+// Insert 清除其他标记，全新插入
+func (c Dirty) Insert(k string, doc *Document) {
+	d := c.Operator(k)
+	d.op = 0
+	d.doc = doc
+	d.op.Set(collOperatorInsert)
+}
+
+// Update 标记为更新，不能与 Delete 共存
 func (c Dirty) Update(k string) {
 	d := c.Operator(k)
-	if d.op.Has(collOperatorDelete) && !d.op.Has(collOperatorInsert) {
-		logger.Alert("已经标记为删除的记录无法直接再次使用Update操作:%v", k)
+	if d.op.Has(collOperatorDelete) {
+		logger.Alert("已标记为删除的记录不能 Update:%v", k)
 		return
 	}
 	d.op.Set(collOperatorUpdate)
-}
-
-// Insert 临时缓存新对象
-func (c Dirty) Insert(k string, doc *Document) {
-	d := c.Operator(k)
-	d.doc = doc
-	d.op.Set(collOperatorInsert)
-	d.op.Delete(collOperatorUpdate) //Insert取消Update操作
 }
 
 func (c Dirty) Operator(k string) (r *Operator) {
