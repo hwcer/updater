@@ -32,13 +32,9 @@ func (c Cache) GetString(name string) string {
 	return values.ParseString(v)
 }
 
-// Set 设置，已存在时默认不覆盖，replace=true 时覆盖
-func (c Cache) Set(name string, value any, replace ...bool) bool {
-	if _, ok := c[name]; ok && (len(replace) == 0 || !replace[0]) {
-		return false
-	}
+// Set 设置
+func (c Cache) Set(name string, value any) {
 	c[name] = value
-	return true
 }
 
 // LoadOrStore 获取已有值，不存在时存入并返回
@@ -51,11 +47,11 @@ func (c Cache) LoadOrStore(name string, value any) (result any, loaded bool) {
 }
 
 // LoadOrCreate 获取已有值，不存在时通过 creator 创建并存入
-func (c Cache) LoadOrCreate(name string, creator func() any) (result any, loaded bool) {
+func (c Cache) LoadOrCreate(u *Updater, name string, creator func(*Updater) any) (result any, loaded bool) {
 	if v, ok := c[name]; ok {
 		return v, true
 	}
-	v := creator()
+	v := creator(u)
 	c[name] = v
 	return v, false
 }
