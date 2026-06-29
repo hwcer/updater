@@ -92,6 +92,36 @@ func (u *Updater) Loader() bool {
 	return u.status.Has(StatusInit)
 }
 
+// Develop 设置或获取开发者模式标记，仅供业务层自取
+func (u *Updater) Develop(v ...bool) bool {
+	if len(v) > 0 {
+		if v[0] {
+			u.status.Set(StatusDevelop)
+		} else {
+			u.status.Unset(StatusDevelop)
+		}
+	}
+	return u.status.Has(StatusDevelop)
+}
+
+// Testing 测试模式开关，开启后所有操作仅在内存生效不写库，关闭时强制从数据库重新加载
+func (u *Updater) Testing(on bool) error {
+	if on {
+		u.status.Set(StatusTesting)
+		return nil
+	}
+	if !u.status.Has(StatusTesting) {
+		return nil
+	}
+	u.status.Unset(StatusTesting)
+	for _, w := range u.Handles() {
+		if err := w.reload(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(cb ...func()) (err error) {
@@ -164,7 +194,7 @@ func (u *Updater) Release() {
 		op.Release()
 	}
 	u.dirty = nil
-	u.status &= StatusInit
+	u.status &= StatusInit | StatusTesting | StatusDevelop
 	u.bulkWrite = nil
 	u.Error = nil
 	u.CreditAllowed = false
@@ -295,7 +325,9 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 		}
 	}
 	if u.bulkWrite != nil {
-		if err = u.bulkWrite.Submit(); err != nil {
+		if u.status.Has(StatusTesting) {
+			u.bulkWrite = nil
+		} else if err = u.bulkWrite.Submit(); err != nil {
 			return
 		}
 	}
@@ -389,7 +421,9 @@ func (u *Updater) Destroy() (err error) {
 		}
 	}
 	if u.bulkWrite != nil {
-		err = u.bulkWrite.Submit()
+		if !u.status.Has(StatusTesting) {
+			err = u.bulkWrite.Submit()
+		}
 		u.bulkWrite = nil
 	}
 	u.player = nil

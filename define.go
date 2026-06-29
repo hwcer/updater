@@ -19,6 +19,8 @@ const (
 	StatusSubmit                      // 需要触发提交
 	StatusChanged                     // 数据变动，需要 Data 更新
 	StatusOperated                    // 新操作，需要 Verify 检查
+	StatusTesting                     // 测试模式，不写库
+	StatusDevelop                     // 开发者模式，业务层自取
 )
 
 func (s *Status) Has(flags ...Status) bool {
