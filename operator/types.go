@@ -6,11 +6,11 @@ package operator
 type Types uint8
 
 const (
-	TypesNone Types = 0 // 无意义
-	TypesAdd  Types = 1 // 添加操作，用于增加数值或添加元素
-	TypesSub  Types = 2 // 扣除操作，用于减少数值或移除元素
-	TypesSet  Types = 3 // 设置操作，用于直接设置字段值
-	TypesDel  Types = 4 // 删除操作，用于删除元素或字段
+	TypesNone  Types = 0 // 无意义
+	TypesAdd   Types = 1 // 添加操作，用于增加数值或添加元素
+	TypesSub   Types = 2 // 扣除操作，用于减少数值或移除元素
+	TypesSet   Types = 3 // 设置操作，用于直接设置字段值
+	TypesDel   Types = 4 // 删除操作，用于删除元素或字段
 	TypesNew   Types = 5 // 新对象操作，等同于add，但是装备之类不能叠加时，会走NEW生成新对象
 	TypesUnset Types = 6 // Unset操作，从文档中移除字段（MongoDB $unset），仅适用于 map 类型字段
 
@@ -18,6 +18,16 @@ const (
 	TypesResolve  Types = 91 // 自动分解操作，用于自动分解道具
 	TypesOverflow Types = 92 // 溢出操作，道具已满使用其他方式(邮件)转发
 )
+
+// IsAdd 是否添加
+func (at Types) IsAdd() bool {
+	return at == TypesAdd || at == TypesNew
+}
+
+// IsSub 是否扣除
+func (at Types) IsSub() bool {
+	return at == TypesSub || at == TypesNew
+}
 
 // IsValid 判断操作类型是否有效
 // 有效的操作类型包括：Add、Sub、Set、Del、New
