@@ -31,6 +31,45 @@ type TableOrder interface {
 	TableOrder() int32
 }
 
+// ModelIMax 可选接口,模型未实现时回落到全局 Config.IMax
+type ModelIMax interface {
+	IMax(iid int32) int64 //单个道具可拥有的最大数量,默认无限
+}
+
+// ModelIType 可选接口,模型未实现时回落到全局 Config.IType
+// 约束:Updater 始终按 Config.IType 把 iid 路由到 Handle,所以模型返回的 itype 必须仍归属模型自身,
+// 它只能用于同一模型内多个 itype 的细分,不能与 Config.IType 给出不同的模型归属;
+// 两者归属不一致时 Values 会静默丢弃操作,Collection 返回 ErrITypeNotExist
+type ModelIType interface {
+	IType(iid int32) int32 //内部查询道具的类型
+}
+
+// modelIMax 单个道具持有上限,模型实现 ModelIMax 时优先,否则使用全局 Config
+func modelIMax(model any, iid int32) int64 {
+	if v, ok := model.(ModelIMax); ok {
+		return v.IMax(iid)
+	}
+	if Config.IMax != nil {
+		return Config.IMax(iid)
+	}
+	return 0
+}
+
+// modelIType 查询道具类型,模型实现 ModelIType 时优先,否则使用全局 Config
+// iid==0 时由模型返回默认 IType,Config 兜底通常返回 0(nil)
+func modelIType(model any, iid int32) IType {
+	var it int32
+	if v, ok := model.(ModelIType); ok {
+		it = v.IType(iid)
+	} else if Config.IType != nil {
+		it = Config.IType(iid)
+	}
+	if it == 0 {
+		return nil
+	}
+	return itypesDict[it]
+}
+
 // ModelReset 返回true时 重新调用 model.Getter
 type ModelReset interface {
 	Reset(*Updater, int64) bool

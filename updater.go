@@ -338,6 +338,7 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 }
 
 // IType 通过iid获取IType
+// 始终按全局 Config.IType 查询,不受模型 ModelIType 覆盖影响,需要模型口径时用 Handle.IType
 func (u *Updater) IType(iid int32) (it IType) {
 	if id := Config.IType(iid); id != 0 {
 		it = itypesDict[id]

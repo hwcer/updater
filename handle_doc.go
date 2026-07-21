@@ -13,6 +13,9 @@ import (
 
 // DocumentModel 文档模型接口
 // 建议在业务model中实现 dataset.ModelGet 和 dataset.ModelSet 接口提高性能
+// 可选实现 ModelIMax 覆盖全局 Config 的上限查询
+// IType 为必需方法(等价 ModelIType):Document 大部分操作按 field 定位,iid 为 0,
+// 只能由模型给出默认 IType,全局 Config.IType(0) 无法兜底;Values/Virtual 无此需求,IType 是可选的
 type DocumentModel interface {
 	New(update *Updater) any
 	IType(int32) int32
@@ -69,9 +72,12 @@ func (this *Document) Data() (err error) {
 	return
 }
 
+func (this *Document) IMax(iid int32) int64 {
+	return modelIMax(this.model, iid)
+}
+
 func (this *Document) IType(iid int32) IType {
-	v := this.model.IType(iid)
-	return itypesDict[v]
+	return modelIType(this.model, iid)
 }
 
 func (this *Document) Select(keys ...any) {

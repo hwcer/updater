@@ -8,8 +8,9 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
+// ValuesModel 数字型键值对模型接口
+// 可选实现 ModelIMax / ModelIType 覆盖全局 Config 的上限与类型查询
 type ValuesModel interface {
-	IType(iid int32) int32
 	Getter(u *Updater, data *dataset.Values, keys []int32) error
 	Setter(u *Updater, bulkWrite BulkWrite, dirty dataset.Data, unset []int32) error
 }
@@ -53,12 +54,12 @@ func (this *Values) Data() (err error) {
 	return
 }
 
+func (this *Values) IMax(iid int32) int64 {
+	return modelIMax(this.model, iid)
+}
+
 func (this *Values) IType(iid int32) IType {
-	it := this.model.IType(iid)
-	if it == 0 {
-		return nil
-	}
-	return itypesDict[it]
+	return modelIType(this.model, iid)
 }
 
 // Select 指定需要从数据库更新的字段

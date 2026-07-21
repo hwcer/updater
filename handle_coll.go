@@ -11,7 +11,6 @@ import (
 )
 
 type CollectionModel interface {
-	IType(iid int32) int32
 	Upsert(update *Updater, op *operator.Operator) bool
 	Schema() *schema.Schema
 	Getter(update *Updater, data *dataset.Collection, keys []string) error
@@ -70,12 +69,12 @@ func (this *Collection) Data() (err error) {
 	return
 }
 
+func (this *Collection) IMax(iid int32) int64 {
+	return modelIMax(this.model, iid)
+}
+
 func (this *Collection) IType(iid int32) IType {
-	it := this.model.IType(iid)
-	if it == 0 {
-		return nil
-	}
-	return itypesDict[it]
+	return modelIType(this.model, iid)
 }
 
 func (this *Collection) Select(keys ...any) {

@@ -20,7 +20,7 @@ func overflow(update *Updater, handle Handle, op *operator.Operator) (err error)
 	val := op.Value
 	num := handle.Val(op.IID)
 	tot := val + num
-	imax := Config.IMax(op.IID)
+	imax := handle.IMax(op.IID)
 	if imax > 0 && tot > imax {
 		n := min(tot-imax, val)
 		val -= n

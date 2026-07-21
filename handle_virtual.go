@@ -5,10 +5,11 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
+// VirtualModel 虚拟模型接口
+// 可选实现 ModelIMax / ModelIType 覆盖全局 Config 的上限与类型查询
 type VirtualModel interface {
 	Has(u *Updater, k any) bool
 	Get(u *Updater, k any) (r any)
-	IType(int32) int32
 	Field(int32) (string, bool) //格式化字段
 	Update(u *Updater, op *operator.Operator)
 	Select(u *Updater, keys ...any)
@@ -43,13 +44,13 @@ func (this *Virtual) Data() (err error) {
 	return
 }
 
+func (this *Virtual) IMax(iid int32) int64 {
+	return modelIMax(this.model, iid)
+}
+
 // IType iid>0 时按 iid 查找，iid==0 时返回模型默认 IType
 func (this *Virtual) IType(iid int32) IType {
-	it := this.model.IType(iid)
-	if it == 0 {
-		return nil
-	}
-	return itypesDict[it]
+	return modelIType(this.model, iid)
 }
 
 func (this *Virtual) Select(keys ...any) {

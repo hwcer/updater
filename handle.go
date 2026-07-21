@@ -3,12 +3,13 @@ package updater
 // Handle 数据模型的统一操作接口
 // 公开方法供业务层直接调用，私有方法由 Updater 生命周期驱动
 type Handle interface {
-	Get(any) any        //通过 iid 或 oid 获取原始数据
-	Val(any) int64      //通过 iid 或 oid 获取数值
-	Data() error        //从数据库拉取 Select 标记的数据
-	IType(int32) IType  //通过 iid 获取 IType，iid==0 时返回模型默认 IType
-	Select(keys ...any) //标记需要从数据库拉取的 key
-	Parser() Parser     //返回解析器类型
+	Get(any) any          //通过 iid 或 oid 获取原始数据
+	Val(any) int64        //通过 iid 或 oid 获取数值
+	Data() error          //从数据库拉取 Select 标记的数据
+	IMax(iid int32) int64 //单个道具持有上限
+	IType(int32) IType    //通过 iid 获取 IType，仅实现 ModelIType 的模型支持 iid==0 取默认值
+	Select(keys ...any)   //标记需要从数据库拉取的 key
+	Parser() Parser       //返回解析器类型
 
 	save() error               //持久化脏数据到数据库
 	reset()                    //每次请求开始时重置状态
