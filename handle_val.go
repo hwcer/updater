@@ -54,6 +54,12 @@ func (this *Values) Data() (err error) {
 	return
 }
 
+// Count 按 iid 汇总的持有总量
+// 数值型一个 iid 只有一个数值、不存在多文档,故与 Val 等价,不需要扫描
+func (this *Values) Count(iid int32) int64 {
+	return this.Val(iid)
+}
+
 func (this *Values) IMax(iid int32) int64 {
 	return modelIMax(this.model, iid)
 }

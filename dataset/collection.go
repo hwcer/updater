@@ -242,6 +242,33 @@ func (coll *Collection) Range(handle func(string, *Document) bool) {
 	}
 }
 
+// Count 统计满足条件的记录数,O(n) 全量扫描
+// 注意与 Range 的差异:Range 只遍历 dataset,看不到 dirty 中尚未 Save 的新增;
+// Count 包含 dirty 待插入、排除 dirty 待删除,保证同一次请求内连续多次插入能被立即计入
+// (上限检查依赖这一点,否则一个请求内连发 N 次插入会全部通过)
+func (coll *Collection) Count(match func(doc *Document) bool) (r int64) {
+	for k, doc := range coll.dataset {
+		if ok, exist := coll.dirty.Has(k); exist && !ok {
+			continue //已标记删除
+		}
+		if match(doc) {
+			r++
+		}
+	}
+	for k, v := range coll.dirty {
+		if !v.op.Has(collOperatorInsert) || v.doc == nil {
+			continue
+		}
+		if coll.dataset.Has(k) {
+			continue //已在 dataset 中统计过
+		}
+		if match(v.doc) {
+			r++
+		}
+	}
+	return
+}
+
 func (coll *Collection) Reset(rows ...any) {
 	coll.dataset = make(Dataset, len(rows))
 	coll.dirty = nil

@@ -2,9 +2,11 @@ package dataset
 
 var Fields = struct {
 	OID string
+	IID string
 	VAL string
 }{
 	OID: "_id",
+	IID: "iid",
 	VAL: "val",
 }
 

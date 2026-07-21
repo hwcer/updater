@@ -47,7 +47,8 @@ func (this *Collection) Get(key any) (r any) {
 	return
 }
 
-// Val 直接获取 item中的val值,不可叠加道具只能使用oid获取
+// Val 点查单个文档的 val 值,不可叠加道具只能使用oid获取(传 iid 返回 0)
+// 求某个 iid 的持有总量用 Count,不要用 Val
 func (this *Collection) Val(key any) (r int64) {
 	if oid, err := this.GetOID(key); err == nil {
 		r, _ = this.val(oid)
@@ -67,6 +68,23 @@ func (this *Collection) Data() (err error) {
 		this.statement.date()
 	}
 	return
+}
+
+// Count 按 iid 汇总的持有总量,区别于 Val 的点查单个文档
+// 可叠加道具一个 iid 只有一个文档,直接取其 val 值(等同 Val);
+// 不可叠加道具(装备)一件一个文档、无法由 iid 定位,须扫描 dataset 按 iid 统计文档数,
+// 统计含本次请求内尚未落库的新增(见 dataset.Collection.Count),代价 O(n)
+func (this *Collection) Count(iid int32) int64 {
+	it := this.ITypeCollection(iid)
+	if it == nil {
+		return 0
+	}
+	if it.Stacked(iid) {
+		return this.Val(iid)
+	}
+	return this.dataset.Count(func(doc *dataset.Document) bool {
+		return doc.GetInt32(dataset.Fields.IID) == iid
+	})
 }
 
 func (this *Collection) IMax(iid int32) int64 {

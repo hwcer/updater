@@ -72,6 +72,12 @@ func (this *Document) Data() (err error) {
 	return
 }
 
+// Count 按 iid 汇总的持有总量
+// 文档型整个模型只有一个文档、iid 映射到字段,故与 Val 等价,不需要扫描
+func (this *Document) Count(iid int32) int64 {
+	return this.Val(iid)
+}
+
 func (this *Document) IMax(iid int32) int64 {
 	return modelIMax(this.model, iid)
 }

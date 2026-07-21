@@ -44,6 +44,12 @@ func (this *Virtual) Data() (err error) {
 	return
 }
 
+// Count 按 iid 汇总的持有总量
+// 虚拟数据本身不存储、由模型直接给出数值,故与 Val 等价,不需要扫描
+func (this *Virtual) Count(iid int32) int64 {
+	return this.Val(iid)
+}
+
 func (this *Virtual) IMax(iid int32) int64 {
 	return modelIMax(this.model, iid)
 }
