@@ -74,6 +74,7 @@ func (this *Collection) Data() (err error) {
 // 可叠加道具一个 iid 只有一个文档,直接取其 val 值(等同 Val);
 // 不可叠加道具(装备)一件一个文档、无法由 iid 定位,须扫描 dataset 按 iid 统计文档数,
 // 统计含本次请求内尚未落库的新增(见 dataset.Collection.Count),代价 O(n)
+// 取 iid 优先用 dataset.Model.GetIID(),模型未实现时才按 Fields.IID 字段名兜底
 func (this *Collection) Count(iid int32) int64 {
 	it := this.ITypeCollection(iid)
 	if it == nil {
@@ -83,8 +84,18 @@ func (this *Collection) Count(iid int32) int64 {
 		return this.Val(iid)
 	}
 	return this.dataset.Count(func(doc *dataset.Document) bool {
-		return doc.GetInt32(dataset.Fields.IID) == iid
+		return docIID(doc) == iid
 	})
+}
+
+// docIID 取文档的 iid
+// 优先走 dataset.Model 接口(编译期约束),模型未实现时回落到 Fields.IID 字段名约定;
+// 两者都取不到时返回 0,该文档不会被 Count 计入
+func docIID(doc *dataset.Document) int32 {
+	if m, ok := doc.Any().(dataset.Model); ok {
+		return m.GetIID()
+	}
+	return doc.GetInt32(dataset.Fields.IID)
 }
 
 func (this *Collection) IMax(iid int32) int64 {
