@@ -2,6 +2,8 @@ module github.com/hwcer/updater
 
 go 1.25.0
 
+toolchain go1.26.5
+
 require (
 	github.com/hwcer/cosgo v1.8.3-0.20260604072643-a40b863e7bf4
 	github.com/hwcer/logger v0.2.8
