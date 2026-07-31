@@ -253,13 +253,47 @@ func (u *Updater) Data() (err error) {
 	return u.data(hs)
 }
 
-// Verify 手动执行Verify对操作进行检查
+// Verify 手动执行校验：把当前已入队的操作全部跑完 data→verify，但不落库。
+//
+// 用于"接口内还要单独写库"的场景(如领邮件后改邮件状态)：先 Verify 确认道具发得出去，
+// 再写自己那张表，避免出现"表已改、道具没发"——handle 返回后框架才 Submit，
+// 那时报错只会把回包改成错误码，不会回滚 handle 内已落库的写操作。
+//
+// 校验失败必须把 error 返回给上层：Parse 的错误不置 u.Error，靠 handle 返回非零 code
+// 让框架跳过后续 Submit(yyds/context/service.go)；吞掉它会落库半成品。
+//
+// Verify 之后再 Submit 是安全的：status 已被消耗，Submit 的收敛循环直接跳过，
+// 走 submit 落库已 Parse 进 cache 的操作。
 func (u *Updater) Verify() (err error) {
 	if err = u.WriteAble(); err != nil {
 		return err
 	}
+	return u.converge()
+}
+
+// converge data→verify 收敛循环，直到不再产生新操作，最多 100 轮防止死循环。
+//
+// 单轮是不够的：verify 期间 IType 的 creator/overflow 会产生新操作(自动分解、溢出转化)，
+// 跑完 status 会重新变成 StatusOperated，这些新操作必须再过一轮才算校验完整。
+// Verify 与 Submit 共用本函数——前者只要校验结论，后者在此之后才落库。
+func (u *Updater) converge() (err error) {
 	hs := u.Handles()
-	return u.verify(hs)
+	loop := int8(1)
+	for u.status.Has(StatusSubmit, StatusChanged, StatusOperated) {
+		if err = u.data(hs); err != nil {
+			return
+		}
+		if err = u.verify(hs); err != nil {
+			return
+		}
+		u.status.Unset(StatusSubmit)
+		u.Emit(EventTypeSubmit)
+		if loop = loop + 1; loop >= 100 {
+			u.Error = ErrSubmitEndlessLoop
+			return u.Error
+		}
+	}
+	return
 }
 
 func (u *Updater) data(hs []Handle) (err error) {
@@ -302,23 +336,10 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if err = u.WriteAble(); err != nil {
 		return nil, err
 	}
-	hs := u.Handles()
-
-	loop := int8(1)
-	for u.status.Has(StatusSubmit, StatusChanged, StatusOperated) {
-		if err = u.data(hs); err != nil {
-			return
-		}
-		if err = u.verify(hs); err != nil {
-			return
-		}
-		u.status.Unset(StatusSubmit)
-		u.Emit(EventTypeSubmit)
-		if loop = loop + 1; loop >= 100 {
-			u.Error = ErrSubmitEndlessLoop
-			return nil, u.Error
-		}
+	if err = u.converge(); err != nil {
+		return
 	}
+	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		if err = hs[i].submit(); err != nil {
 			return
