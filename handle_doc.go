@@ -192,8 +192,10 @@ func (this *Document) verify() (err error) {
 	if err = this.Updater.WriteAble(); err != nil {
 		return
 	}
-	for _, act := range this.statement.operator {
-		if err = this.Parse(act); err != nil {
+	// 下标遍历(而非 range):Parse 中 overflow→Resolve 可能往本 handle 追加操作(与自己同模型),
+	// range 按初始长度迭代会漏掉,使其被 statement.verify() 搬进 cache 却未 Parse、最终不落库。见 handle_coll.go。
+	for i := 0; i < len(this.statement.operator); i++ {
+		if err = this.Parse(this.statement.operator[i]); err != nil {
 			return
 		}
 	}
