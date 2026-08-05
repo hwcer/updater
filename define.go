@@ -71,8 +71,12 @@ type ITypeCollection interface {
 // Verify执行的一部分(Data之后Save之前)
 // 使用Resolve前，需要使用ITypeListener监听将可能分解成的道具ID使用adapter.Select预读数据
 // 使用Resolve时需要关联IMax指定道具上限
+//
+// 返回值为本次分解产出的材料(key 道具ID,value 数量),发放仍由实现方自己 u.Add;
+// 框架只负责把它记进 op.Attach[operator.AttachResolve],供业务层在 Submit 后读取
+// (op.GetResolve()),不必再写一份「纯查询版」重算产物。无产物返回 nil 即可。
 type ITypeResolve interface {
-	Resolve(u *Updater, iid int32, val int64) error
+	Resolve(u *Updater, iid int32, val int64) (map[int32]int64, error)
 }
 
 // ITypeResult 设置返回结果

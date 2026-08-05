@@ -121,6 +121,8 @@ The operation descriptor passed through the entire pipeline. Key fields:
 - `Field` (string, `json:"-"`) — internal temporary field name, not serialized
 - `Value` (int64) — numeric operand
 - `Result` (any) — final result, type varies by Handle
+- `Attach` (`values.Values`，`json:"-"`) — 业务层临时数据，随 Operator 在管线内传递，不序列化给前端；用 `SetAttach/GetAttach` 读写（`SetAttach` 会懒创建 map），`Clone()` 与原对象共享同一 map，`Release()` 时置 nil
+- `SetResolve(items map[int32]int64)` — 一键分解：把 OType 置为 `TypesResolve`，并将分解材料存入 `Attach[AttachResolve]`（常量 `operator.AttachResolve = "resolve"`），用 `GetResolve()` 取回。`ITypeResolve.Resolve` 返回的材料由 `funcs.go:overflow` 自动记入（整件分解走 `SetResolve`，只溢出一部分时只记材料、不动 OType——打成 `TypesResolve` 会让整条不落库）
 
 ### Handle interface
 

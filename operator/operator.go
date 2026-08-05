@@ -1,6 +1,10 @@
 package operator
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/hwcer/cosgo/values"
+)
 
 /*
 Operator 操作对象
@@ -91,15 +95,16 @@ func New(opt Types, field string, value int64, result any) *Operator {
 // Operator 操作对象，用于描述对数据的各种操作
 
 type Operator struct {
-	_      struct{} `json:"-"` // 禁止外部使用字段名方式构造 Operator{Field: Value}
-	OID    string `json:"o,omitempty"` // object id，用于标识集合中的单个对象
-	IID    int32  `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
-	Flag   Flag   `json:"f"`           // 操作标志位，按位组合控制更新和展示行为
-	OType  Types  `json:"op"`          // 操作类型，如 add、sub、set、del、new 等
-	IType  int32  `json:"it"`          // 物品类型 ID，用于标识数据模型
-	Field  string `json:"-"`           // 字段名，内部临时变量，不参与序列化
-	Value  int64  `json:"v"`           // 增量值，add、sub、new 时有效
-	Result any    `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
+	_      struct{}      `json:"-"`           // 禁止外部使用字段名方式构造 Operator{Field: Value}
+	OID    string        `json:"o,omitempty"` // object id，用于标识集合中的单个对象
+	IID    int32         `json:"i,omitempty"` // item id，用于标识道具或物品的唯一ID
+	Flag   Flag          `json:"f"`           // 操作标志位，按位组合控制更新和展示行为
+	OType  Types         `json:"op"`          // 操作类型，如 add、sub、set、del、new 等
+	IType  int32         `json:"it"`          // 物品类型 ID，用于标识数据模型
+	Field  string        `json:"-"`           // 字段名，内部临时变量，不参与序列化
+	Value  int64         `json:"v"`           // 增量值，add、sub、new 时有效
+	Result any           `json:"r,omitempty"` // 最终结果，根据操作类型和数据模型不同而不同
+	Attach values.Values `json:"att"`         // 业务层临时数据，仅在本次 Operator 生命周期内有，Release() 时清空
 }
 
 // SetOType 设置操作类型，非有效类型(Drop/Resolve/Overflow)自动清除 FlagDisplay
@@ -110,7 +115,41 @@ func (op *Operator) SetOType(t Types) {
 	}
 }
 
+// AttachResolve Attach 中存放分解材料的键名，值类型 map[int32]int64
+const AttachResolve = "resolve"
+
+// SetResolve 一键分解：将操作标记为自动分解(TypesResolve)，并把分解产出的材料记录到 Attach
+// items: 分解材料，key 为道具 ID，value 为数量
+func (op *Operator) SetResolve(items map[int32]int64) {
+	op.SetOType(TypesResolve)
+	op.SetAttach(AttachResolve, items)
+}
+
+// GetResolve 读取分解材料，未分解或类型不符时返回 nil
+func (op *Operator) GetResolve() map[int32]int64 {
+	v, _ := op.GetAttach(AttachResolve).(map[int32]int64)
+	return v
+}
+
+// SetAttach 写入业务层临时数据，Attach 为空时自动创建
+func (op *Operator) SetAttach(k string, v any) any {
+	if op.Attach == nil {
+		op.Attach = values.Values{}
+	}
+	op.Attach[k] = v
+	return v
+}
+
+// GetAttach 读取业务层临时数据，不存在时返回 nil
+func (op *Operator) GetAttach(k string) any {
+	if op.Attach == nil {
+		return nil
+	}
+	return op.Attach[k]
+}
+
 // Clone 克隆一个操作对象，并可选择性地修改增量值
+// 注意：Attach 为浅拷贝，克隆对象与原对象共享同一个 map
 // v: 可选参数，用于修改克隆对象的增量值
 func (op *Operator) Clone(v ...int64) *Operator {
 	r := operatorPool.Get().(*Operator)
@@ -134,5 +173,6 @@ func (op *Operator) Release() {
 	op.Field = ""
 	op.Value = 0
 	op.Result = nil
+	op.Attach = nil
 	operatorPool.Put(op)
 }
