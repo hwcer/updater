@@ -30,8 +30,11 @@ func newFieldTestDocument() *Document {
 func TestDocumentFieldSubKeyValidatesRoot(t *testing.T) {
 	doc := newFieldTestDocument()
 
-	if _, err := doc.Field("nosuchfield.1"); err == nil {
-		t.Error("根字段不存在的子键路径应报错，否则会被 dataset 层静默丢弃")
+	//多级路径(mongo 风格 a.b.c)同样按第一个点取根字段
+	for _, key := range []string{"nosuchfield.1", "nosuchfield.1.2", "nosuchfield.a.b.c"} {
+		if _, err := doc.Field(key); err == nil {
+			t.Errorf("根字段不存在的路径 %q 应报错，否则会被 dataset 层静默丢弃", key)
+		}
 	}
 	if _, err := doc.Field("nosuchfield"); err == nil {
 		t.Error("不存在的整字段应报错(原有行为，回归)")
@@ -46,7 +49,8 @@ func TestDocumentFieldSubKeyValidatesRoot(t *testing.T) {
 func TestDocumentFieldSubKeyNotNormalized(t *testing.T) {
 	doc := newFieldTestDocument()
 
-	for _, key := range []string{"soulrelics.1", "SoulRelics.1", "soulrelics.1.2"} {
+	//含 mongo 风格的多级路径：无论几级，整条 key 都必须原样透传
+	for _, key := range []string{"soulrelics.1", "SoulRelics.1", "soulrelics.1.2", "soulrelics.1.a.b"} {
 		got, err := doc.Field(key)
 		if err != nil {
 			t.Errorf("合法子键 %q 不该报错: %v", key, err)

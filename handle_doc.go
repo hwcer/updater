@@ -290,7 +290,12 @@ func (this *Document) Field(k any) (key string, err error) {
 	if err != nil {
 		return
 	}
-	//子键路径(如 soulrelics.1)：只校验根字段存在，**不改写 key**。
+	//子键路径：mongo 风格的多级路径 a.b.c...，取**第一个**点之前的段作为根字段，
+	//只校验它存在，**不改写 key**。
+	//
+	//只校验根字段：后面的段可能是 map 键、slice 下标，也可能是嵌套 message 的字段名，
+	//区分它们要按 schema 逐段下钻(计划放 cosgo/schema)，本次不做。所以 a.b.c 里只有
+	//a 会被校验，b/c 写错在这一层查不出来。
 	//
 	//校验是必须的：不校验则根字段名写错(nosuchfield.1)会一路放行到
 	//dataset.Document.Set，那里 `if !doc.Has(k) { return }` 直接静默返回，
