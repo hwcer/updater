@@ -290,8 +290,22 @@ func (this *Document) Field(k any) (key string, err error) {
 	if err != nil {
 		return
 	}
-	if strings.Contains(key, ".") {
-		return
+	//子键路径(如 soulrelics.1)：只校验根字段存在，**不改写 key**。
+	//
+	//校验是必须的：不校验则根字段名写错(nosuchfield.1)会一路放行到
+	//dataset.Document.Set，那里 `if !doc.Has(k) { return }` 直接静默返回，
+	//调用方拿不到任何错误、还以为写成功了。整字段路径走下面的 Name() 早就会报错，
+	//这里补上只是让两条路径口径一致。
+	//
+	//🔴 只能取 err，**不能**把 Name() 的返回值拼回 key：Name() 返回 JSName()
+	//(protobuf 结构上是 PascalCase)，拼回去会把 soulrelics.1 变成 SoulRelics.1，
+	//而落库时 cosmo 的 update.Transform 对含 "." 的 key 原样下发、不查 schema
+	//——结果是往库里写一个大小写不符的野字段，真正的字段纹丝不动，静默丢数据。
+	if i := strings.Index(key, "."); i > 0 {
+		if _, err = this.Name(key[:i]); err != nil {
+			return "", err
+		}
+		return key, nil
 	}
 	key, err = this.Name(key)
 	return
