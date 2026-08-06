@@ -2,7 +2,6 @@ package updater
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
@@ -23,7 +22,11 @@ type CollectionModelValueJSName interface {
 
 type Collection struct {
 	statement
-	name    string
+	name string
+	// schema 首次取到后缓存。model 在 NewCollection 之后不再变,其 schema 也就固定,
+	// 故无需失效。业务侧的 model.Schema() 常见实现是 `schema.Parse(this)` —— 自己不缓存,
+	// 而 format 里每个 Set/Unset operator 都要取一次。
+	schema  *schema.Schema
 	model   CollectionModel
 	remove  []string //需要移除内存的数据,仅仅RAMMaybe有效
 	dataset *dataset.Collection
@@ -319,15 +322,17 @@ func (this *Collection) Field(field ...string) string {
 }
 
 func (this *Collection) Schema() *schema.Schema {
-	return this.model.Schema()
+	if this.schema == nil {
+		this.schema = this.model.Schema()
+	}
+	return this.schema
 }
 
-func (this *Collection) SetMonitor(key string, v dataset.Monitor) {
-	this.dataset.SetMonitor(key, v)
-}
-
-func (this *Collection) RemoveMonitor(key string) {
-	this.dataset.RemoveMonitor(key)
+// Monitors 数据集变更观察者注册表，注册/注销走返回值上的方法：
+//
+//	coll.Monitors().Set("items", &itemsIndexesMonitor{...})
+func (this *Collection) Monitors() *dataset.Monitors {
+	return this.dataset.Monitors()
 }
 
 // ITypeCollection 返回 ITypeCollection 以访问 New/Stacked/ObjectId 等方法
@@ -454,15 +459,21 @@ func (this *Collection) format(op *operator.Operator) {
 		this.Updater.Error = fmt.Errorf("operator.set schema empty:%s", this.name)
 		return
 	}
+	//统一成 json 名,与 Document.Field 同口径(理由见 Document.Name):op.Result 既是发
+	//客户端的 payload,又经 dataset 进 dirty 落库;客户端那侧直通,落库那侧由 cosmo 的
+	//Update.Transform 在边界换成 DBName。
+	//
+	//🔴 含 "." 的多级路径以前是原样透传的:JSName 只认单段,拼不回去。结果是「shelves.3」
+	//这类 key 的根字段从不换名,调用方写错大小写也一路发到客户端,客户端按 json 名认字段、
+	//当场把它当成不存在。现在 JSName 自己会逐段走查(字段段换名、map 键与下标原样保留),
+	//这里不再需要分支。
 	for k, v := range result {
-		if strings.Contains(k, ".") {
-			data[k] = v
-		} else if name := sch.JSName(k); name != "" {
-			data[name] = v
-		} else {
-			this.Updater.Error = fmt.Errorf("operator.set field not exist,name:%s field:%s", this.name, k)
+		name, err := sch.JSName(k)
+		if err != nil {
+			this.Updater.Error = fmt.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
 			return
 		}
+		data[name] = v
 	}
 	op.Result = data
 }

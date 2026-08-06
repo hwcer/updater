@@ -4,14 +4,48 @@ import (
 	"fmt"
 )
 
-const CollectionMonitorKey = "_collection_cursor"
+// collectionMonitorKey Cursor 自用的注册键。
+// 🔴 不导出：导出就意味着业务能用同一个 key 把框架的 Cursor 订阅覆盖掉。
+const collectionMonitorKey = "_collection_cursor"
 
+// Monitor 数据集变更观察者，由 Collection.Save 在文档真正落定时回调。
+//
+// 🔴 这个位置不可替代：Save 内当同一 OID 同时带 insert 与 update 标志时会 doc.Clone()，
+// 进 Collection.dataset 的与这里收到的都是 clone。任何更早的钩子(如 operator 层)
+// 拿到的都是 clone 前的对象，据此建的索引会锁死在插入瞬间的快照上。
 type Monitor interface {
 	Insert(doc *Document)
 	Delete(doc *Document)
 }
 
+// Monitors 观察者注册表。注册/注销的方法挂在本类型上，Collection 只暴露 Monitors() 一个入口。
+//
+// Get/Set/Remove 用指针接收者：map 为 nil 时 Set 要能就地初始化，值接收者做不到。
+// Insert/Delete 是扇出、不改注册表，保持值接收者。
 type Monitors map[string]Monitor
+
+func (m *Monitors) Get(key string) Monitor {
+	if *m == nil {
+		return nil
+	}
+	return (*m)[key]
+}
+
+func (m *Monitors) Set(key string, v Monitor) {
+	if *m == nil {
+		*m = Monitors{}
+	}
+	(*m)[key] = v
+}
+
+// Remove 注销观察者。
+// 不叫 Delete —— 那个名字被下面的扇出方法占着，且语义完全相反
+// (Delete 是「有文档被删了」，Remove 是「摘掉一个观察者」)。
+func (m *Monitors) Remove(key string) {
+	if *m != nil {
+		delete(*m, key)
+	}
+}
 
 func (m Monitors) Insert(doc *Document) {
 	for _, v := range m {
@@ -190,31 +224,20 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 	return
 }
 
-func (coll *Collection) GetMonitor() Monitors {
-	if coll.monitors == nil {
-		coll.monitors = make(Monitors)
-	}
-	return coll.monitors
-}
-
-func (coll *Collection) SetMonitor(key string, v Monitor) {
-	if coll.monitors == nil {
-		coll.monitors = make(Monitors)
-	}
-	coll.monitors[key] = v
-}
-
-func (coll *Collection) RemoveMonitor(key string) {
-	delete(coll.monitors, key)
+// Monitors 观察者注册表，注册/注销走返回值上的方法：coll.Monitors().Set(key, v)
+//
+// 返回 *Monitors 而非 Monitors：注册表要能从 nil 就地长出来，返回值拷贝做不到。
+func (coll *Collection) Monitors() *Monitors {
+	return &coll.monitors
 }
 
 func (coll *Collection) onCursorRelease() {
-	coll.RemoveMonitor(CollectionMonitorKey)
+	coll.monitors.Remove(collectionMonitorKey)
 }
 func (coll *Collection) Cursor(key string) *Cursor {
 	if coll.cursor == nil || coll.cursor.closed() {
 		coll.cursor = NewCursor(coll.dataset, coll.onCursorRelease)
-		coll.SetMonitor(CollectionMonitorKey, &cursorMonitor{cursor: coll.cursor})
+		coll.monitors.Set(collectionMonitorKey, &cursorMonitor{cursor: coll.cursor})
 	}
 	coll.cursor.users[key] = struct{}{}
 	return coll.cursor

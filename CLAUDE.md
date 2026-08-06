@@ -72,7 +72,28 @@ RAMType affects `statement.has()` logic, `loading()` behavior, and `release()` c
 
 ### Monitor 监控系统
 
-`dataset.Monitor` 接口定义 `Insert(doc)` / `Delete(doc)` 两个回调，在 `Save()` 持久化时触发。`dataset.Monitors`（`map[string]Monitor`）支持多种监控共存，按 key 注册/移除。通过 `Collection.SetMonitor(key, v)` 注册，`RemoveMonitor(key)` 移除。`Monitors` 自身实现 `Monitor` 接口，遍历调用所有注册的监控。
+`dataset.Monitor` 接口定义 `Insert(doc)` / `Delete(doc)` 两个回调，在 `Save()` 持久化时触发。`dataset.Monitors`（`map[string]Monitor`）支持多种监控共存，按 key 注册/移除。
+
+注册表的方法挂在 `Monitors` 自身上（`Get` / `Set` / `Remove`，指针接收者以便在 nil map 上就地初始化），`Collection` 只暴露一个入口：
+
+```go
+coll.Monitors().Set("items", &itemsIndexesMonitor{...})
+coll.Monitors().Remove("items")
+```
+
+`Monitors` 自身也实现 `Monitor` 接口（`Insert`/`Delete` 值接收者），`Save()` 靠它扇出到所有注册项。注意 `Remove(key)` 是「摘掉观察者」，`Delete(doc)` 是「有文档被删了」——同一类型上两个语义相反的方法，别混。
+
+#### 🔴 Monitor 的触发位置不可上移，operator 层的任何回调都替代不了它
+
+`Collection.Save()` 内当同一 OID 同时带 insert 与 update 标志时会 `doc = doc.Clone()`（`dataset/collection.go` insert 分支）——**进 `Collection.dataset` 的与 Monitor 收到的都是这个 clone**。
+
+而 `Collection.submit()` 的顺序是 `statement.submit()` → `save()`，所以 statement / operator 层的任何钩子都早于 clone 决策：
+- 那时 `op.Result` 存的是 `collectionHandleInsert` 里 `r = append(r, v)` 记下的 **clone 前**对象；
+- 回查 `coll.Get(oid)` 也没用，`Get` 优先查 `dirty`，返回的仍是旧对象，`dirty` 要到 `save()` 末尾才置 nil。
+
+「建道具 → 写 Attach」是常见流程（抽卡就走这条），据 operator 建的索引会锁死在插入瞬间的快照上，是**比现状更糟的静默错误**。
+
+回归测试 `dataset/collection_monitor_test.go:TestSaveNotifiesMonitorWithFinalDoc` 钉死了这一点——任何把 Monitor 挪到 operator 层的尝试都会让它立刻变红。
 
 ### Cursor 游标 (dataset package)
 
@@ -84,7 +105,9 @@ RAMType affects `statement.has()` logic, `loading()` behavior, and `release()` c
 - `Cursor.Len()` — 快照中的元素总数
 - `Cursor.Close(key)` — 移除使用方，所有使用方关闭后释放资源
 
-多个使用方可共享同一 Cursor 实例（引用计数）。Cursor 通过未导出的 `cursorMonitor` 适配器注册到 Monitor，新元素插入时自动追加到快照尾部。全部使用方 Close 后自动从 Monitor 注销。Release/Reset 不清除 Cursor，Cursor 仅通过 Close 释放。
+多个使用方可共享同一 Cursor 实例（引用计数）。Cursor 通过未导出的 `cursorMonitor` 适配器注册到 Monitor（注册键 `collectionMonitorKey` **不导出**，业务无法覆盖框架自己的这份订阅），新元素插入时自动追加到快照尾部。全部使用方 Close 后自动从 Monitor 注销。Release/Reset 不清除 Cursor，Cursor 仅通过 Close 释放。
+
+⚠ 已知缺陷（未修）：`cursorMonitor.Delete` 是空实现，快照不会移除已删文档，分页列表可能翻出已删对象。
 
 ### Dirty Tracking (dataset package)
 
