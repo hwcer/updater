@@ -18,9 +18,13 @@ func NewDoc(i any) *Document {
 }
 
 type Document struct {
-	data  any
-	dirty Update
-	unset map[string]struct{}
+	data any
+	// schema 首次解析成功后缓存。data 的类型在 Reset 之前是固定的,而 Has / Get / setter /
+	// unsetMemory / Range / Json 每次都要取一遍 —— 不缓存就每次重走 schema.Parse
+	// (反射取类型 + 全局 sync.Map,实测缓存命中也要 19.4ns)。Reset 换 data 时失效。
+	schema *schema.Schema
+	dirty  Update
+	unset  map[string]struct{}
 }
 
 // Has 是否存在字段
@@ -101,6 +105,12 @@ func (doc *Document) Unset(k string) {
 	doc.unsetMemory(k)
 }
 
+// unsetMemory 同步清除内存。落库的 $unset 由 Save 返回的 unset 列表负责，
+// 这里失败就意味着内存与库分叉 —— 常驻内存(RAMTypeAlways)的模型会一直错到重启。
+//
+// 🔴 用 schema.Unset 而非 SetValue：后者靠 embeddedSchema 下钻、只认结构体字段，
+// 遇到 map 直接放弃，删子键必报 "field not exist:a.b"。改之前 goods.10001 /
+// soulrelics.1 这类路径全都只打一条 Alert 就过去了，内存纹丝不动。
 func (doc *Document) unsetMemory(k string) {
 	if m, ok := doc.data.(ModelUnset); ok {
 		m.Unset(k)
@@ -110,11 +120,7 @@ func (doc *Document) unsetMemory(k string) {
 	if err != nil {
 		return
 	}
-	var v any
-	if strings.Contains(k, ".") {
-		v = reflect.Value{}
-	}
-	if err = sch.SetValue(doc.data, v, k); err != nil {
+	if err = sch.Unset(doc.data, k); err != nil {
 		logger.Alert("Unset: %s.%s error: %v", sch.Name, k, err)
 	}
 }
@@ -203,11 +209,17 @@ func (doc *Document) setter(k string, v any) (r any, err error) {
 }
 
 func (doc *Document) Schema() (sch *schema.Schema, err error) {
+	if doc.schema != nil {
+		return doc.schema, nil
+	}
 	if doc.data == nil {
 		err = errors.New("document not loader")
 		return
 	}
-	return schema.Parse(doc.data)
+	if sch, err = schema.Parse(doc.data); err == nil {
+		doc.schema = sch
+	}
+	return
 }
 func (doc *Document) Clone() *Document {
 	if i, ok := doc.data.(ModelClone); ok {
@@ -233,6 +245,10 @@ func (doc *Document) Clone() *Document {
 }
 
 // Json 转换成json 不包含主键
+//
+// ⚠ 口径与本包其余部分不一致:键取的是 DBName(落库名),而 updater 其它出口统一用 json 名
+// (见 updater.Document.Name)。方法名叫 Json 却产出库名,大概率是历史遗留。
+// 当前**无任何调用方**(updater 与业务侧均未使用),故保持原状不动 —— 真要用之前先定口径。
 func (doc *Document) Json() (map[string]any, error) {
 	sch, err := doc.Schema()
 	if err != nil {
@@ -249,6 +265,7 @@ func (doc *Document) Json() (map[string]any, error) {
 
 func (doc *Document) Reset(v any) {
 	doc.data = v
+	doc.schema = nil //data 换了,缓存的 schema 可能不再对应
 	doc.dirty = nil
 	doc.unset = nil
 }

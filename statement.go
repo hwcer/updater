@@ -32,7 +32,8 @@ func newStatement(u *Updater, m *Model, exist stmHandleExist) *statement {
 	return &statement{ram: m.ram, handleExist: exist, Updater: u}
 }
 
-// Has 查询key(DBName)是否已经初始化
+// Has 查询key是否已经初始化。key 的形态随 handle 而定:Document 是字段名(json 名,
+// 见 Document.Name),Collection 是 OID,Values 是 iid
 func (stmt *statement) has(key any) bool {
 	if stmt.ram == RAMTypeAlways && stmt.loader {
 		return true

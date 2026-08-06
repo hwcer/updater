@@ -3,7 +3,6 @@ package updater
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
@@ -27,7 +26,10 @@ type DocumentModel interface {
 // Document 文档存储
 type Document struct {
 	statement
-	name    string
+	name string
+	// schema 首次解析成功后缓存:整个 handle 生命周期内文档类型固定(model.New 只产出一种类型),
+	// 而 Field/Name/Table/Select 每次调用都要查字段,不缓存就要反复走 schema.Parse(反射取类型 + 全局 sync.Map)
+	schema  *schema.Schema
 	model   DocumentModel
 	dataset *dataset.Document
 }
@@ -103,17 +105,11 @@ func (this *Document) Parser() Parser {
 // ===================== Handle 接口私有方法 =====================
 
 func (this *Document) increase(id int32, v int64) {
-	var k string
-	if k, this.Updater.Error = this.Field(id); this.Updater.Error == nil {
-		this.operator(operator.TypesAdd, k, v, nil)
-	}
+	this.fieldOperator(operator.TypesAdd, id, v, nil)
 }
 
 func (this *Document) decrease(id int32, v int64) {
-	var k string
-	if k, this.Updater.Error = this.Field(id); this.Updater.Error == nil {
-		this.operator(operator.TypesSub, k, v, nil)
-	}
+	this.fieldOperator(operator.TypesSub, id, v, nil)
 }
 
 func (this *Document) save() (err error) {
@@ -145,6 +141,7 @@ func (this *Document) reset() {
 
 func (this *Document) reload() error {
 	this.dataset = nil
+	this.schema = nil
 	this.statement.reload()
 	return this.loading()
 }
@@ -167,6 +164,7 @@ func (this *Document) release() {
 	this.statement.release()
 	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
+		this.schema = nil
 	} else {
 		this.dataset.Release()
 	}
@@ -206,37 +204,21 @@ func (this *Document) verify() (err error) {
 // ===================== 类型特有公开方法 =====================
 
 func (this *Document) Add(k any, v any) *operator.Operator {
-	var field string
-	if field, this.Updater.Error = this.Field(k); this.Updater.Error == nil {
-		return this.operator(operator.TypesAdd, field, dataset.ParseInt64(v), nil)
-	}
-	return nil
+	return this.fieldOperator(operator.TypesAdd, k, dataset.ParseInt64(v), nil)
 }
 
 func (this *Document) Sub(k any, v any) *operator.Operator {
-	var field string
-	if field, this.Updater.Error = this.Field(k); this.Updater.Error == nil {
-		return this.operator(operator.TypesSub, field, dataset.ParseInt64(v), nil)
-	}
-	return nil
+	return this.fieldOperator(operator.TypesSub, k, dataset.ParseInt64(v), nil)
 }
 
 // Set 设置
 // Set(k string|int32,v any)
 func (this *Document) Set(k any, v any) *operator.Operator {
-	var field string
-	if field, this.Updater.Error = this.Field(k); this.Updater.Error == nil {
-		return this.operator(operator.TypesSet, field, 0, v)
-	}
-	return nil
+	return this.fieldOperator(operator.TypesSet, k, 0, v)
 }
 
 func (this *Document) Unset(k any) *operator.Operator {
-	var field string
-	if field, this.Updater.Error = this.Field(k); this.Updater.Error == nil {
-		return this.operator(operator.TypesUnset, field, 0, nil)
-	}
-	return nil
+	return this.fieldOperator(operator.TypesUnset, k, 0, nil)
 }
 
 func (this *Document) Has(k any) bool {
@@ -259,23 +241,50 @@ func (this *Document) Table() (r string) {
 }
 
 func (this *Document) Schema() *schema.Schema {
+	if this.schema != nil {
+		return this.schema
+	}
+	if this.dataset == nil {
+		this.Updater.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
+		return nil
+	}
 	sch, err := this.dataset.Schema()
 	if err != nil {
 		this.Updater.Error = err
+		return nil
 	}
+	this.schema = sch
 	return sch
 }
 
-// Name  db name
-func (this *Document) Name(k string) (r string, err error) {
+// schema 取 schema,不可用时给出明确错误
+// 🔴 必须报错:旧实现在 Schema() 为 nil 时一路返回 ("", nil),
+// 调用方会拿着空字段名当成解析成功继续往下走
+func (this *Document) sch() (*schema.Schema, error) {
 	if sch := this.Schema(); sch != nil {
-		if field := sch.LookUpField(k); field != nil {
-			r = field.JSName()
-		} else {
-			err = fmt.Errorf("document field not exist,model:%s,Field:%s", sch.Name, k)
-		}
+		return sch, nil
 	}
-	return
+	if this.Updater.Error != nil {
+		return nil, this.Updater.Error
+	}
+	return nil, fmt.Errorf("document schema not ready,model:%s", this.name)
+}
+
+// Name 字段名(json 名)
+//
+// 🔴 updater 内部统一用 json 名,不用落库名。理由是 op.Field / op.Result 同时喂两个
+// 下游:一是发给客户端的 payload(客户端按 json 名认字段),二是落库。让它带 json 名,
+// 客户端那侧就是直通;落库那侧由 cosmo 在边界统一换成 DBName ——
+// Update.Transform 与 Selector.Projection 都走 schema.DBName 逐段换名。
+//
+// 反过来(updater 发 DBName)则要求客户端认库名,且 Collection 的 op.Result 还得再转一次,
+// 一份 map 两套命名,迟早分叉。
+func (this *Document) Name(k string) (r string, err error) {
+	sch, err := this.sch()
+	if err != nil {
+		return "", err
+	}
+	return sch.JSName(k)
 }
 
 // Field key || iid 获取字段名
@@ -284,36 +293,22 @@ func (this *Document) Field(k any) (key string, err error) {
 	case string:
 		key = v
 	default:
-		iid := dataset.ParseInt32(k)
-		key, err = this.model.Field(this.Updater, iid)
-	}
-	if err != nil {
-		return
-	}
-	//子键路径：mongo 风格的多级路径 a.b.c...，取**第一个**点之前的段作为根字段，
-	//只校验它存在，**不改写 key**。
-	//
-	//只校验根字段：后面的段可能是 map 键、slice 下标，也可能是嵌套 message 的字段名，
-	//区分它们要按 schema 逐段下钻(计划放 cosgo/schema)，本次不做。所以 a.b.c 里只有
-	//a 会被校验，b/c 写错在这一层查不出来。
-	//
-	//校验是必须的：不校验则根字段名写错(nosuchfield.1)会一路放行到
-	//dataset.Document.Set，那里 `if !doc.Has(k) { return }` 直接静默返回，
-	//调用方拿不到任何错误、还以为写成功了。整字段路径走下面的 Name() 早就会报错，
-	//这里补上只是让两条路径口径一致。
-	//
-	//🔴 只能取 err，**不能**把 Name() 的返回值拼回 key：Name() 返回 JSName()
-	//(protobuf 结构上是 PascalCase)，拼回去会把 soulrelics.1 变成 SoulRelics.1，
-	//而落库时 cosmo 的 update.Transform 对含 "." 的 key 原样下发、不查 schema
-	//——结果是往库里写一个大小写不符的野字段，真正的字段纹丝不动，静默丢数据。
-	if i := strings.Index(key, "."); i > 0 {
-		if _, err = this.Name(key[:i]); err != nil {
+		if key, err = this.model.Field(this.Updater, dataset.ParseInt32(k)); err != nil {
 			return "", err
 		}
-		return key, nil
 	}
-	key, err = this.Name(key)
-	return
+	//规范化成 json 名，含 mongo 风格的多级路径 a.b.c：字段段换名，map 键 / slice 下标
+	//原样保留，逐段判定由 schema 负责(它才知道每一段落在什么容器上)。
+	//落库名的转换在 cosmo 边界统一做，见 Name 的注释。
+	//
+	//🔴 校验必不可少：不校验则字段名写错(nosuchfield.1)会一路放行到 dataset.Document.Set，
+	//那里 `if !doc.Has(k) { return }` 直接静默返回，调用方拿不到错误、还以为写成功了。
+	//带点路径尤其要逐段校验 —— 中间段和末段写错，这一层不查就没人查了。
+	sch, err := this.sch()
+	if err != nil {
+		return "", err
+	}
+	return sch.JSName(key)
 }
 
 func (this *Document) Insert(op *operator.Operator, before ...bool) {
@@ -327,6 +322,20 @@ func (this *Document) val(k string) (r int64, ok bool) {
 		r, ok = dataset.TryParseInt64(v)
 	}
 	return
+}
+
+// fieldOperator 先按 key||iid 定位字段名再生成操作,Add/Sub/Set/Unset 与 increase/decrease 共用
+//
+// 🔴 只在 Field 失败时写 Updater.Error:旧代码 `field, this.Updater.Error = this.Field(k)`
+// 无条件赋值,解析成功时把 nil 写了回去 —— 此前挂起的错误被抹掉,紧接着的
+// operator() → WriteAble() 误判为可写,本该被拦下的写入照样落库
+func (this *Document) fieldOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
+	field, err := this.Field(k)
+	if err != nil {
+		this.Updater.Error = err
+		return nil
+	}
+	return this.operator(t, field, v, r)
 }
 
 func (this *Document) operator(t operator.Types, k string, v int64, r any) *operator.Operator {
