@@ -114,6 +114,19 @@ func (u *Updater) Testing(on bool) error {
 		return nil
 	}
 	u.status.Unset(StatusTesting)
+	return u.Reload()
+}
+
+// Reload 丢弃所有已加载的内存数据，下次访问时重新从数据库读取。
+//
+// 用于「带外改动了数据库、要求内存跟上」的场景：运营后台改档、GM 工具导入存档、
+// 线上数据修复等——这些改动绕过了 updater，内存里仍是旧值，玩家下一次操作会在旧值上
+// 算增量并把脏数据写回去。
+//
+// 调用方必须持有玩家锁（与其它 Updater 方法一致）。只重置已加载的数据集，不动 status。
+//
+// ⚠ 对**在线**玩家只重载服务端内存，客户端手上那份仍是旧的，通常还需要让客户端重新拉取。
+func (u *Updater) Reload() error {
 	for _, w := range u.Handles() {
 		if err := w.reload(); err != nil {
 			return err
