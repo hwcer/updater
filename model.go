@@ -2,7 +2,6 @@ package updater
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"time"
 
@@ -78,6 +77,19 @@ func modelIType(model any, iid int32) IType {
 // 类型为 time.Time 而非 unix 秒:时间比较应带完整精度与时区信息,
 // 秒级时间戳在跨天判定这类场景要额外拼 time.Unix 才能用。
 // 零值(IsZero)表示本 Updater 实例尚未处理过任何请求。
+//
+// 🔴 实现方必须加一行编译期断言:
+//
+//	var _ updater.ModelReset = (*YourModel)(nil)
+//
+// 本接口靠类型断言 model.(ModelReset) 识别,签名写错【不会编译报错】,
+// 只会让断言不再命中、Reset 从此永不被调用,功能悄无声息地失效。
+// 接口一旦改签名,没有断言的实现方就是这样中招的。
+//
+// 框架无法替你自动检出:方法名与参数形态都不足以区分"想实现但写错"和"恰好同名的
+// 无关方法"——protobuf 生成的每个 message 都带无参 Reset(),而业务侧也可能有
+// Reset(*Updater, *dataset.Document) error 这类首参同样是 *Updater 的自有方法。
+// 试过按这些特征猜,两种情况都会误报并炸掉启动,故只能由实现方显式声明。
 type ModelReset interface {
 	Reset(*Updater, time.Time) bool
 }
@@ -121,9 +133,6 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 	if err := verifyModel(parser, model); err != nil {
 		return err
 	}
-	if err := verifyOptional(model); err != nil {
-		return err
-	}
 
 	mod := &Model{ram: ram, model: model, parser: parser}
 	if t, ok := model.(schema.Tabler); ok {
@@ -151,54 +160,6 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 		}
 		modelsDict[id] = mod
 		itypesDict[id] = it
-	}
-	return nil
-}
-
-// optionalInterfaces 可选接口清单:方法名 -> 接口类型
-//
-// 这类接口靠类型断言 model.(XXX) 识别,不在编译期强制。代价是【签名写错会静默失败】:
-// 编译照样通过,但断言不再命中,该接口从此永不被调用,功能悄无声息地失效——
-// 接口一旦改签名(如 ModelReset 的 int64 改 time.Time),所有未跟进的实现方都会中招。
-// 故在注册期主动检出。
-var optionalInterfaces = []struct {
-	method string
-	typ    reflect.Type
-	//needUpdaterArg 方法名与常见方法冲突,必须再用"首个参数是 *Updater"确认它确实
-	//冲着本接口来,否则会大面积误报。
-	//
-	//🔴 Reset 就是典型:protobuf 生成的每个 message 都带一个无参 Reset(),凡是内嵌了
-	//protobuf 结构的 model(本项目里几乎全部)都会因此"有同名方法",只按名字判会全军覆没。
-	needUpdaterArg bool
-}{
-	{"Reset", reflect.TypeOf((*ModelReset)(nil)).Elem(), true},
-	{"IMax", reflect.TypeOf((*ModelIMax)(nil)).Elem(), false},
-	{"TableOrder", reflect.TypeOf((*TableOrder)(nil)).Elem(), false},
-}
-
-// verifyOptional 检出"想实现某可选接口但签名写错"
-//
-// 判据分两步:①有同名方法 ②(必要时)首参为 *Updater,确认确实冲着本接口来。
-// 完全没有该方法、或同名方法明显与本接口无关(如 protobuf 的 Reset()),均属正常,放行。
-func verifyOptional(model any) error {
-	rt := reflect.TypeOf(model)
-	if rt == nil {
-		return nil
-	}
-	updaterType := reflect.TypeOf((*Updater)(nil))
-	for _, oi := range optionalInterfaces {
-		m, has := rt.MethodByName(oi.method)
-		if !has || rt.Implements(oi.typ) {
-			continue
-		}
-		if oi.needUpdaterArg {
-			//m.Type 的 In(0) 是 receiver,In(1) 才是第一个真实参数
-			if m.Type.NumIn() < 2 || m.Type.In(1) != updaterType {
-				continue //与本接口无关的同名方法
-			}
-		}
-		return fmt.Errorf("model %v 的 %v 方法签名与 %v 不符,该接口将【静默失效】;当前签名 %v,应为 %v",
-			rt, oi.method, oi.typ, m.Type, oi.typ.Method(0).Type)
 	}
 	return nil
 }
