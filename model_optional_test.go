@@ -37,3 +37,18 @@ func TestVerifyOptionalCatchesStaleSignature(t *testing.T) {
 	}
 	t.Logf("检出: %v", err)
 }
+
+// protobufLikeModel 模拟 protobuf 生成代码:每个 message 都带一个无参 Reset()
+type protobufLikeModel struct{}
+
+func (*protobufLikeModel) Reset() {}
+
+// TestVerifyOptionalIgnoresProtobufReset protobuf 的无参 Reset() 不得误报
+//
+// 本项目 model 普遍内嵌 protobuf 结构,若只按方法名判定,它们会全部被判成
+// "ModelReset 签名写错"并在注册期 panic——服务直接起不来。
+func TestVerifyOptionalIgnoresProtobufReset(t *testing.T) {
+	if err := verifyOptional(&protobufLikeModel{}); err != nil {
+		t.Errorf("protobuf 的无参 Reset() 与 ModelReset 无关,不应报错: %v", err)
+	}
+}

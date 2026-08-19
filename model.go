@@ -160,33 +160,45 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 // 这类接口靠类型断言 model.(XXX) 识别,不在编译期强制。代价是【签名写错会静默失败】:
 // 编译照样通过,但断言不再命中,该接口从此永不被调用,功能悄无声息地失效——
 // 接口一旦改签名(如 ModelReset 的 int64 改 time.Time),所有未跟进的实现方都会中招。
-// 故在注册期主动检出:有同名方法却不满足接口,一律判为签名写错。
+// 故在注册期主动检出。
 var optionalInterfaces = []struct {
 	method string
 	typ    reflect.Type
+	//needUpdaterArg 方法名与常见方法冲突,必须再用"首个参数是 *Updater"确认它确实
+	//冲着本接口来,否则会大面积误报。
+	//
+	//🔴 Reset 就是典型:protobuf 生成的每个 message 都带一个无参 Reset(),凡是内嵌了
+	//protobuf 结构的 model(本项目里几乎全部)都会因此"有同名方法",只按名字判会全军覆没。
+	needUpdaterArg bool
 }{
-	{"Reset", reflect.TypeOf((*ModelReset)(nil)).Elem()},
-	{"IMax", reflect.TypeOf((*ModelIMax)(nil)).Elem()},
-	{"TableOrder", reflect.TypeOf((*TableOrder)(nil)).Elem()},
+	{"Reset", reflect.TypeOf((*ModelReset)(nil)).Elem(), true},
+	{"IMax", reflect.TypeOf((*ModelIMax)(nil)).Elem(), false},
+	{"TableOrder", reflect.TypeOf((*TableOrder)(nil)).Elem(), false},
 }
 
-// verifyOptional 检出"有同名方法但签名与可选接口不符"
+// verifyOptional 检出"想实现某可选接口但签名写错"
 //
-// 完全没有该方法 = 明确不实现,属正常情况,放行。
+// 判据分两步:①有同名方法 ②(必要时)首参为 *Updater,确认确实冲着本接口来。
+// 完全没有该方法、或同名方法明显与本接口无关(如 protobuf 的 Reset()),均属正常,放行。
 func verifyOptional(model any) error {
 	rt := reflect.TypeOf(model)
 	if rt == nil {
 		return nil
 	}
+	updaterType := reflect.TypeOf((*Updater)(nil))
 	for _, oi := range optionalInterfaces {
-		if _, has := rt.MethodByName(oi.method); !has {
+		m, has := rt.MethodByName(oi.method)
+		if !has || rt.Implements(oi.typ) {
 			continue
 		}
-		if !rt.Implements(oi.typ) {
-			m, _ := rt.MethodByName(oi.method)
-			return fmt.Errorf("model %v 的 %v 方法签名与 %v 不符,该接口将【静默失效】;当前签名 %v,应为 %v",
-				rt, oi.method, oi.typ, m.Type, oi.typ.Method(0).Type)
+		if oi.needUpdaterArg {
+			//m.Type 的 In(0) 是 receiver,In(1) 才是第一个真实参数
+			if m.Type.NumIn() < 2 || m.Type.In(1) != updaterType {
+				continue //与本接口无关的同名方法
+			}
 		}
+		return fmt.Errorf("model %v 的 %v 方法签名与 %v 不符,该接口将【静默失效】;当前签名 %v,应为 %v",
+			rt, oi.method, oi.typ, m.Type, oi.typ.Method(0).Type)
 	}
 	return nil
 }
