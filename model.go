@@ -3,6 +3,7 @@ package updater
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/hwcer/cosgo/schema"
 )
@@ -71,8 +72,13 @@ func modelIType(model any, iid int32) IType {
 }
 
 // ModelReset 返回true时 重新调用 model.Getter
+//
+// 第二个参数是【上次请求的时间】,用于判断跨天/跨周等需要重置的场景。
+// 类型为 time.Time 而非 unix 秒:时间比较应带完整精度与时区信息,
+// 秒级时间戳在跨天判定这类场景要额外拼 time.Unix 才能用。
+// 零值(IsZero)表示本 Updater 实例尚未处理过任何请求。
 type ModelReset interface {
-	Reset(*Updater, int64) bool
+	Reset(*Updater, time.Time) bool
 }
 
 // NewHandle 注册新解析器

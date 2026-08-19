@@ -5,7 +5,7 @@ go 1.25.0
 toolchain go1.26.5
 
 require (
-	github.com/hwcer/cosgo v1.8.4-0.20260806070701-37271a95818a
+	github.com/hwcer/cosgo v1.8.4-0.20260819035445-d4f8faa73499
 	github.com/hwcer/logger v0.2.9-0.20260626033726-42e0a5927245
 	go.mongodb.org/mongo-driver/v2 v2.7.0
 )

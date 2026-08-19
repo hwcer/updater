@@ -18,7 +18,7 @@ type Player interface {
 // 每个玩家持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
 type Updater struct {
 	now       time.Time            //当前请求时间
-	last      int64                //上次请求时间戳，用于判断数据是否需要重置
+	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
 	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
 	player    Player               //业务层角色对象
 	status    Status               //状态位：Init/Submit/Changed/Operated
@@ -161,7 +161,7 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 	if u.now.IsZero() {
 		u.now = time.Now()
 	}
-	u.last = u.now.Unix()
+	u.last = u.now
 
 	for _, f := range cb {
 		f()
@@ -202,7 +202,7 @@ func (u *Updater) Reset(t ...time.Time) {
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
 	u.Emit(EventTypeRelease)
-	u.last = u.now.Unix()
+	u.last = u.now
 	for _, op := range u.dirty {
 		op.Release()
 	}
