@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"time"
 
@@ -120,6 +121,9 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 	if err := verifyModel(parser, model); err != nil {
 		return err
 	}
+	if err := verifyOptional(model); err != nil {
+		return err
+	}
 
 	mod := &Model{ram: ram, model: model, parser: parser}
 	if t, ok := model.(schema.Tabler); ok {
@@ -147,6 +151,42 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 		}
 		modelsDict[id] = mod
 		itypesDict[id] = it
+	}
+	return nil
+}
+
+// optionalInterfaces 可选接口清单:方法名 -> 接口类型
+//
+// 这类接口靠类型断言 model.(XXX) 识别,不在编译期强制。代价是【签名写错会静默失败】:
+// 编译照样通过,但断言不再命中,该接口从此永不被调用,功能悄无声息地失效——
+// 接口一旦改签名(如 ModelReset 的 int64 改 time.Time),所有未跟进的实现方都会中招。
+// 故在注册期主动检出:有同名方法却不满足接口,一律判为签名写错。
+var optionalInterfaces = []struct {
+	method string
+	typ    reflect.Type
+}{
+	{"Reset", reflect.TypeOf((*ModelReset)(nil)).Elem()},
+	{"IMax", reflect.TypeOf((*ModelIMax)(nil)).Elem()},
+	{"TableOrder", reflect.TypeOf((*TableOrder)(nil)).Elem()},
+}
+
+// verifyOptional 检出"有同名方法但签名与可选接口不符"
+//
+// 完全没有该方法 = 明确不实现,属正常情况,放行。
+func verifyOptional(model any) error {
+	rt := reflect.TypeOf(model)
+	if rt == nil {
+		return nil
+	}
+	for _, oi := range optionalInterfaces {
+		if _, has := rt.MethodByName(oi.method); !has {
+			continue
+		}
+		if !rt.Implements(oi.typ) {
+			m, _ := rt.MethodByName(oi.method)
+			return fmt.Errorf("model %v 的 %v 方法签名与 %v 不符,该接口将【静默失效】;当前签名 %v,应为 %v",
+				rt, oi.method, oi.typ, m.Type, oi.typ.Method(0).Type)
+		}
 	}
 	return nil
 }
