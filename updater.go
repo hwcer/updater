@@ -471,6 +471,17 @@ func (u *Updater) Destroy() (err error) {
 }
 
 // Dirty 设置脏数据,手动更新到客户端,不进行任何操作
+// Operators 本次请求已产生的操作列表(只读)
+//
+// 用于「本次请求动了哪些数据」这类判断,如属性变更感知、埋点、审计。
+//
+// ⚠ 只在 EventTypeSuccess / EventTypeRelease 事件中有意义:
+// Submit 返回时会把 dirty 交给调用方并置 nil,之后再取就是空的。
+// 返回的切片不要修改,需要追加用 Dirty()。
+func (u *Updater) Operators() []*operator.Operator {
+	return u.dirty
+}
+
 func (u *Updater) Dirty(opt ...*operator.Operator) {
 	u.dirty = append(u.dirty, opt...)
 }
