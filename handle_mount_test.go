@@ -393,3 +393,39 @@ func TestMountDestroyFlushes(t *testing.T) {
 		t.Fatal("Destroy 应清空挂载表")
 	}
 }
+
+// Receive：把已经在手上的文档直接塞进内存，后续 Select 会跳过它、不再查库。
+// 挂载当缓存用时靠它——否则"刚亲手写进去的数据"还得照着 _id 再查一遍。
+func TestMountReceiveSkipsGetter(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel() //库里空的:证明数据确实来自 Receive 而不是查库
+	coll, err := u.Mount(m)
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+
+	coll.Receive("row1", &mountRow{Id: "row1", Val: 9})
+	if coll.Get("row1") == nil {
+		t.Fatal("Receive 之后应当立即取得到")
+	}
+	if got := coll.Val("row1"); got != 9 {
+		t.Fatalf("Val 期望 9 实际 %d", got)
+	}
+
+	coll.Select("row1")
+	if err = u.Data(); err != nil {
+		t.Fatalf("Data:%v", err)
+	}
+	if m.getter != 0 {
+		t.Fatal("Receive 进来的 key 不该再查库")
+	}
+
+	//塞进来的只在内存,不记脏、不落库
+	if _, err = u.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	//改一笔才该落库
+	if err = coll.Update("row1", dataset.Update{"status": int32(1)}); err != nil {
+		t.Fatalf("Update:%v", err)
+	}
+}

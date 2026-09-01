@@ -192,6 +192,20 @@ func (this *MountCollection) Has(id string) bool {
 	return this.dataset.Has(id)
 }
 
+// Receive 把**已经在手上的**文档直接塞进内存，跳过 Select + Data 那次查库。
+//
+// 挂载不只是"把写操作并进事务"，它同时是这次会话里的一份**缓存** —— 业务常常在别处
+// 刚查过、或者刚刚亲手创建了这条数据（下单就是典型：创建完很快会在核销时用到），
+// 再走 Mount(keys...) 就是照着 _id 把自己刚写的那条又查一遍。
+//
+// ⚠️ 塞进来的对象必须是这张表的模型、且它的 _id 与 id 一致，框架不校验。
+// ⚠️ 只进内存、**不记脏、不会被写库**。要落库仍然走 Insert / Update。
+// ⚠️ 塞进来之后 Select 会认为这条已在内存而跳过，也就是说**后续不会再从库里刷新它** ——
+// 别拿它缓存"别处可能改动"的数据。
+func (this *MountCollection) Receive(id string, data any) {
+	this.dataset.Receive(id, data)
+}
+
 func (this *MountCollection) Len() int {
 	return this.dataset.Len()
 }
