@@ -238,11 +238,11 @@ func TestMountSubmitSharesBulkWrite(t *testing.T) {
 		t.Fatalf("Data:%v", err)
 	}
 
-	if err := coll.Update("row1", dataset.Update{"status": int32(2)}); err != nil {
-		t.Fatalf("Update:%v", err)
+	if op := coll.Update("row1", dataset.Update{"status": int32(2)}); op == nil {
+		t.Fatalf("Update 应产出 operator:%v", u.Error)
 	}
 	if len(bw.updates) != 0 || bw.submits != 0 {
-		t.Fatal("改内存阶段不该产生任何写库动作")
+		t.Fatal("入队阶段不该产生任何写库动作")
 	}
 
 	if _, err := u.Submit(); err != nil {
@@ -374,23 +374,110 @@ func TestMountRejectsRegisteredName(t *testing.T) {
 	}
 }
 
-// Destroy 走 destroy()(刷盘)而不是 release(),并清空挂载表。
-func TestMountDestroyFlushes(t *testing.T) {
+// Destroy 清空挂载表；**未经 Submit 的改动不会被它写出去**。
+//
+// 挂载现在走完整的 operator 流水线：改动先入队，verify 才进内存、submit 才进 bulkWrite。
+// 请求没跑完就下线，那些 operator 本来就不该落库 —— 与全局句柄同一口径。
+func TestMountDestroyClearsMounts(t *testing.T) {
 	u, bw := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, _ := u.Mount(m)
-	coll.Select("row1")
-	_ = u.Data()
-	_ = coll.Update("row1", dataset.Update{"status": int32(4)})
+	coll, _ := u.Mount(m, "row1")
+	coll.Update("row1", dataset.Update{"status": int32(4)}) //只入队,没 Submit
 
 	if err := u.Destroy(); err != nil {
 		t.Fatalf("Destroy:%v", err)
 	}
-	if len(bw.updates) != 1 {
-		t.Fatal("下线未刷盘:临时句柄的脏数据丢了")
+	if len(bw.updates) != 0 {
+		t.Fatal("没跑完的请求不该被下线流程顺手落库")
 	}
 	if u.mounts != nil {
 		t.Fatal("Destroy 应清空挂载表")
+	}
+}
+
+// 🔴 改动**先变成 operator 入队**，verify 之后才写进内存 —— 不再直接改内存。
+func TestMountUpdateGoesThroughOperator(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1")
+	m.rows["row1"].Val = 1
+	coll, err := u.Mount(m, "row1")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+
+	op := coll.Update("row1", dataset.Update{"val": int64(9)})
+	if op == nil {
+		t.Fatalf("Update 应产出 operator:%v", u.Error)
+	}
+	if got := coll.Val("row1"); got != 1 {
+		t.Fatalf("入队阶段不该已经改了内存,val=%d", got)
+	}
+
+	if err = u.Verify(); err != nil {
+		t.Fatalf("Verify:%v", err)
+	}
+	if got := coll.Val("row1"); got != 9 {
+		t.Fatalf("verify 之后才该生效,val=%d", got)
+	}
+}
+
+// operator 默认不下发客户端；Forward(true) 才进 Updater.dirty。
+// 无论开关如何 Operators() 都取得到。
+func TestMountForwardAndOperators(t *testing.T) {
+	//默认:不进 dirty,但 Operators 有
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1")
+	coll, _ := u.Mount(m, "row1")
+	coll.Update("row1", dataset.Update{"status": int32(1)})
+	ops, err := u.Submit()
+	if err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if len(ops) != 0 {
+		t.Fatalf("默认不该下发客户端,实际 %d 条", len(ops))
+	}
+	if len(coll.Operators()) != 1 {
+		t.Fatalf("Operators 应取得到 1 条,实际 %d", len(coll.Operators()))
+	}
+
+	//打开 Forward:与普通道具变更一样进 dirty
+	u2, _ := newMountUpdater(t)
+	m2 := newMountModel("row1")
+	coll2, _ := u2.Mount(m2, "row1")
+	coll2.Forward(true)
+	coll2.Update("row1", dataset.Update{"status": int32(1)})
+	ops2, err := u2.Submit()
+	if err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if len(ops2) != 1 {
+		t.Fatalf("Forward(true) 应下发 1 条,实际 %d", len(ops2))
+	}
+	if len(coll2.Operators()) != 1 {
+		t.Fatal("Forward 打开时 Operators 同样要取得到")
+	}
+}
+
+// Insert 也走 operator：入队 → verify 进内存 → submit 进 bulkWrite。
+func TestMountInsertGoesThroughOperator(t *testing.T) {
+	u, bw := newMountUpdater(t)
+	m := newMountModel() //库里空的
+	coll, _ := u.Mount(m)
+
+	if op := coll.Insert("row9", &mountRow{Id: "row9", Val: 3}); op == nil {
+		t.Fatalf("Insert 应产出 operator:%v", u.Error)
+	}
+	if coll.Has("row9") {
+		t.Fatal("入队阶段不该已经进内存")
+	}
+	if _, err := u.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if !coll.Has("row9") {
+		t.Fatal("Submit 之后应当在内存里")
+	}
+	if bw.inserts != 1 {
+		t.Fatalf("应有 1 条插入进 bulkWrite,实际 %d", bw.inserts)
 	}
 }
 
@@ -425,7 +512,7 @@ func TestMountReceiveSkipsGetter(t *testing.T) {
 		t.Fatalf("Submit:%v", err)
 	}
 	//改一笔才该落库
-	if err = coll.Update("row1", dataset.Update{"status": int32(1)}); err != nil {
-		t.Fatalf("Update:%v", err)
+	if op := coll.Update("row1", dataset.Update{"status": int32(1)}); op == nil {
+		t.Fatalf("Update 应产出 operator:%v", u.Error)
 	}
 }

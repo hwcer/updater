@@ -51,7 +51,9 @@ func (u *Updater) Mount(model MountModel, keys ...string) (*MountCollection, err
 	if len(keys) == 0 {
 		return r, nil
 	}
-	r.selects(keys...)
+	for _, k := range keys {
+		r.Select(k)
+	}
 	return r, r.Data()
 }
 

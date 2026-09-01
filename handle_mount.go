@@ -4,6 +4,7 @@ import (
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/operator"
 )
 
 // MountModel 临时数据模型。
@@ -18,179 +19,152 @@ type MountModel interface {
 	schema.Tabler
 }
 
-// MountCollection 临时数据集合：与玩家数据同批次原子写库，但不进 IType/operator 流水线。
+// MountCollection 临时数据集合：与玩家数据同批次原子写库。
 //
-// 复用 dataset.Collection（纯容器：内存 map + dirty 跟踪 + Save(CollectionWriter)），
-// 不复用 statement（算子流水线）—— 临时数据要的是前者，不需要后者一条。
+// 🔴 **它走的是与 Collection 完全相同的那条流水线**：改动先变成 operator 入队，
+// verify 阶段经 Collection.Parse 消费、写进内存并记脏，submit 阶段经 model.Setter
+// 落进共享 bulkWrite。所以它内嵌 Collection —— 不是"像"，就是同一套。
 //
-// 与通用 Collection 的区别，用之前先看清楚：
-//   - 不产 operator，不下发客户端。要客户端感知自行 u.Dirty(operator.New(...))；
-//   - 不参与 verify（无溢出检查、无扣量检查、无自动分解）；
-//   - 通用入口 u.Add/u.Sub/u.Set/u.Select **一律路由不到这里** ——
-//     那几个走 Config.IType 查 modelsDict，临时模型压根不在里面。只能拿本对象操作；
-//   - 🔴 **key 只能是文档 _id（string）**。不进 IType 路由 → 没有 iid→oid 的转换规则 →
-//     数字键在这里没有任何可靠含义，格式化成十进制只是凭空发明一套约定，
-//     与业务真实的 _id 对不上时是**静默查不到**。
-//     类型特有方法直接收 string 编译期挡住；Get/Val/Select 的 any 是 Handle 接口锁死的，
-//     非字符串键运行时告警并跳过。
+// 这样做的直接好处：
+//   - 改数据一律经 operator，请求失败时 release 自动丢弃，内存不会留下库里没有的状态；
+//   - 产出的 operator 可以像普通道具变更一样下发客户端（Forward），也可以手动取（Operators）。
+//
+// 与通用 Collection 的四点差别，用之前看清楚：
+//
+//  1. **不进 IType 路由**：IType/IMax 恒空，operator 的 IID 恒 0。
+//     u.Add/u.Sub/u.Set/u.Select 一律路由不到这里，只能拿本对象操作；
+//  2. **不支持 Add/Sub**：那两条要靠 IType 建对象（ITypeCollection.New），临时数据没有 IType。
+//     调用会记一条告警并返回 nil，不会静默；
+//  3. **key 只能是文档 _id（string）**：没有 iid→oid 的转换规则，数字键在这里没有可靠含义；
+//  4. **operator 默认不下发客户端**：临时数据（邮件领取标记、订单状态、兑换码占用）
+//     客户端有自己的协议，不该混进 S2CUpdate。要下发显式 Forward(true)。
 type MountCollection struct {
-	name    string
-	keys    Keys //待拉取的 _id 集合，Data 阶段消费后清空
-	model   MountModel
-	unmount bool //已标记卸载，Release 阶段才真正摘除，见 Updater.Unmount
-	dataset *dataset.Collection
-	Updater *Updater
+	Collection
+	ops     []*operator.Operator //本次请求产生的 operator，见 Operators
+	forward bool                 //产生的 operator 是否随本次请求下发客户端
+	unmount bool                 //已标记卸载，Release 阶段才真正摘除，见 Updater.Unmount
 }
 
 func newMountCollection(u *Updater, model MountModel) *MountCollection {
-	return &MountCollection{
-		name:    model.TableName(),
-		model:   model,
-		dataset: dataset.NewColl(),
-		Updater: u,
-	}
+	r := &MountCollection{}
+	r.name = model.TableName()
+	r.model = model
+	r.dataset = dataset.NewColl()
+	//ram 取 Always：release 时只清 dirty、保留内存数据，长命挂载的跨请求驻留靠它。
+	//（loader 始终为 false —— loading 被覆盖成不预热，所以 statement.has 不会误判"全都在"）
+	mod := &Model{ram: RAMTypeAlways, name: r.name, model: model, parser: ParserTypeMount}
+	r.statement = *newStatement(u, mod, r.Has)
+	r.statement.Receiver(r.receive)
+	return r
 }
 
-// ===================== Handle 接口公开方法 =====================
+// ===================== operator 入口（全部产 operator，不直接改内存）=====================
 
-// Get 取文档原始对象（model.Getter 塞进来的那个），不存在返回 nil。
+// operator 挂载专用的 Operator 构造，**不能复用 Collection.operator**，两处原因：
 //
-// 🔴 **拿到的是指针，只读**。直接改它上面的字段不会记脏，改动**只留在内存里、
-// 永远写不出去** —— 长命句柄下后续请求还能读到那个改动，看着像是成功了。
-// 要改数据一律走 Update / Set。
-func (this *MountCollection) Get(key any) (r any) {
-	if doc := this.document(key); doc != nil {
-		r = doc.Any()
-	}
-	return
-}
-
-// document Get/Val 用：key 必须是文档 _id，非字符串记一条告警后当作查不到。
-func (this *MountCollection) document(key any) *dataset.Document {
-	id, ok := key.(string)
-	if !ok {
-		logger.Alert("MountCollection(%v) key 必须是文档 _id(string):%v", this.name, key)
+//  1. 那边对 string 型 id 会调 Config.ParseId 去解析 iid —— 挂载的 _id 是业务自己的主键
+//     （uid-code、平台订单号…），根本不是项目的 OID 格式，解析失败会**把
+//     Updater.Error 打脏、整个请求失败**；
+//  2. 那边接着调 mayChange，而 mayChange 拿不到 IType 直接返回 ErrITypeNotExist。
+//
+// 所以这里 IID 恒 0（临时数据没有 iid），但仍然走 format —— 那一步把字段名统一成
+// JSName，与 Collection 同口径，落库时再由 cosmo 在边界换成 DBName。
+func (this *MountCollection) operator(t operator.Types, id string, v int64, r any) *operator.Operator {
+	if err := this.Updater.WriteAble(); err != nil {
 		return nil
 	}
-	return this.dataset.Val(id)
-}
-
-// Val 取文档上数值字段的值，字段名由 Field() 决定（默认 dataset.Fields.VAL）。
-// 文档不存在或字段不是数值时返回 0。
-//
-// 要读别的字段直接走 Document：`coll.Document(id).GetInt64("xxx")` ——
-// Val 的签名被 Handle 接口锁死，加不了可选参数。
-func (this *MountCollection) Val(key any) (r int64) {
-	if doc := this.document(key); doc != nil {
-		r = doc.GetInt64(this.Field())
-	}
-	return
-}
-
-// Data 拉取 Select 标记的文档。keys 为空时不查库。
-//
-// ⚠️ 只有 Updater.Data()/Submit() 会驱动它，而 Updater.data() 开头有
-// `if !status.Has(StatusChanged) { return }` 的闸门 —— 该位由本类型的 Select 置起。
-func (this *MountCollection) Data() (err error) {
-	if err = this.Updater.Error; err != nil {
-		return
-	}
-	if len(this.keys) == 0 {
+	if id == "" {
+		this.Updater.Error = ErrObjectIdEmpty(t.ToString())
 		return nil
 	}
-	if err = this.model.Getter(this.Updater, this.dataset, this.keys.ToString()); err == nil {
-		this.keys = nil
+	op := operator.New(t, "", v, r)
+	op.OID = id
+	this.format(op)
+	if this.Updater.Error != nil {
+		op.Release()
+		return nil
 	}
-	return
+	this.statement.insert(op)
+	return op
 }
 
-// IMax 临时集合无持有上限概念，恒返回 0（无限）。
-func (this *MountCollection) IMax(int32) int64 {
-	return 0
+// Update 批量改字段。产生一条 TypesSet operator，verify 阶段才真正写进内存。
+func (this *MountCollection) Update(id string, data dataset.Update) *operator.Operator {
+	return this.operator(operator.TypesSet, id, 0, data)
 }
 
-// IType 临时集合不进 IType 流水线，恒返回 nil。
-func (this *MountCollection) IType(int32) IType {
+// Set 改单个字段，语义同 Update。
+func (this *MountCollection) Set(id string, field string, value any) *operator.Operator {
+	return this.Update(id, dataset.NewUpdate(field, value))
+}
+
+// Unset 删字段。
+func (this *MountCollection) Unset(id string, fields ...string) *operator.Operator {
+	data := dataset.Update{}
+	for _, f := range fields {
+		data[f] = nil
+	}
+	return this.operator(operator.TypesUnset, id, 0, data)
+}
+
+// Delete 删文档。
+func (this *MountCollection) Delete(id string) *operator.Operator {
+	return this.operator(operator.TypesDel, id, 0, nil)
+}
+
+// Insert 插入新文档。id 必须与对象里的 _id 一致。
+//
+// ⚠️ 不复用 Collection.New：那个要求对象实现 dataset.Model（GetOID/GetIID），
+// 而 GetIID 返回的业务 iid 会被当成 updater 的 iid 一路带进溢出检查。挂载显式传 id，
+// IID 恒 0。
+func (this *MountCollection) Insert(id string, v any) *operator.Operator {
+	return this.operator(operator.TypesNew, id, 1, []any{v})
+}
+
+// Add 不支持：要靠 IType 建对象（ITypeCollection.New），而临时数据不进 IType 体系。
+// 记一条告警返回 nil，不静默。
+func (this *MountCollection) Add(id any, _ any, _ ...string) *operator.Operator {
+	logger.Alert("MountCollection(%v) 不支持 Add，临时数据没有 IType：%v", this.name, id)
 	return nil
 }
 
-// Count 统计 iid 匹配的文档数，iid 传 0 统计全部。取 iid 的规则同通用 Collection
-// （优先 dataset.Model.GetIID()，回落 Fields.IID 字段名约定，都取不到的不计入）。
+// Sub 不支持，理由同 Add。
+func (this *MountCollection) Sub(id any, _ any, _ ...string) *operator.Operator {
+	logger.Alert("MountCollection(%v) 不支持 Sub，临时数据没有 IType：%v", this.name, id)
+	return nil
+}
+
+// ===================== operator 的去向 =====================
+
+// Forward 本挂载产生的 operator 是否随本次请求下发给客户端（进 Updater.dirty → S2CUpdate）。
 //
-// ⚠️ **这是不完全统计**：临时集合按 key 惰性加载，只装了 Select 过的那几条，
-// 所以它统计的是**内存里的部分**，不是库里的全量。要全量得自己查库。
-// 通用 Collection 那边有 RAMTypeAlways 全量驻留可依赖，这里没有。
+// 默认 **false**：临时数据（邮件领取标记、订单状态、兑换码占用）客户端有自己的协议，
+// 混进道具变更推送只会让两边都看不懂。确实要让客户端按统一通道感知时才打开。
 //
-// 与 Len 的区别：Len 是纯 dataset 长度；Count 包含本次请求内尚未落库的新增、
-// 排除已标记删除的，与 Collection 的口径一致。
-func (this *MountCollection) Count(iid int32) int64 {
-	return this.dataset.Count(func(doc *dataset.Document) bool {
-		return iid == 0 || docIID(doc) == iid
-	})
+// ⚠️ 无论开关如何，Operators() 都取得到 —— 两件事互不影响。
+func (this *MountCollection) Forward(v bool) {
+	this.forward = v
 }
 
-// Select 标记待拉取的 _id，随后由 Updater.Data() 统一查库。
-// 已在内存中的 key 直接跳过，不重复查。
-func (this *MountCollection) Select(keys ...any) {
-	ids := make([]string, 0, len(keys))
-	for _, k := range keys {
-		id, ok := k.(string)
-		if !ok {
-			logger.Alert("MountCollection(%v).Select key 必须是文档 _id(string):%v", this.name, k)
-			continue
-		}
-		ids = append(ids, id)
-	}
-	this.selects(ids...)
+// Operators 本次请求已经过 verify 的 operator 列表（只读）。
+//
+// 给"要自己决定怎么告诉客户端"的场合用：拿到之后自行组装协议，
+// 而不是走 Forward 那条统一通道。
+//
+// ⚠️ 只在本次请求内有效：Release 之后 operator 会被回收进池子，再读就是脏数据。
+func (this *MountCollection) Operators() []*operator.Operator {
+	return this.ops
 }
 
-// selects Select 的字符串版，内部与 Updater.Mount 直接用它。
-func (this *MountCollection) selects(ids ...string) {
-	for _, id := range ids {
-		if this.dataset.Has(id) {
-			continue
-		}
-		if this.keys == nil {
-			this.keys = Keys{}
-		}
-		this.keys.Select(id)
-		// 🔴 必须置位：Updater.data() 不见 StatusChanged 直接返回，
-		// 漏了这行的症状是"Select 了、Data 了、Get 拿到 nil、还不报错"。
-		// 全局句柄由 statement.Select 置位，本类型不用 statement，只能自己置。
-		this.Updater.status.Set(StatusChanged)
+// receive statement 的操作接收器：一律留一份给 Operators，按需再放进 Updater.dirty。
+func (this *MountCollection) receive(u *Updater, ops []*operator.Operator) {
+	this.ops = append(this.ops, ops...)
+	if this.forward {
+		u.dirty = append(u.dirty, ops...)
 	}
 }
 
-func (this *MountCollection) Parser() Parser {
-	return ParserTypeMount
-}
-
-// ===================== 类型特有公开方法 =====================
-
-func (this *MountCollection) Name() string {
-	return this.name
-}
-
-// Field 解析数值字段名：传参优先，其次模型实现的 GetValueJSName()，最后 dataset.Fields.VAL。
-// 与通用 Collection 同一套规则。
-func (this *MountCollection) Field(field ...string) string {
-	if len(field) > 0 {
-		return field[0]
-	}
-	if f, ok := this.model.(CollectionModelValueJSName); ok {
-		return f.GetValueJSName()
-	}
-	return dataset.Fields.VAL
-}
-
-// Document 取文档，不存在返回 nil。id 是文档 _id，不是 iid（临时集合没有 iid 路由）。
-func (this *MountCollection) Document(id string) *dataset.Document {
-	return this.dataset.Val(id)
-}
-
-func (this *MountCollection) Has(id string) bool {
-	return this.dataset.Has(id)
-}
+// ===================== 缓存 =====================
 
 // Receive 把**已经在手上的**文档直接塞进内存，跳过 Select + Data 那次查库。
 //
@@ -206,92 +180,69 @@ func (this *MountCollection) Receive(id string, data any) {
 	this.dataset.Receive(id, data)
 }
 
-func (this *MountCollection) Len() int {
-	return this.dataset.Len()
+// ===================== 覆盖 Collection 的 IType 相关行为 =====================
+
+func (this *MountCollection) Parser() Parser {
+	return ParserTypeMount
 }
 
-func (this *MountCollection) Range(handle func(string, *dataset.Document) bool) {
-	this.dataset.Range(handle)
-}
-
-// Update 批量改字段，改内存并记脏，Submit 时经 model.Setter 落库。
-func (this *MountCollection) Update(id string, data dataset.Update) error {
-	if err := this.dataset.Update(id, data); err != nil {
-		return this.Updater.Errorf(err)
-	}
+// IType 临时集合不进 IType 流水线，恒返回 nil。
+//
+// ⚠️ 必须覆盖：Collection.IType 会回落到全局 Config.IType，
+// 拿一个不属于它的 iid 去查全局配置，得到的是随机结果。
+func (this *MountCollection) IType(int32) IType {
 	return nil
 }
 
-// Set 改单个字段，语义同 Update。
-func (this *MountCollection) Set(id string, field string, value any) error {
-	return this.Update(id, dataset.NewUpdate(field, value))
+// IMax 临时集合不参与溢出检查，恒返回 0（无限）。理由同 IType。
+func (this *MountCollection) IMax(int32) int64 {
+	return 0
 }
 
-// Insert 插入新文档，Submit 时走 BulkWrite.Insert。
-func (this *MountCollection) Insert(i any) error {
-	if err := this.dataset.Insert(i); err != nil {
-		return this.Updater.Errorf(err)
-	}
-	return nil
+// Count 统计 iid 匹配的文档数，iid 传 0 统计全部。
+//
+// ⚠️ **这是不完全统计**：挂载按 key 惰性加载，只装了 Select 过的那几条，
+// 所以它统计的是内存里的部分，不是库里的全量。
+func (this *MountCollection) Count(iid int32) int64 {
+	return this.dataset.Count(func(doc *dataset.Document) bool {
+		return iid == 0 || docIID(doc) == iid
+	})
 }
 
-// Delete 删除文档，Submit 时走 BulkWrite.Delete。
-func (this *MountCollection) Delete(id string) {
-	this.dataset.Delete(id)
-}
-
-// Remove 仅从内存移除，不动数据库。
-func (this *MountCollection) Remove(ids ...string) {
-	this.dataset.Remove(ids...)
-}
-
-// ===================== Handle 接口私有方法 =====================
-
-// increase/decrease 由 Updater.Add/Sub 经 IType 路由调用，临时句柄不在路由表里，
-// 这两个方法**不可达**。留空实现只为满足 Handle 接口。
-func (this *MountCollection) increase(int32, int64) {}
-func (this *MountCollection) decrease(int32, int64) {}
-
-// verify 临时数据不参与校验：没有 operator，也就没有溢出/扣量/自动分解可查。
-func (this *MountCollection) verify() error {
-	return nil
-}
-
-// reset 每次请求开始。临时句柄跨请求驻留，这里不做任何事
-// （不走 ModelReset：那是全局句柄的跨天重置，临时数据的生命周期由 Mount/Unmount 决定）。
-func (this *MountCollection) reset() {}
+// ===================== 生命周期 =====================
 
 // loading 一律惰性，不预热。
 //
-// ⚠️ 别照抄 Collection.loading()：它走的是 model.Getter(u, data, nil) —— keys 为 nil 的
+// ⚠️ 别用 Collection.loading()：它走 model.Getter(u, data, nil) —— keys 为 nil 的
 // **全量拉取**。那是给全局句柄开服预热用的，临时表（尤其战斗副本）全量拉不可接受。
 // 要预热就显式 Select + Data。
 func (this *MountCollection) loading() error {
 	return nil
 }
 
-// reload 丢弃内存，下次 Select+Data 重新查库。由 Updater.Reload 驱动。
+// reload 丢弃内存，下次 Select+Data 重新查库。
+// ⚠️ 不能用 Collection.reload()：它置 dataset=nil 后指望 loading() 重建，而这里不预热。
 func (this *MountCollection) reload() error {
 	this.dataset = dataset.NewColl()
-	this.keys = nil
+	this.statement.reload()
 	return nil
 }
 
 // release 每次请求结束。
 //
-// ⚠️ 只清 dirty 与待拉取标记，**保留内存数据** —— 长命句柄的跨请求驻留就靠这条。
+// ⚠️ 只清 dirty 与待拉取标记，**保留内存数据** —— 长命挂载的跨请求驻留靠这条。
 // 想连内存一起丢是 Unmount 的事，两者别混。
+//
+// 没下发客户端的 operator 由这里回收：下发过的已经在 Updater.dirty 里被回收过一轮，
+// 再放一次就是双重释放。
 func (this *MountCollection) release() {
-	this.keys = nil
-	this.dataset.Release()
-}
-
-// save 把脏数据经 model.Setter 写进共享 bulkWrite（此时尚未提交）。
-func (this *MountCollection) save() error {
-	if this.Updater.BulkWrite() == nil {
-		return ErrBulkWriteNotInit
+	if !this.forward {
+		for _, op := range this.ops {
+			op.Release()
+		}
 	}
-	return this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model))
+	this.ops = nil
+	this.Collection.release()
 }
 
 // submit 与全局句柄同批次：都往 u.bulkWrite 里写，由 Updater.Submit 末尾一次提交。
@@ -302,10 +253,6 @@ func (this *MountCollection) submit() (err error) {
 	if err = this.Updater.WriteAble(); err != nil {
 		return
 	}
-	return this.save()
-}
-
-// destroy 玩家下线：刷盘，不是 release。
-func (this *MountCollection) destroy() error {
+	this.statement.submit()
 	return this.save()
 }

@@ -39,121 +39,80 @@ bong 侧三类场景需要"Updater 之外的临时数据"：
 由第 5 条：`Handler` 类型与 `Updater.Handler` 字段**直接删除，不留
 Deprecated 别名**——零引用的东西留一版兼容，只是让那组命名三胞胎再碍眼一个版本。
 
-## 三、复用边界：复用容器，不复用流水线
+## 三、复用边界：整条流水线都复用
 
-这是本方案最容易搞反的一条，先定死：
+⚠️ **这一节推翻了前两稿。** 一稿说"不复用 dataset.Collection"（排除错了对象），
+二稿改成"复用容器 dataset.Collection、不复用 statement 算子流水线" —— 那一版也不对：
+不走 operator 就意味着 `Update` 直接改内存，请求失败时回滚不掉，
+而这正是项目里反复踩的那条铁律（「取到的指针一律只读」）的另一种犯法。
 
-| 组件 | 复用？ | 理由 |
-|---|---|---|
-| `dataset.Collection` | ✅ **复用** | 纯数据容器：内存 map + dirty 跟踪 + `Save(CollectionWriter)`。临时数据要的正是这些 |
-| `statement` | ❌ 不复用 | 算子流水线（operator/cache/verify/IType）。临时数据一条都不需要 |
-| `Collection`（handle_coll.go） | ❌ 不复用 | 它 = statement + dataset，一半是不要的那半 |
+**定版：`MountCollection` 内嵌 `Collection`，走同一条流水线。**
 
-⚠️ 一稿写的是"不复用 dataset.Collection，内存自管 `map[string]any` + 脏 key 集合"
-——**排除错了对象**。`dataset.Collection` 里没有任何 operator 概念，自管一份等于
-把 dirty 跟踪、Update 合并、Document 语义、`Save→Setter` 全部重写一遍，还要重新
-趟一遍 `dataset.Update` 已经解决过的合并语义。
+```
+Update/Set/Unset/Delete/Insert
+   → operator 入队 (statement.insert)
+   → verify: Collection.Parse 消费 → 写内存 + 记脏
+   → submit: model.Setter → 共享 bulkWrite
+   → Updater.Submit 末尾一次提交
+```
 
-复用它顺带解决三件事：
+内嵌而不是把 `parse_coll.go` 抽成接口：两者的差异只有 IType 那几处，
+而 Set/Unset/Del 这几条 Parse 分支根本不碰 IType（`op.IID == 0` 时 `overflow` 直接返回）。
+抽接口要给 8 个 handler 换接收者、外加六七个不导出的访问器，代价远大于收益。
 
-- `Save(w CollectionWriter)` 直接把脏数据经 `model.Setter` 写进共享 bulkWrite
-  （与 `CollectionBulkWrite` 同一套适配器，见 handle_coll.go:483）；
-- `Release()` 的语义天然正确：**只清 dirty，保留 dataset**——长命句柄跨请求驻留
-  由此白送，不需要额外设计；
-- 文档访问走 `Document(key)` 直接拿 `*dataset.Document`，按字段读写不用自己拆。
-  ⚠️ `Get(any) any` 的签名由 `Handle` 接口锁死，改不了，所以类型化访问只能另开
-  `Document()` —— 与通用 `Collection` 同款（handle_coll.go:375）。
+⚠️ Go 的内嵌**没有虚派发**：`Collection` 内部调到的是它自己的方法。
+所以凡是"内部会被调到、而挂载语义不同"的，都不能只靠覆盖 —— 见第五节的四条差别。
 
 ## 四、终版 API
 
 ```go
-// MountModel 临时数据模型。组合 schema.Tabler 是必需的:
-// 挂载名取自 TableName(),而 CollectionModel 本身不含它——只声明 CollectionModel
-// 就得在 Mount 内部做运行时类型断言,"参数类型即校验"这句话就不成立了。
 type MountModel interface {
 	CollectionModel
 	schema.Tabler
 }
 
-// Mount 挂载/取回一个临时数据集合,keys 非空时顺带把这几条**当场查出来**
-// (等价 Select(keys...) + Data(),不等框架的 Data 阶段)。
-//
-// 幂等:同模型重复 Mount 直接返回已挂句柄——长命场景的每个 handler 开头都是这一行,
-// 首个请求创建、后续全是复用;已在内存的 key 被 Select 跳过,反复调不会重复查库。
-//
-// 名字取 model.TableName();与已注册的全局模型重名时直接报错(见第七节 2)。
-//
-// ⚠️ **挂载与取数是两码事**:查库失败时返回 (句柄, err) —— 句柄已经挂上且完全可用,
-// 只是这几条没读回来,重试一次 Select + Data 即可。唯一返回 nil 的是重名,那时压根没挂上。
-func (u *Updater) Mount(model MountModel, keys ...any) (*MountCollection, error)
-
-// Unmount 与 Mount 同参对称,内部按 TableName() 摘除。
-// ⚠️ 摘除前**必须先刷盘**,理由见第六节。
-func (u *Updater) Unmount(model MountModel)
+// Mount 挂载/取回，keys 非空时当场查库(= Select + Data)。幂等。
+// 挂载与取数是两码事:查库失败返回 (句柄, err),句柄已经挂上且可用。
+func (u *Updater) Mount(model MountModel, keys ...string) (*MountCollection, error)
 
 // Mounted 取回已挂载的集合(只取不挂、不取数),未挂载返回 nil。
 func (u *Updater) Mounted(model MountModel) *MountCollection
+
+// Unmount 只打标记,真正摘除在 Release 阶段。
+func (u *Updater) Unmount(model MountModel)
 ```
 
-⚠️ **`Mount` 的取名规则与 `Register` 并不一致**，这是有意的：`Register` 对非
-`schema.Tabler` 的模型有 `schema.Kind(model).Name()` 兜底（model.go:139），
-Mount 没有——`MountModel` 强制要求 `TableName()`，兜底路径不存在。
-（一稿写"与 Register 取名规则一致"，那句是错的。）
+数据操作（**全部产 operator**）：`Update` / `Set` / `Unset` / `Delete` / `Insert`，
+返回 `*operator.Operator`；`Add`/`Sub` 明确不支持（要 IType 建对象），调用记告警返回 nil。
 
-## 五、MountCollection
+operator 的去向：
 
-```go
-// MountCollection 临时数据集合:dataset 容器 + Getter 惰性加载 + Submit 时经
-// model.Setter 写入共享 bulkWrite。不进 IType/operator 流水线。
-type MountCollection struct {
-	name    string
-	keys    Keys //待拉取的 _id 集合,Data 阶段消费后清空
-	model   MountModel
-	dataset *dataset.Collection
-	Updater *Updater
-}
-```
+| | |
+|---|---|
+| `Forward(bool)` | 产出的 operator 要不要像普通道具变更一样下发客户端（进 `Updater.dirty` → S2CUpdate）。**默认 false** —— 临时数据客户端有自己的协议，混进道具推送两边都看不懂 |
+| `Operators()` | 手动取本次请求产生的 operator（只读，**Release 之后失效**）。给"自己组装协议"的场合用。与 Forward 互不影响 |
 
-用法：
+缓存：`Receive(id, data)` 把已经在手上的文档直接塞进内存，跳过查库。
+挂载不只是事务通道，同时是这次会话里的一份缓存（下单 → 核销横跨多次请求就是典型）。
+⚠️ 只进内存、不记脏、不落库；`Select` 会跳过它。
 
-```go
-coll, err := u.Mount(&model.Battle{}, battleId) //挂载 + 当场取数
-if err != nil {
-	return err
-}
-doc := coll.Document(battleId)             // *dataset.Document(Get 返回 any)
-coll.Update(battleId, dataset.Update{...}) // 改内存 + 记脏
-// 请求结束由框架 Submit:MountCollection.submit() 走 dataset.Save(writer)
-// → model.Setter → 同一个 u.bulkWrite,与全局句柄同批次,一起成败。
-```
+## 五、与通用 Collection 的四点差别
 
-设计要点：
+1. **不进 IType 路由**：覆盖 `IType`/`IMax` 恒空。
+   ⚠️ 必须覆盖 —— `Collection.IType` 会回落到全局 `Config.IType`，
+   拿一个不属于它的 iid 去查全局配置，得到的是随机结果；
+2. **不支持 `Add`/`Sub`**：要靠 `ITypeCollection.New` 建对象；
+3. **key 只能是文档 `_id`（string）**：没有 iid→oid 的转换规则，
+   数字键在这里没有可靠含义；
+4. 🔴 **自己的 `operator()` 构造**，不能复用 `Collection.operator`：
+   · 那边对 string id 会调 `Config.ParseId` 解析 iid —— 挂载的 `_id` 是业务主键
+     （`uid-code`、平台订单号…），根本不是项目的 OID 格式，**解析失败会把
+     `Updater.Error` 打脏、整个请求失败**；
+   · 紧接着的 `mayChange` 拿不到 IType 直接返回 `ErrITypeNotExist`。
+   所以挂载的 operator `IID` 恒 0，但仍走 `format`（字段名统一成 JSName，与 Collection 同口径）。
 
-- **statement / verify / IType 全部空跳过**：不产 operator、不参与条件校验；
-  通用入口（`u.Set(oid)` / `u.Add(iid)` / `u.Select(key)`）对临时数据
-  **明确不可用**——`handleWithKey` 走 `Config.IType` 路由，临时模型不在
-  `modelsDict` 里，压根路由不到。文档直说，不伪装支持；
-- **`Parser()` 返回 `ParserTypeMount`**，新增常量 `ParserTypeMount Parser = -1`。
-  取负值是为了落在 iota 序列之外：`handles` 工厂表里没有它，
-  `Register(ParserTypeMount, ...)` 会在第一道检查就报 `parser unknown`，
-  不会误建出一个没有 statement 的全局句柄；
-- **业务层要客户端感知时**（如 mail 领取状态）：`u.Dirty(opt)` 是现成公开出口，
-  业务自行 `operator.New(...)` 构造后塞入。框架不产 operator，下发通道保留；
-- **模型要求**：实现 `MountModel`（= CollectionModel + Tabler）。
-  无 ITypeCollection 要求、无 ID 占坑、无 GetOID/Stacked 约定；
-- **挂载同时是缓存**：`Receive(id, data)` 把已经在手上的文档直接塞进内存，跳过 Select+Data。
-  业务常常刚查过、或刚亲手创建了这条数据（充值的下单 → 核销就是典型，横跨多次请求），
-  再按 `_id` 查一遍纯属浪费。⚠️ 只进内存、不记脏、不落库；`Select` 会跳过它，
-  所以别拿它缓存"别处可能改动"的数据；
-- 🔴 **key 只能是文档 `_id`（string）**。不进 IType 路由 → 没有 iid→oid 的转换规则 →
-  数字键在这里没有任何可靠含义，格式化成十进制只是凭空发明一套约定，
-  与业务真实的 `_id` 对不上时是**静默查不到**。
-  类型特有方法（`Document`/`Has`/`Update`/`Set`/`Delete`/`Remove`）直接收 `string`，
-  编译期就挡住；`Get`/`Val`/`Select` 的 `any` 是 `Handle` 接口锁死的，
-  非字符串键运行时告警并跳过。`Mount(model, keys ...string)` 同理；
-- `Val` 取数值字段（字段名由 `Field()` 定，默认 `dataset.Fields.VAL`），
-  `Count(iid)` 按 iid 统计、传 0 统计全部 —— ⚠️ **是不完全统计**，
-  惰性加载下它数的是内存不是库。`IMax`/`IType` 是纯占位（不参与溢出检查）。
+另外覆盖了 `loading`（不预热，别全量拉）、`reload`、`release`（回收未下发的 operator）、
+`submit`（save 失败不吞 —— 挂载随时会被卸载，没有"等下次同步"）、`Count`（按内存统计）。
 
 ## 六、生命周期（两档，框架零自动清理）
 
