@@ -47,6 +47,11 @@ Each model type has a matching trio: `handle_*.go` (Handle implementation), `par
 
 另有 `ParserTypeMount`（值 `-1`，刻意落在 iota 序列之外）—— 临时挂载集合，不进全局注册表，见下节。
 
+> `Collection`（全局注册句柄）也有一对**内存增删**：`Remove(oid...)` 从内存清掉、
+> `Receive(oid, data)` 把已经在手上的文档塞进去。两个都**不碰数据库**，
+> 用途是"别处已经查过/刚插入过，别让 Select+Data 照着 oid 再查一遍"。
+> ⚠️ Receive 进来的必须是库里真实存在的那条，凭空造一条会让后续 Add/Set 更新到不存在的记录上。
+
 ### 临时挂载集合 (Mount / MountCollection)
 
 给"Updater 之外、但要与玩家数据**同批次原子写库**"的数据用：邮件领取标记、兑换码占用、临时战斗副本。设计方案见 `HANDLER_MOUNT_PLAN.md`。

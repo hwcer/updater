@@ -311,6 +311,19 @@ func (this *Collection) Remove(id ...string) {
 	this.remove = append(this.remove, id...)
 }
 
+// Receive 把**已经在手上的**文档直接塞进内存，不查库、不写库 —— Remove 的反向操作。
+//
+// 用在"业务别处已经查出这批数据、或本次请求刚亲手插入过"的场合：不塞的话
+// Select + Data 会照着 oid 把同一条再查一遍。
+//
+// ⚠️ 塞进来的必须是**库里真实存在**（或本次请求正在插入）的那条，且 oid 对得上 ——
+// 凭空造一条塞进来，后续对它的 Add/Set 会生成一条指向不存在记录的更新。框架不校验。
+// ⚠️ 只进内存、**不记脏、不落库**；要落库仍然走 New/Add/Set。
+// ⚠️ 塞进来之后 Select 会认为它已在内存而跳过，也就是说**后续不会再从库里刷新它**。
+func (this *Collection) Receive(oid string, data any) {
+	this.dataset.Receive(oid, data)
+}
+
 func (this *Collection) Field(field ...string) string {
 	if len(field) > 0 {
 		return field[0]
