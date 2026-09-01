@@ -494,13 +494,13 @@ func (this *Collection) format(op *operator.Operator) {
 // ===================== CollectionBulkWrite =====================
 
 // CollectionBulkWrite 实现 dataset.CollectionWriter，把 dataset 的持久化动作转发到
-// 共享 BulkWrite 与模型的 Setter。**Collection 与 MountCollection 共用这一个**。
+// 共享 BulkWrite 与模型的 Setter。**Collection 与 Mount 共用这一个**。
 //
 // 为什么必须有这层适配、不能直接把 Updater.BulkWrite() 交给 dataset.Save：
 //   - 两者不是一套接口 —— CollectionWriter 的 Delete/Insert 不带 model 参数（由适配器
 //     绑定），还多一个 BulkWrite 没有的 Setter；
 //   - Handle 自己也实现不了 CollectionWriter —— Collection.Delete(id any) /
-//     MountCollection.Delete(id string) 与接口要求的 Delete(where ...any) 重名不同签，
+//     Mount.Delete(id string) 与接口要求的 Delete(where ...any) 重名不同签，
 //     一个类型上放不下。
 type CollectionBulkWrite struct {
 	model   CollectionModel

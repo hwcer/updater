@@ -11,7 +11,18 @@ import (
 // 4. 截断后 Value==0 时标记为 TypesResolve（不再执行实际 Add/New）
 // 5. Resolve 返回的分解材料记进 op.Attach,业务层 Submit 后用 op.GetResolve() 取回「换成了什么」
 // 在 Parse 分发前执行,此时 Result 尚未填充,仅调整 op.Value
-func overflow(update *Updater, handle Handle, op *operator.Operator) (err error) {
+// overflowHandle overflow 需要的全部能力。
+//
+// 🔴 不收 Handle：IMax/IType 在那个接口上**只服务于这一个调用点**，
+// 而不进 IType 体系的句柄（Mount）被迫实现两个恒空桩才能满足接口，纯属噪音。
+// 收窄到这里之后，谁真的参与溢出检查谁才需要它们。
+type overflowHandle interface {
+	IMax(int32) int64
+	IType(int32) IType
+	Count(int32) int64
+}
+
+func overflow(update *Updater, handle overflowHandle, op *operator.Operator) (err error) {
 	if !op.OType.IsAdd() || op.IID == 0 {
 		return nil //Document 等按 field 定位的操作 IID 恒为 0,不参与溢出检查
 	}

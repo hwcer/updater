@@ -1,4 +1,4 @@
-# 临时句柄（Mount / MountCollection）设计实现方案
+# 临时句柄（Mount / Mount）设计实现方案
 
 终版设计，一步到位。来源：bong 仓库代码质量审查中对 updater v1.5.1 的分析
 （2026-09-01），经对照 updater 现有代码逐条核实后重写（二稿），并按实现中发现的问题
@@ -20,7 +20,7 @@ bong 侧三类场景需要"Updater 之外的临时数据"：
 `u.BulkWrite().Update(...)`——批次原子性有了，但每次请求重查库、无内存态，
 长命场景（战斗副本）完全无法表达。
 
-结论：为临时数据做**专用 MountCollection**，不进 IType/operator 流水线。
+结论：为临时数据做**专用 Mount**，不进 IType/operator 流水线。
 
 ## 二、现状问题（updater v1.5.1）
 
@@ -39,29 +39,38 @@ bong 侧三类场景需要"Updater 之外的临时数据"：
 由第 5 条：`Handler` 类型与 `Updater.Handler` 字段**直接删除，不留
 Deprecated 别名**——零引用的东西留一版兼容，只是让那组命名三胞胎再碍眼一个版本。
 
-## 三、复用边界：整条流水线都复用
+## 三、复用边界：不复用，自己实现
 
-⚠️ **这一节推翻了前两稿。** 一稿说"不复用 dataset.Collection"（排除错了对象），
-二稿改成"复用容器 dataset.Collection、不复用 statement 算子流水线" —— 那一版也不对：
-不走 operator 就意味着 `Update` 直接改内存，请求失败时回滚不掉，
-而这正是项目里反复踩的那条铁律（「取到的指针一律只读」）的另一种犯法。
+⚠️ **这一节推翻了前三稿**，每一稿都是被同一件事教育出来的：
 
-**定版：`MountCollection` 内嵌 `Collection`，走同一条流水线。**
+| 稿 | 主张 | 为什么不对 |
+|---|---|---|
+| 一稿 | 不复用 `dataset.Collection`，内存自管 | 排除错了对象 —— 该排除的是流水线，不是容器 |
+| 二稿 | 复用容器、不复用 `statement` 流水线 | 不走 operator = `Update` 直接改内存，请求失败回滚不掉 |
+| 三稿 | 内嵌 `Collection`，覆盖差异处 | **Go 的方法提升没有虚派发** |
+| **定版** | **不内嵌，整套接口自己实现** | 挂载只需要四种操作，写清楚反而短 |
+
+三稿栽的都是同一件事：`Collection` 内部调到的永远是它自己的方法。于是
+
+- "覆盖了却不生效" —— `IType`/`IMax`（`Parse` 内部走 `Collection.IType`）；
+- "以为继承了其实语义不同" —— `Select` 对非字符串键走全局 IType 换 oid；
+- "抄了一半" —— `submit` 漏掉 `remove` 队列的处理；
+- "提升出一条必错的路" —— `Collection.New` → `mayChange` → `ErrITypeNotExist`，
+  而对内嵌 `Model` 的业务模型**能编译通过**，运行才炸。
+
+每修一处都要重新推演一遍派发路径。现在每个方法都写在眼前，没有"到底走哪一份"这个问题。
+
+**流水线仍与 `Collection` 相同**（这是要的）：
 
 ```
 Update/Set/Unset/Delete/Insert
    → operator 入队 (statement.insert)
-   → verify: Collection.Parse 消费 → 写内存 + 记脏
+   → verify: 自己的 parse 消费 → 写内存 + 记脏
    → submit: model.Setter → 共享 bulkWrite
    → Updater.Submit 末尾一次提交
 ```
 
-内嵌而不是把 `parse_coll.go` 抽成接口：两者的差异只有 IType 那几处，
-而 Set/Unset/Del 这几条 Parse 分支根本不碰 IType（`op.IID == 0` 时 `overflow` 直接返回）。
-抽接口要给 8 个 handler 换接收者、外加六七个不导出的访问器，代价远大于收益。
-
-⚠️ Go 的内嵌**没有虚派发**：`Collection` 内部调到的是它自己的方法。
-所以凡是"内部会被调到、而挂载语义不同"的，都不能只靠覆盖 —— 见第五节的四条差别。
+复用的只有 `statement`（算子队列）与 `dataset.Collection`（容器），两者都是纯机制、不带 IType 语义。
 
 ## 四、终版 API
 
@@ -72,47 +81,42 @@ type MountModel interface {
 }
 
 // Mount 挂载/取回，keys 非空时当场查库(= Select + Data)。幂等。
-// 挂载与取数是两码事:查库失败返回 (句柄, err),句柄已经挂上且可用。
-func (u *Updater) Mount(model MountModel, keys ...string) (*MountCollection, error)
-
-// Mounted 取回已挂载的集合(只取不挂、不取数),未挂载返回 nil。
-func (u *Updater) Mounted(model MountModel) *MountCollection
-
-// Unmount 只打标记,真正摘除在 Release 阶段。
-func (u *Updater) Unmount(model MountModel)
+// 挂载与取数是两码事:查库失败返回 (句柄, err),句柄已经挂上且可用;
+// 唯一返回 nil 的是与已注册全局模型重名。
+func (u *Updater) Mount(model MountModel, keys ...string) (*Mount, error)
+func (u *Updater) Mounted(model MountModel) *Mount   //只取不挂、不取数
+func (u *Updater) Unmount(model MountModel)          //只打标记,Release 阶段才摘除
 ```
 
-数据操作（**全部产 operator**）：`Update` / `Set` / `Unset` / `Delete` / `Insert`，
-返回 `*operator.Operator`；`Add`/`Sub` 明确不支持（要 IType 建对象），调用记告警返回 nil。
+数据操作（**全部产 operator**，返回 `*operator.Operator`，nil 表示出错、原因在 `Updater.Error`）：
+`Update` / `Set` / `Unset` / `Delete` / `Insert`。
 
-operator 的去向：
-
-| | |
+| 其它 | |
 |---|---|
-| `Forward(bool)` | 产出的 operator 要不要像普通道具变更一样下发客户端（进 `Updater.dirty` → S2CUpdate）。**默认 false** —— 临时数据客户端有自己的协议，混进道具推送两边都看不懂 |
-| `Operators()` | 手动取本次请求产生的 operator（只读，**Release 之后失效**）。给"自己组装协议"的场合用。与 Forward 互不影响 |
+| `Operators()` | 本次请求已 verify、未 submit 的 operator（读的就是 `statement.cache`）。**手动 `u.Verify()` 之后就能读**，submit 之后置空 |
+| `Receive(id, data)` | 把已经在手上的文档塞进内存，跳过查库 —— 挂载同时是这次会话的缓存 |
+| `Remove(id...)` | 只从内存移除，submit 落库之后才真正摘 |
+| `Document` / `Has` / `Len` / `Range` / `Count` / `Field` / `Schema` | 读取 |
 
-缓存：`Receive(id, data)` 把已经在手上的文档直接塞进内存，跳过查库。
-挂载不只是事务通道，同时是这次会话里的一份缓存（下单 → 核销横跨多次请求就是典型）。
-⚠️ 只进内存、不记脏、不落库；`Select` 会跳过它。
+## 五、与 Collection 的四点分界
 
-## 五、与通用 Collection 的四点差别
-
-1. **不进 IType 路由**：覆盖 `IType`/`IMax` 恒空。
-   ⚠️ 必须覆盖 —— `Collection.IType` 会回落到全局 `Config.IType`，
-   拿一个不属于它的 iid 去查全局配置，得到的是随机结果；
-2. **不支持 `Add`/`Sub`**：要靠 `ITypeCollection.New` 建对象；
-3. **key 只能是文档 `_id`（string）**：没有 iid→oid 的转换规则，
-   数字键在这里没有可靠含义；
-4. 🔴 **自己的 `operator()` 构造**，不能复用 `Collection.operator`：
-   · 那边对 string id 会调 `Config.ParseId` 解析 iid —— 挂载的 `_id` 是业务主键
-     （`uid-code`、平台订单号…），根本不是项目的 OID 格式，**解析失败会把
-     `Updater.Error` 打脏、整个请求失败**；
+1. **不进 IType 体系**：operator 的 `IID` 恒 0，没有溢出检查与自动分解。
+   `IMax`/`IType` **压根不实现** —— 那两个只服务于 `overflow` 一个调用点，
+   已从 `Handle` 接口摘掉、收窄成 `funcs.go` 的 `overflowHandle`；
+2. **没有 `Add`/`Sub`**：语义是"按 iid 增减持有量"。方法不存在，误用是**编译错误**；
+3. **key 只能是文档 `_id`（string）**：没有 iid→oid 的转换规则；
+4. 🔴 **自己的 `operator()` 构造**，不能用 `Collection.operator`：
+   · 那边对 string id 调 `Config.ParseId` 解析 iid —— 挂载的 `_id` 是业务主键
+     （`uid-code`、平台订单号…），解析失败会**打脏 `Updater.Error`、整个请求失败**；
    · 紧接着的 `mayChange` 拿不到 IType 直接返回 `ErrITypeNotExist`。
-   所以挂载的 operator `IID` 恒 0，但仍走 `format`（字段名统一成 JSName，与 Collection 同口径）。
+   仍然走 `format`（字段名统一成 JSName，与 Collection 同口径）。
 
-另外覆盖了 `loading`（不预热，别全量拉）、`reload`、`release`（回收未下发的 operator）、
-`submit`（save 失败不吞 —— 挂载随时会被卸载，没有"等下次同步"）、`Count`（按内存统计）。
+**下发客户端与否没有开关**：模型声明了 `ModelIType`（`IType(0)` 非 0）就走通用更新，
+否则不下发。客户端按 IType 分发变更，一条 `IType=0` 的 operator 到对面就是无主数据 ——
+这不是可以随便拨的旋钮，而是"客户端认不认得出"的直接后果。
+
+只认四种 operator：`Set` / `Unset` / `Del` / `New`，其余报错。没有 `Drop`/`Resolve`
+（那是溢出分解）。
 
 ## 六、生命周期（两档，框架零自动清理）
 
@@ -173,27 +177,21 @@ defer u.Unmount(&model.Mail{})
 
 ## 七、接线清单（框架侧全部改动）
 
-1. **`Updater` 加私有字段 `mounts map[string]*MountCollection`**，`Mount` 里懒初始化
+1. **`Updater` 加私有字段 `mounts map[string]*Mount`**，`Mount()` 里懒初始化
    （与 `u.handles` 同款模式）。删除 `Handler` 类型与 `Updater.Handler` 字段
-   （handler.go 整个文件删掉）；
+   （`handler.go` 整个文件删掉 —— 未接线的预留口，三仓零调用）；
 
-2. **`Mount` 内部**：`TableName()` 取名 → 查 mounts 命中即返回 → **查 `modelsRank`
-   是否已有同名全局模型，有则返回错误** → 构造 MountCollection → `reset()`。
+2. **`Updater.Mount`**：`TableName()` 取名 → 查 mounts 命中即返回 → **查 `modelsRank`
+   是否已有同名全局模型，有则返回错误** → `newMount` → `reset()`。
    ⚠️ 重名检查不能省：撞名的话同一张表在一个 Updater 里有两个句柄各写各的，
    是静默的数据竞争；
-   带 `keys` 时在挂载之后追加 `Select(keys...)` + `Data()`（当场查库）。
-   ⚠️ 查库失败**不回滚挂载** —— 挂载与取数是两码事，句柄已经挂上且可用，
-   业务重试一次 Select + Data 就好；把两件事绑在一起只会让"能不能重试"变得不明确；
-   ⚠️ **Mount 不做 `loading()`**。`Collection.loading()` 走的是
-   `model.Getter(u, dataset, nil)`——**keys 为 nil 的全量拉取**，战斗副本表全量拉
-   不可接受。临时句柄一律惰性：要预热就显式 `Select` + `Data`；
+   带 `keys` 时追加 `Select(keys...)` + `Data()`（当场查库）。
+   ⚠️ 查库失败**不回滚挂载** —— 挂载与取数是两码事，句柄已经挂上且可用；
 
-3. **`MountCollection.Select` 必须置 `u.status.Set(StatusChanged)`**。
-   ⚠️ 这条漏了机制表面通、实际静默失效：`Updater.data()` 开头
-   `if !u.status.Has(StatusChanged) { return }`（updater.go:316），
-   而全仓唯一设置该位的地方是 `statement.Select`（statement.go:143）——
-   MountCollection 不用 statement，就得自己置。漏了的症状是
-   "Select 了、Data 了、Get 返回 nil、不报错"，排查方向会全歪到"库里没这条"；
+3. 🔴 **`Select` 必须置 `StatusChanged`**：`Updater.data()` 开头有
+   `if !u.status.Has(StatusChanged) { return }` 的闸门。挂载的 `Select` 委托给
+   `statement.Select`，那里会置位 —— 但**别绕过它自己往 keys 里塞**。
+   漏了的症状是"Select 了、Data 了、Get 返回 nil、不报错"，排查方向会全歪到"库里没这条"；
 
 4. **`Handles()` 末尾追加 mounts**，并修掉开头的 nil 守卫：
 
@@ -208,33 +206,43 @@ defer u.Unmount(&model.Mail{})
    }
    ```
 
-   ⚠️ 原来的 `if u.handles == nil { return nil }` 会把 mounts 一并吞掉
-   （Loading 之前 Mount 属边缘场景，但守卫得跟着改）。
+   ⚠️ 原来的 `if u.handles == nil { return nil }` 会把 mounts 一并吞掉。
    这一步是机制从死到活的关键：`Data` / `converge` / `Submit` / `Reset` /
    `Release` / `Save` / `Reload` 全部基于 `Handles()`，改这一处即可全覆盖；
 
-5. **顺序：临时句柄与全局句柄之间没有顺序契约。**
-   ⚠️ 一稿写"Submit 时临时句柄排在全局之后"，那句**既做不到也不需要**：
-   `Submit` / `verify` / `Release` 都是**倒序**遍历（updater.go:355/337/214），
-   追加到尾部恰恰使 mounts 最先执行。
-   而它本来就不需要有序——临时句柄不共享 IType 路由、不与全局句柄互相产生操作，
-   **同批次原子性由共享 `u.bulkWrite` 保证，与遍历顺序无关**。
-   所以：追加到尾部即可，并在此写明"倒序阶段里 mounts 先跑"这个事实，
-   免得将来有人在上面建立依赖；
+5. **顺序：挂载与全局句柄之间没有顺序契约。**
+   ⚠️ 一稿写"Submit 时挂载排在全局之后"，那句**既做不到也不需要**：
+   `Submit` / `verify` / `Release` 都是**倒序**遍历，追加到尾部恰恰使 mounts 最先执行。
+   而它本来就不需要有序 —— 同批次原子性由共享 `u.bulkWrite` 保证，与遍历顺序无关。
+   追加到尾部即可，别在这个次序上建立依赖；
 
-6. **`submit()`**：`dataset.Save(&mountBulkWrite{coll: this})`，适配器与
-   `CollectionBulkWrite` 同形（Delete/Insert/Setter 三个方法转发到
-   `u.BulkWrite()` 与 `model.Setter`）；
+6. **`Handle` 接口摘掉 `IMax` / `IType`**：它们只服务于 `overflow` 一个调用点，
+   而那三个调用点（Collection/Document/Values 的 `Parse`）传的都是具体类型。
+   收窄成 `funcs.go` 的 `overflowHandle`，挂载就不必写两个恒空桩；
 
-7. **`Unmount`**：只置 `MountCollection.unmount = true`，不落库、不摘除；
+7. **`Unmount`**：只置 `Mount.unmount = true`，不落库、不摘除；
    真正的摘除在 `Updater.Release()` 末尾（各句柄 `release()` 之后）统一扫一遍 mounts 删掉。
    理由见第六节。重挂即全新内存、重新 Getter 加载，无脏数据复用；
 
 8. **`Destroy`**：对 mounts 走 `destroy()`（= `save()` 刷盘），随后 `u.mounts = nil`
-   ——现有 `Destroy` 只置 `u.handles = nil`，要补这一行；
+   ——原先 `Destroy` 只置 `u.handles = nil`，补这一行；
 
 9. **事件链**：参与 `EventTypeVerify / EventTypeSubmit / EventTypeRelease`
-   （幂等空转），不参与 `EventTypeInit`（玩家加载期临时句柄不在场）。
+   （幂等空转），不参与 `EventTypeInit`（玩家加载期挂载不在场）。
+
+### 实现里几处容易写错的
+
+- **`ram` 取 `RAMTypeMaybe`**：`release` 保留内存数据（只有 `None` 才丢 dataset），
+  且 `statement.has` 里 `Always && loader` 那条短路**不能命中** ——
+  命中后 `Select` 会认为"全都在内存里"而跳过每一个 key，`Data` 永不执行、`Get` 全返回 nil；
+- **`submit` 里 `BulkWrite() == nil` 要单独返回**，不能跟 `save` 失败一起吞：
+  前者是配置错误（`Config.BulkWrite` 没配），吞了的话挂载数据永远写不进库、
+  现场只有一行 Alert；
+- **`verify` 用下标遍历不用 range**：当前四个 parse 分支都不追加 operator，
+  但那是实现的性质、不是接口保证；
+- **`Remove` 延到 submit 之后再摘**：立即摘会把这条尚未保存的改动一起丢掉；
+- **`Insert` 的 `_id` 从对象上取**，别另给一个 id 参数 —— 真正决定落库主键的是对象自己的
+  `_id`，两者不一致时库里存一个键、operator 说另一个键，且不报错。
 
 ## 八、战斗副本的三个边界
 
@@ -311,6 +319,6 @@ bong 在 updater 发版后升依赖再迁移；`exchange` 同 mail 形态（Inse
 - **RAMType 入口**：Mount 一律"惰性加载 + 驻留到 Unmount"，不给三档 ram 选择。
   `statement.loading()` 那套（Maybe/Always 才真加载）是为全局句柄的开服预热设计的，
   临时数据没有预热需求；
-- **泛型化**（`MountCollection[M]`）：接收者级泛型 1.18 即可，但接口不能含泛型
+- **泛型化**（`Mount[M]`）：接收者级泛型 1.18 即可，但接口不能含泛型
   方法的限制迫使双入口，动主体系，单独评估勿与本次捆绑。bong 侧 typed wrapper
   （cache 层模式）已够用。

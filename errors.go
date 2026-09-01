@@ -19,8 +19,8 @@ var (
 )
 
 var (
-	ErrServerDeniedService = Errorf(500, "Server denied service") //灾难级故障启动，需要人工排查
-	ErrBulkWriteNotInit    = Errorf(500, "BulkWrite not initialized, set Config.BulkWrite first")
+	ErrServerDeniedService = Errorf(500, "Server denied service")                                                //灾难级故障启动，需要人工排查
+	ErrBulkWriteNotInit    = Errorf(500, "updater.Config.BulkWrite not initialized: 数据落库会静默失效,启动时(连完数据库之后)必须设置") //Updater.Loading 开服自检
 )
 
 func Errorf(code int32, msg any, args ...any) error {

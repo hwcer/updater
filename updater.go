@@ -17,14 +17,14 @@ type Player interface {
 // Updater 玩家数据更新器，管理所有 Handle 的生命周期和持久化
 // 每个玩家持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
 type Updater struct {
-	now       time.Time                   //当前请求时间
-	last      time.Time                   //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
-	dirty     []*operator.Operator        //本次请求产生的操作列表，用于同步给客户端
-	player    Player                      //业务层角色对象
-	status    Status                      //状态位：Init/Submit/Changed/Operated
-	handles   map[string]Handle           //已注册的数据 Handle（Document/Collection/Values）
-	mounts    map[string]*MountCollection //临时挂载的数据集合，见 Mount
-	bulkWrite BulkWrite                   //共享 BulkWrite 实例，Submit 末尾一次原子提交
+	now       time.Time            //当前请求时间
+	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
+	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
+	player    Player               //业务层角色对象
+	status    Status               //状态位：Init/Submit/Changed/Operated
+	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
+	mounts    map[string]*Mount    //临时挂载的数据集合，见 Mount
+	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
 
 	Cache         Cache       //自定义缓存数据
 	Error         error       //请求过程中的错误
@@ -140,6 +140,16 @@ func (u *Updater) Reload() error {
 func (u *Updater) Loading(cb ...func()) (err error) {
 	if u.status.Has(StatusInit) {
 		return
+	}
+	//🔴 开服自检：Config.BulkWrite 没配的话，**所有句柄的落库都会静默失效** ——
+	//save 报出的 ErrBulkWriteNotInit 会被 submit 吞成一行 Alert，玩家一路正常玩、
+	//一行数据都没落库，重启才发现。
+	//
+	//它相当于"数据库连接"级别的配置（本项目在 model.start() 连完 Mongo 之后设），
+	//与其让每个句柄在运行期各自发明一套更严的行为，不如在玩家数据第一次加载时就拦下来：
+	//这时还没产生任何数据改动，报错干净。
+	if Config.BulkWrite == nil {
+		return ErrBulkWriteNotInit
 	}
 	u.status.Set(StatusInit)
 

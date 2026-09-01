@@ -11,12 +11,15 @@ package updater
 //	           文档数，且包含本次请求内尚未落库的新增，扫描代价 O(n)
 //
 // 溢出检查(IMax)比较的是 Count 而非 Val，否则装备类持有量恒为 0、上限永远挡不住
+//
+// ⚠️ IMax/IType **不在本接口上**：它们只被 overflow 用到，而 overflow 的三个调用点
+// (Collection/Document/Values 的 Parse)传的都是具体类型。放在接口上只会逼着
+// 不进 IType 体系的句柄(Mount)写两个恒空桩。要那两样的地方声明 overflowHandle，
+// 见 funcs.go。
 type Handle interface {
 	Get(any) any           //通过 iid 或 oid 获取原始数据
 	Val(any) int64         //单条记录的数值，不可叠加道具须用 oid 定位，详见上文
 	Data() error           //从数据库拉取 Select 标记的数据
-	IMax(iid int32) int64  //单个道具持有上限，与 Count 比较
-	IType(int32) IType     //通过 iid 获取 IType，仅实现 ModelIType 的模型支持 iid==0 取默认值
 	Count(iid int32) int64 //按 iid 汇总的持有总量，详见上文
 	Select(keys ...any)    //标记需要从数据库拉取的 key
 	Parser() Parser        //返回解析器类型

@@ -421,40 +421,63 @@ func TestMountUpdateGoesThroughOperator(t *testing.T) {
 	}
 }
 
-// operator 默认不下发客户端；Forward(true) 才进 Updater.dirty。
-// 无论开关如何 Operators() 都取得到。
-func TestMountForwardAndOperators(t *testing.T) {
-	//默认:不进 dirty,但 Operators 有
+// 下发客户端与否由"模型有没有声明 ModelIType"决定，没有开关：
+// 没声明 → operator 不进 Updater.dirty，客户端认不出这种无主变更；
+// 声明了 → 与普通道具变更一样下发，且 op.IType 带得上。
+//
+// 两种情况下 Operators() 都取得到 —— 它读的是 statement.cache，
+// verify 之后、submit 之前有效。
+func TestMountForwardByModelIType(t *testing.T) {
+	//没声明:不下发
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
 	coll, _ := u.Mount(m, "row1")
 	coll.Update("row1", dataset.Update{"status": int32(1)})
+
+	if len(coll.Operators()) != 0 {
+		t.Fatal("verify 之前 cache 是空的")
+	}
+	if err := u.Verify(); err != nil {
+		t.Fatalf("Verify:%v", err)
+	}
+	if len(coll.Operators()) != 1 {
+		t.Fatalf("Verify 之后应取得到 1 条,实际 %d", len(coll.Operators()))
+	}
+	if coll.Operators()[0].IType != 0 {
+		t.Fatal("模型没声明 ModelIType 时 op.IType 应为 0")
+	}
+
 	ops, err := u.Submit()
 	if err != nil {
 		t.Fatalf("Submit:%v", err)
 	}
 	if len(ops) != 0 {
-		t.Fatalf("默认不该下发客户端,实际 %d 条", len(ops))
+		t.Fatalf("没声明 IType 的挂载不该下发客户端,实际 %d 条", len(ops))
 	}
-	if len(coll.Operators()) != 1 {
-		t.Fatalf("Operators 应取得到 1 条,实际 %d", len(coll.Operators()))
+	if len(coll.Operators()) != 0 {
+		t.Fatal("submit 之后 cache 已交出并置空")
 	}
 
-	//打开 Forward:与普通道具变更一样进 dirty
+	//声明了:走通用更新
 	u2, _ := newMountUpdater(t)
-	m2 := newMountModel("row1")
+	m2 := &mountITypeModel{mountModel: *newMountModel("row1")}
 	coll2, _ := u2.Mount(m2, "row1")
-	coll2.Forward(true)
 	coll2.Update("row1", dataset.Update{"status": int32(1)})
 	ops2, err := u2.Submit()
 	if err != nil {
 		t.Fatalf("Submit:%v", err)
 	}
 	if len(ops2) != 1 {
-		t.Fatalf("Forward(true) 应下发 1 条,实际 %d", len(ops2))
+		t.Fatalf("声明了 IType 应下发 1 条,实际 %d", len(ops2))
 	}
-	if len(coll2.Operators()) != 1 {
-		t.Fatal("Forward 打开时 Operators 同样要取得到")
+	if ops2[0].IType != mountTestITypeId {
+		t.Fatalf("op.IType 期望 %d 实际 %d", mountTestITypeId, ops2[0].IType)
+	}
+	if ops2[0].IID != 0 {
+		t.Fatalf("挂载没有 iid,IID 应为 0,实际 %d", ops2[0].IID)
+	}
+	if ops2[0].OID != "row1" {
+		t.Fatalf("OID 应当是文档 _id,实际 %q", ops2[0].OID)
 	}
 }
 
@@ -464,7 +487,7 @@ func TestMountInsertGoesThroughOperator(t *testing.T) {
 	m := newMountModel() //库里空的
 	coll, _ := u.Mount(m)
 
-	if op := coll.Insert("row9", &mountRow{Id: "row9", Val: 3}); op == nil {
+	if op := coll.Insert(&mountRow{Id: "row9", Val: 3}); op == nil {
 		t.Fatalf("Insert 应产出 operator:%v", u.Error)
 	}
 	if coll.Has("row9") {
@@ -514,5 +537,116 @@ func TestMountReceiveSkipsGetter(t *testing.T) {
 	//改一笔才该落库
 	if op := coll.Update("row1", dataset.Update{"status": int32(1)}); op == nil {
 		t.Fatalf("Update 应产出 operator:%v", u.Error)
+	}
+}
+
+// 🔴 挂载的 ram 必须是 Maybe，不能是 Always。
+//
+// Reload 之后 Collection.loading 会跑一次 Getter(nil) 并把 statement.loader 置真；
+// 而 statement.has 里有一条 `ram == Always && loader` 的短路 —— 一旦命中，
+// Select 会认为"全都在内存里"而跳过每一个 key，Data 永远不执行、Get 全返回 nil，
+// 且**一声不吭**。这条用例在 ram=Always 下会失败。
+func TestMountSelectStillWorksAfterReload(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1")
+	coll, err := u.Mount(m, "row1")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+	if coll.Get("row1") == nil {
+		t.Fatal("挂载时就该取到")
+	}
+
+	if err = u.Reload(); err != nil {
+		t.Fatalf("Reload:%v", err)
+	}
+	if coll.Get("row1") != nil {
+		t.Fatal("Reload 应当丢掉内存数据")
+	}
+
+	coll.Select("row1")
+	if err = u.Data(); err != nil {
+		t.Fatalf("Data:%v", err)
+	}
+	if coll.Get("row1") == nil {
+		t.Fatal("Reload 之后 Select 应当能重新拉回来:ram 取 Always 会让 has 短路、Select 全被跳过")
+	}
+}
+
+// mountITypeModel 主动声明 ModelIType/ModelIMax 的挂载模型。
+type mountITypeModel struct {
+	mountModel
+}
+
+var _ ModelIType = (*mountITypeModel)(nil)
+var _ ModelIMax = (*mountITypeModel)(nil)
+
+// IType 传 0 时返回本模型的默认 IType —— ModelIType 的约定，挂载补 op.IType 靠它。
+func (m *mountITypeModel) IType(iid int32) int32 {
+	if iid == 0 || iid == 777 {
+		return mountTestITypeId
+	}
+	return 0
+}
+func (m *mountITypeModel) IMax(int32) int64 { return 66 }
+
+const mountTestITypeId int32 = 990001
+
+// Remove 只是把 id 记进队列，真正从内存摘除在 submit —— 覆盖 submit 时漏抄那段，
+// Remove 就变成一个不报错也不生效的空调用。
+func TestMountRemoveAppliedOnSubmit(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1")
+	coll, err := u.Mount(m, "row1")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+	coll.Remove("row1")
+	if coll.Get("row1") == nil {
+		t.Fatal("Remove 只是入队,此刻还该在内存里")
+	}
+	if _, err = u.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if coll.Get("row1") != nil {
+		t.Fatal("Submit 之后应当已从内存摘除")
+	}
+}
+
+// Insert 的 _id 从对象上取：取不到直接报错，不会静默插进一条没有主键的记录。
+func TestMountInsertRequiresObjectId(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	coll, _ := u.Mount(newMountModel())
+
+	if op := coll.Insert(&mountRow{Val: 3}); op != nil { //没有 Id
+		t.Fatal("对象没有 _id 时 Insert 应当报错")
+	}
+	if u.Error == nil {
+		t.Fatal("应当置 Updater.Error")
+	}
+}
+
+// Insert 的 op.Value 取对象上的数值字段（模型声明 ModelIType、operator 下发客户端时，
+// 对面按道具变更渲染，留 0 会显示成"+0"）；取不到按 1。
+func TestMountInsertOperatorValue(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	coll, _ := u.Mount(newMountModel())
+
+	op := coll.Insert(&mountRow{Id: "row9", Val: 7})
+	if op == nil {
+		t.Fatalf("Insert:%v", u.Error)
+	}
+	if op.Value != 7 {
+		t.Fatalf("Value 应取 val 字段,期望 7 实际 %d", op.Value)
+	}
+
+	//字段存在就取它的值,哪怕是 0 —— 与 Collection.New 同口径,
+	//只有"对象上压根没有这个字段"才回落 1
+	op2 := coll.Insert(&mountRow{Id: "row8"})
+	if op2 == nil {
+		t.Fatalf("Insert:%v", u.Error)
+	}
+	if op2.Value != 0 {
+		t.Fatalf("字段存在且为 0 时就该是 0,实际 %d", op2.Value)
 	}
 }
