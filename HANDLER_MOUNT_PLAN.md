@@ -141,6 +141,10 @@ coll.Update(battleId, dataset.Update{...}) // 改内存 + 记脏
   业务自行 `operator.New(...)` 构造后塞入。框架不产 operator，下发通道保留；
 - **模型要求**：实现 `MountModel`（= CollectionModel + Tabler）。
   无 ITypeCollection 要求、无 ID 占坑、无 GetOID/Stacked 约定；
+- **挂载同时是缓存**：`Receive(id, data)` 把已经在手上的文档直接塞进内存，跳过 Select+Data。
+  业务常常刚查过、或刚亲手创建了这条数据（充值的下单 → 核销就是典型，横跨多次请求），
+  再按 `_id` 查一遍纯属浪费。⚠️ 只进内存、不记脏、不落库；`Select` 会跳过它，
+  所以别拿它缓存"别处可能改动"的数据；
 - 🔴 **key 只能是文档 `_id`（string）**。不进 IType 路由 → 没有 iid→oid 的转换规则 →
   数字键在这里没有任何可靠含义，格式化成十进制只是凭空发明一套约定，
   与业务真实的 `_id` 对不上时是**静默查不到**。

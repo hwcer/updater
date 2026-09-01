@@ -61,6 +61,7 @@ coll.Update(id, dataset.Update{...})        // 改内存记脏，Submit 时经 m
 长命句柄反复这么调不会重复查），不带 key 则纯挂载、**不做任何预加载**。
 
 - **复用 `dataset.Collection`（纯容器），不复用 `statement`（算子流水线）** —— 不产 operator、不参与 verify、不进 IType 路由。`u.Add/u.Sub/u.Set/u.Select` **路由不到临时句柄**，只能拿 `*MountCollection` 本身操作；
+- **`Receive(id, data)`：挂载同时是缓存** —— 把已经在手上的文档直接塞进内存，跳过 Select+Data。业务刚查过、或刚亲手创建了这条数据（充值的下单 → 核销就是典型）时用它，别照着 `_id` 把自己刚写的那条又查一遍。⚠️ 只进内存、不记脏、不落库；`Select` 会跳过它，所以别拿它缓存"别处可能改动"的数据；
 - 🔴 **key 只能是文档 `_id`（string），不能用数字**：临时集合不进 IType 路由，没有 iid→oid 的转换规则。类型特有方法（`Document`/`Has`/`Update`/`Set`/`Delete`/`Remove`）直接收 `string` 编译期挡住；`Get`/`Val`/`Select` 的 `any` 是 `Handle` 接口锁的，非字符串键运行时告警并跳过；
 - `Val` 取数值字段（字段名由 `Field()` 定，默认 `dataset.Fields.VAL`），`Count(iid)` 按 iid 统计、传 0 统计全部。⚠️ **Count 是不完全统计**：临时集合按 key 惰性加载，它数的是内存不是库；`IMax`/`IType` 是纯占位（不参与溢出检查）；
 - 模型要实现 `MountModel` = `CollectionModel` + `schema.Tabler`（挂载名取 `TableName()`，与已注册全局模型重名直接报错）；
