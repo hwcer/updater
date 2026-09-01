@@ -17,24 +17,24 @@ type Player interface {
 // Updater 玩家数据更新器，管理所有 Handle 的生命周期和持久化
 // 每个玩家持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
 type Updater struct {
-	now       time.Time            //当前请求时间
-	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
-	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
-	player    Player               //业务层角色对象
-	status    Status               //状态位：Init/Submit/Changed/Operated
-	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
-	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
+	now       time.Time                   //当前请求时间
+	last      time.Time                   //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
+	dirty     []*operator.Operator        //本次请求产生的操作列表，用于同步给客户端
+	player    Player                      //业务层角色对象
+	status    Status                      //状态位：Init/Submit/Changed/Operated
+	handles   map[string]Handle           //已注册的数据 Handle（Document/Collection/Values）
+	mounts    map[string]*MountCollection //临时挂载的数据集合，见 Mount
+	bulkWrite BulkWrite                   //共享 BulkWrite 实例，Submit 末尾一次原子提交
 
 	Cache         Cache       //自定义缓存数据
 	Error         error       //请求过程中的错误
 	Events        Events      //生命周期事件
 	Middleware    Middlewares //中间件，所有事件类型都会触发
-	Handler       Handler     //临时挂载的 Handle
 	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
 }
 
 func New(p Player) *Updater {
-	return &Updater{player: p, Cache: Cache{}, Handler: Handler{}, Events: Events{}, Middleware: Middlewares{}}
+	return &Updater{player: p, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
@@ -214,6 +214,13 @@ func (u *Updater) Release() {
 	hs := u.Handles()
 	for i := len(hs) - 1; i >= 0; i-- {
 		hs[i].release()
+	}
+	//临时句柄的卸载收在这里:Unmount 只打标记,句柄留到请求走完整条生命周期
+	//(Data/verify/submit 一样不落)才摘除,短流程与长流程走同一条路。
+	for k, h := range u.mounts {
+		if h.unmount {
+			delete(u.mounts, k)
+		}
 	}
 }
 
@@ -433,15 +440,25 @@ func (u *Updater) handleWithIType(id int32) Handle {
 	}
 	return u.handles[mod.name]
 }
+
+// Handles 返回本次请求要驱动的全部句柄：**全局注册句柄 + 临时挂载句柄**。
+//
+// Data / converge / Submit / Reset / Release / Save / Reload 全部基于它，
+// 临时句柄接进这里即被全流程覆盖。
+//
+// ⚠️ 两类句柄之间**没有顺序契约**：临时句柄不共享 IType 路由、不与全局句柄互相产生操作，
+// 同批次原子性由共享 bulkWrite 保证，与遍历顺序无关。
+// 具体到实现：临时句柄追加在尾部，而 Submit/verify/Release 是**倒序**遍历
+// —— 也就是说它们实际最先跑。别在这个次序上建立任何依赖。
 func (u *Updater) Handles() (r []Handle) {
-	if u.handles == nil {
-		return nil
-	}
-	r = make([]Handle, 0, len(modelsRank))
+	r = make([]Handle, 0, len(modelsRank)+len(u.mounts))
 	for _, model := range modelsRank {
 		if h := u.handles[model.name]; h != nil {
 			r = append(r, h)
 		}
+	}
+	for _, h := range u.mounts {
+		r = append(r, h)
 	}
 	return
 }
@@ -466,6 +483,7 @@ func (u *Updater) Destroy() (err error) {
 		op.Release()
 	}
 	u.handles = nil
+	u.mounts = nil
 	u.dirty = nil
 	return
 }

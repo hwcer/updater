@@ -17,6 +17,15 @@ const (
 	ParserTypeVirtual                  //Virtual 虚拟模式,本身不会存储数据，依赖于其他模块数据，如 日常 依赖 历史数据
 )
 
+// ParserTypeMount 临时挂载集合(MountCollection)，见 Updater.Mount。
+//
+// 取负值是为了**永远不被 iota 序列撞上**——上面那组是 iota，将来加第五个 parser
+// 就会延伸到 4、第六个到 5，用正数迟早撞号。
+//
+// 它不在 handles 工厂表里，所以 Register(ParserTypeMount, ...) 在第一道检查就报
+// parser unknown，不会误建出一个没有 statement 的全局句柄。
+const ParserTypeMount Parser = -1
+
 type handleFunc func(updater *Updater, model *Model) Handle
 
 var handles = make(map[Parser]handleFunc)

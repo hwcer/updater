@@ -45,6 +45,32 @@ Each model type has a matching trio: `handle_*.go` (Handle implementation), `par
 | `ParserTypeCollection` | `Collection` | `string` (OID) | `dataset.Collection` (map of Documents) | `collectionModel` |
 | `ParserTypeVirtual` | `Virtual` | `any` | delegates to another module | `virtualModel` |
 
+另有 `ParserTypeMount`（值 `-1`，刻意落在 iota 序列之外）—— 临时挂载集合，不进全局注册表，见下节。
+
+### 临时挂载集合 (Mount / MountCollection)
+
+给"Updater 之外、但要与玩家数据**同批次原子写库**"的数据用：邮件领取标记、兑换码占用、临时战斗副本。设计方案见 `HANDLER_MOUNT_PLAN.md`。
+
+```go
+coll, err := u.Mount(&model.Mail{}, ids...) // 挂载 + 当场查库(= Select + Data)
+defer u.Unmount(&model.Mail{})              // 标记卸载，真正摘除在 Release 阶段
+coll.Update(id, dataset.Update{...})        // 改内存记脏，Submit 时经 model.Setter 落库
+```
+
+`Mount` 幂等，重复 Mount 取回同一句柄；带 key 时当场查库（已在内存的 key 自动跳过，
+长命句柄反复这么调不会重复查），不带 key 则纯挂载、**不做任何预加载**。
+
+- **复用 `dataset.Collection`（纯容器），不复用 `statement`（算子流水线）** —— 不产 operator、不参与 verify、不进 IType 路由。`u.Add/u.Sub/u.Set/u.Select` **路由不到临时句柄**，只能拿 `*MountCollection` 本身操作；
+- 🔴 **key 只能是文档 `_id`（string），不能用数字**：临时集合不进 IType 路由，没有 iid→oid 的转换规则。类型特有方法（`Document`/`Has`/`Update`/`Set`/`Delete`/`Remove`）直接收 `string` 编译期挡住；`Get`/`Val`/`Select` 的 `any` 是 `Handle` 接口锁的，非字符串键运行时告警并跳过；
+- `Val` 取数值字段（字段名由 `Field()` 定，默认 `dataset.Fields.VAL`），`Count(iid)` 按 iid 统计、传 0 统计全部。⚠️ **Count 是不完全统计**：临时集合按 key 惰性加载，它数的是内存不是库；`IMax`/`IType` 是纯占位（不参与溢出检查）；
+- 模型要实现 `MountModel` = `CollectionModel` + `schema.Tabler`（挂载名取 `TableName()`，与已注册全局模型重名直接报错）；
+- **两档生命周期**：短命 `defer Unmount`；长命（战斗副本）每个 handler 开头 `Mount` 幂等取回，业务在全部结束路径显式 `Unmount`。框架零自动清理，兜底是玩家下线 `Destroy` 刷盘；
+- 🔴 **三个"释放"不是一回事**：逐请求 `release()` 只清 dirty **保留内存**（长命驻留靠它）／`Unmount` 只打标记、Release 阶段才摘除／`destroy()` 是下线刷盘。混用会让某一档静默失效；
+- 🔴 `MountCollection.Select` 必须置 `StatusChanged`（`Updater.data()` 开头有闸门），漏了的症状是"Select 了、Data 了、Get 拿到 nil、还不报错"；
+- 🔴 `Unmount` **不当场摘除也不自己刷盘**：`defer` 在 **handler 返回时**执行，框架 `Submit` 排在那之后，当场摘掉这次改动就永久丢失；自己 `save()` 则是绕开 `submit` 另开旁路，短流程与长流程走的路会不一样。打标记 + Release 摘除，两档走同一条路。
+
+回归测试在 `handle_mount_test.go`，钉的全是上面这几条静默失效。
+
 ### Key Dispatch Chain
 
 `Updater.Add(iid, num)` → `dataset.ParseInt64(num)` → `Updater.handle(iid)` resolves IID → IType → Model → Handle name → `handle.increase()` → creates `operator.Operator` → enqueued into `statement.operator` via `insert()` → processed in `verify()` via `Parse()` dispatch table. Virtual skips this pipeline — it delegates directly to `model.Add/Sub/Set`, and optionally records operators for frontend forwarding via `Forward(true)`.
@@ -159,6 +185,8 @@ The operation descriptor passed through the entire pipeline. Key fields:
 `Add`, `Sub`, `Get`, `Val`, `Select` — 通过 IID 路由到对应 Handle。`Add/Sub` 的 num 参数为 `any`，在 Updater 层统一通过 `dataset.ParseInt64` 转换为 `int64`。
 
 类型访问器: `Values()`, `Document()`, `Collection()`, `Virtual()` — 通过 name 或 IType ID 获取具体 Handle 实例。
+
+临时挂载: `Mount(MountModel)`, `Unmount(MountModel)`, `Mounted(MountModel)` — 见「临时挂载集合」。
 
 ### 方法排列约定
 

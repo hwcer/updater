@@ -138,7 +138,7 @@ func (this *Collection) save() (err error) {
 	if this.Updater.BulkWrite() == nil {
 		return ErrBulkWriteNotInit
 	}
-	return this.dataset.Save(&CollectionBulkWrite{coll: this})
+	return this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model))
 }
 
 func (this *Collection) reset() {
@@ -480,20 +480,32 @@ func (this *Collection) format(op *operator.Operator) {
 
 // ===================== CollectionBulkWrite =====================
 
-// CollectionBulkWrite 实现 dataset.CollectionWriter，封装 Collection 的持久化逻辑
+// CollectionBulkWrite 实现 dataset.CollectionWriter，把 dataset 的持久化动作转发到
+// 共享 BulkWrite 与模型的 Setter。**Collection 与 MountCollection 共用这一个**。
+//
+// 为什么必须有这层适配、不能直接把 Updater.BulkWrite() 交给 dataset.Save：
+//   - 两者不是一套接口 —— CollectionWriter 的 Delete/Insert 不带 model 参数（由适配器
+//     绑定），还多一个 BulkWrite 没有的 Setter；
+//   - Handle 自己也实现不了 CollectionWriter —— Collection.Delete(id any) /
+//     MountCollection.Delete(id string) 与接口要求的 Delete(where ...any) 重名不同签，
+//     一个类型上放不下。
 type CollectionBulkWrite struct {
-	coll *Collection
+	model   CollectionModel
+	updater *Updater
+}
+
+func newCollectionBulkWrite(u *Updater, model CollectionModel) *CollectionBulkWrite {
+	return &CollectionBulkWrite{updater: u, model: model}
 }
 
 func (w *CollectionBulkWrite) Delete(where ...any) {
-	w.coll.Updater.BulkWrite().Delete(w.coll.model, where...)
+	w.updater.BulkWrite().Delete(w.model, where...)
 }
 
 func (w *CollectionBulkWrite) Insert(documents ...any) {
-	w.coll.Updater.BulkWrite().Insert(w.coll.model, documents...)
+	w.updater.BulkWrite().Insert(w.model, documents...)
 }
 
 func (w *CollectionBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
-	bw := w.coll.Updater.BulkWrite()
-	return w.coll.model.Setter(w.coll.Updater, bw, _id, dirty, unset)
+	return w.model.Setter(w.updater, w.updater.BulkWrite(), _id, dirty, unset)
 }
