@@ -333,39 +333,66 @@ func (this *Mount) Remove(id ...string) {
 	this.remove = append(this.remove, id...)
 }
 
-// Discard 立即从内存移除若干文档，**连本次针对它们的未提交改动一起作废** ——
-// 不动数据库、不产 operator。
+// Submit 把**本挂载**的改动单独落库，不等 Updater 整体提交。
 //
-// 与 Remove 的分界：Remove 要等 submit 落库之后才摘（它是"这条已经走完了，别占内存"）；
-// Discard 是当场摘（"这条现在起就不算数了"）。
+// 给「这一趟末尾要 return error、但这份数据必须留下」的场合用：平台回来的订单状态、
+// 三方结算回执这类**已经发生的事实**，不该跟着业务失败一起回滚。
+// 以前只能绕开事务直接写库（自己拼 update、还要手动把新值同步回内存），
+// 现在走的仍是 operator 流水线 —— 格式化、schema 校验、内存同步全都照旧。
 //
-// 给「绕开事务直接写了库」的场合用：那一下之后内存里这份就过期了，而长命挂载跨请求存活，
-// 留着会被后续请求当真。Remove 帮不上忙 —— 那种场合通常紧接着 return error，
-// 压根走不到 submit。本次对它产生的 operator 也没有意义了（本来就会随 error 回滚）。
+// 🔴 用一份**独立的 BulkWrite**，不碰 Updater 那份共享实例：
+// 共享那份里装着玩家数据的改动，提交它等于把整个请求提前落库，那不叫单表提交。
 //
-// ⚠️ **摘文档必须连它的 operator 一起摘**，否则 verify 阶段 parseSet 找不到文档，
-// 报 ErrItemNotExist、整个请求失败 —— 那就成了"清理反而把业务搞挂"。
-// 队列里的 operator 就地摘除、**不还 sync.Pool**：业务可能刚从 Operators() 里
-// 把同一批对象拿在手上，还池子会造成悬垂引用。少一点复用，交给 GC。
+// ⚠️ 提交之后这个挂载会处于「已落库」状态，而请求可能还会失败回滚。三条后果要清楚：
 //
-// 🔴 什么时候能清由**业务**判断，框架不替它猜：这里不会因为"还有未提交的改动"就悄悄跳过。
-func (this *Mount) Discard(id ...string) {
-	for _, k := range id {
-		this.statement.operator = dropOperator(this.statement.operator, k)
-		this.statement.cache = dropOperator(this.statement.cache, k)
-		this.dataset.Remove(k) //dataset.Remove 同时清 dirty
+//	内存    已是新值(verify 时写的)，与库一致 —— 这正是要的
+//	客户端  operator 还在 cache 里等 Updater.Submit 交付；请求失败就不会下发。
+//	        本表若声明了 IType，就会出现"库变了、客户端不知道"，得自己补推
+//	玩家数据 完全不受影响，该回滚照样回滚
+//
+// ⚠️ **失败时内存已经是新值、库还是旧的**（verify 在落库之前）。别当没事发生：
+// 要么重试，要么 Unmount 整张表（Release 时摘除，下次请求重新从库加载）。
+//
+// ⚠️ 全局的 StatusOperated **不会**被清除：它是所有 handle 共用的一个标志，
+// 为了"我这张表校验过了"去清它，会让其它 handle 的待校验操作被整体跳过、
+// 玩家数据静默丢失。留着的代价只是后续 converge 对本挂载空转一次
+// （statement.verify 消费完已把队列置 nil）。
+func (this *Mount) Submit() error {
+	if err := this.Updater.WriteAble(); err != nil {
+		return err
 	}
-}
-
-// dropOperator 摘掉队列里所有针对该 _id 的操作，原地复用底层数组。
-func dropOperator(ops []*operator.Operator, id string) []*operator.Operator {
-	r := ops[:0]
-	for _, op := range ops {
-		if op == nil || op.OID != id {
-			r = append(r, op)
-		}
+	if err := this.verify(); err != nil {
+		return err
 	}
-	return r
+	//没有脏数据就别打库:业务不必自己判断"这次到底改没改",重复调用也是零成本。
+	//verify 在上面已经跑过,该进 dirty 的都进了。
+	if len(this.dataset.Dirty()) == 0 {
+		return nil
+	}
+	if Config.BulkWrite == nil {
+		return ErrBulkWriteNotInit
+	}
+	bulk := Config.BulkWrite(this.Updater)
+	if bulk == nil {
+		return ErrBulkWriteNotInit
+	}
+	if err := this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model, bulk)); err != nil {
+		return err
+	}
+	//测试模式只改内存不写库，与 Updater.Submit 的口径一致:数据已经进了这份 bulk，
+	//丢掉不提交即可。
+	if this.Updater.status.Has(StatusTesting) {
+		return nil
+	}
+	if err := bulk.Submit(); err != nil {
+		return err
+	}
+	//落库了才摘，与 submit() 同一条规矩(见 Remove)
+	if len(this.remove) > 0 {
+		this.dataset.Remove(this.remove...)
+		this.remove = nil
+	}
+	return nil
 }
 
 // Receive 把**已经在手上的**文档直接塞进内存，跳过 Select + Data 那次查库。

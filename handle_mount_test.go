@@ -592,64 +592,6 @@ func (m *mountITypeModel) IMax(int32) int64 { return 66 }
 
 const mountTestITypeId int32 = 990001
 
-// Discard 立即摘除,连未提交的改动一起作废。
-//
-// 关键是作废之后 verify **不能**再去碰那条文档——operator 必须真的从队列里摘掉,
-// 否则就成了"清理反而把业务搞挂"。
-func TestMountDiscardDropsPendingOperator(t *testing.T) {
-	u, _ := newMountUpdater(t)
-	m := newMountModel("row1", "row2")
-	coll, err := u.Mount(m, "row1", "row2")
-	if err != nil {
-		t.Fatalf("Mount:%v", err)
-	}
-	if op := coll.Update("row1", dataset.Update{"val": int64(7)}); op == nil {
-		t.Fatalf("Update:%v", u.Error)
-	}
-	if op := coll.Update("row2", dataset.Update{"val": int64(8)}); op == nil {
-		t.Fatalf("Update:%v", u.Error)
-	}
-
-	coll.Discard("row1")
-	if coll.Get("row1") != nil {
-		t.Fatal("Discard 应当立即摘除")
-	}
-	//🔴 摘了文档就必须一并摘掉它的 operator,否则 verify 会 ErrItemNotExist、整个请求失败
-	if _, err = u.Submit(); err != nil {
-		t.Fatalf("Submit:%v —— Discard 没摘干净 operator", err)
-	}
-	//row2 不受牵连:它的改动照常落库
-	if coll.Get("row2") == nil {
-		t.Fatal("Discard 只该影响点名的那条")
-	}
-	if m.setter == 0 {
-		t.Fatal("row2 的改动应当照常落库")
-	}
-}
-
-// Discard 与 Remove 的分界:前者当场摘,后者等 submit 落库之后才摘。
-func TestMountDiscardImmediate(t *testing.T) {
-	u, _ := newMountUpdater(t)
-	m := newMountModel("row1")
-	coll, err := u.Mount(m, "row1")
-	if err != nil {
-		t.Fatalf("Mount:%v", err)
-	}
-	if coll.Get("row1") == nil {
-		t.Fatal("挂载时应已加载")
-	}
-	coll.Discard("row1")
-	if coll.Get("row1") != nil {
-		t.Fatal("Discard 应当立即摘除,不等 submit")
-	}
-	if _, err = u.Submit(); err != nil {
-		t.Fatalf("Submit:%v", err)
-	}
-	if m.setter != 0 {
-		t.Fatalf("Discard 不该触发落库,setter 被调了 %d 次", m.setter)
-	}
-}
-
 func TestMountRemoveAppliedOnSubmit(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
@@ -704,5 +646,134 @@ func TestMountInsertOperatorValue(t *testing.T) {
 	}
 	if op2.Value != 0 {
 		t.Fatalf("字段存在且为 0 时就该是 0,实际 %d", op2.Value)
+	}
+}
+
+// 🔴 Mount.Submit 必须用**独立**的 BulkWrite。
+//
+// Updater 那份是共享的，里面装着玩家数据的改动 —— 提交它等于把整个请求提前落库，
+// 那不叫单表提交。这条测试同时钉住两件事：本表确实落了库、共享那份**一次都没被提交**。
+func TestMountSubmitUsesIsolatedBulkWrite(t *testing.T) {
+	var made []*mountBulk
+	old := Config.BulkWrite
+	Config.BulkWrite = func(*Updater) BulkWrite {
+		b := &mountBulk{}
+		made = append(made, b)
+		return b
+	}
+	t.Cleanup(func() { Config.BulkWrite = old })
+
+	u := New(&mountPlayer{uid: "mount_uid"})
+	if err := u.Loading(); err != nil {
+		t.Fatalf("Loading:%v", err)
+	}
+	u.Reset()
+	shared := u.BulkWrite() //先把共享那份造出来,made[0] 就是它
+	if len(made) != 1 || made[0] != shared {
+		t.Fatalf("共享 BulkWrite 没按预期创建:%d", len(made))
+	}
+
+	m := newMountModel("row1")
+	coll, err := u.Mount(m, "row1")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+	if op := coll.Update("row1", dataset.Update{"val": int64(7)}); op == nil {
+		t.Fatalf("Update:%v", u.Error)
+	}
+
+	if err = coll.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if m.setter == 0 {
+		t.Fatal("Submit 应当把改动经 model.Setter 写出去")
+	}
+	if len(made) != 2 {
+		t.Fatalf("Submit 应当另造一份 BulkWrite,实际创建了 %d 份", len(made))
+	}
+	if made[1].submits != 1 {
+		t.Fatalf("独立那份应当被提交一次,实际 %d", made[1].submits)
+	}
+	//🔴 核心断言:共享那份一次都不能被提交,否则玩家数据被捎带落库
+	if shared.(*mountBulk).submits != 0 {
+		t.Fatal("共享 BulkWrite 被提交了 —— 玩家数据会跟着一起落库")
+	}
+
+	//已经落过库,整体提交时不该再写一遍
+	before := m.setter
+	if _, err = u.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if m.setter != before {
+		t.Fatalf("整体提交又写了一遍,setter %d → %d", before, m.setter)
+	}
+}
+
+// Submit 之后请求仍可能失败回滚 —— 那时内存必须还是新值（已落库，与库一致）。
+func TestMountSubmitKeepsMemoryOnRollback(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1")
+	coll, err := u.Mount(m, "row1")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+	if op := coll.Update("row1", dataset.Update{"val": int64(7)}); op == nil {
+		t.Fatalf("Update:%v", u.Error)
+	}
+	if err = coll.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	//模拟业务失败:不调 u.Submit(),直接 Release
+	u.Release()
+	if got := coll.Val("row1"); got != 7 {
+		t.Fatalf("回滚后内存应保持已落库的新值 7,实际 %d —— 内存与库不一致", got)
+	}
+}
+
+// 没有改动时 Submit 不该打库 —— 业务不必自己判断"这次到底改没改"，重复调用也是零成本。
+func TestMountSubmitNoopWhenClean(t *testing.T) {
+	var made []*mountBulk
+	old := Config.BulkWrite
+	Config.BulkWrite = func(*Updater) BulkWrite {
+		b := &mountBulk{}
+		made = append(made, b)
+		return b
+	}
+	t.Cleanup(func() { Config.BulkWrite = old })
+
+	u := New(&mountPlayer{uid: "mount_uid"})
+	if err := u.Loading(); err != nil {
+		t.Fatalf("Loading:%v", err)
+	}
+	u.Reset()
+	m := newMountModel("row1")
+	coll, err := u.Mount(m, "row1")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+
+	//一次改动都没有
+	if err = coll.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if len(made) != 0 {
+		t.Fatalf("没有脏数据不该造 BulkWrite,实际造了 %d 份", len(made))
+	}
+
+	//改一笔,提交;再提交一次应当是空操作
+	if op := coll.Update("row1", dataset.Update{"val": int64(1)}); op == nil {
+		t.Fatalf("Update:%v", u.Error)
+	}
+	if err = coll.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if len(made) != 1 {
+		t.Fatalf("应当只造一份 BulkWrite,实际 %d", len(made))
+	}
+	if err = coll.Submit(); err != nil {
+		t.Fatalf("重复 Submit:%v", err)
+	}
+	if len(made) != 1 {
+		t.Fatalf("重复 Submit 不该再打库,BulkWrite 份数 %d", len(made))
 	}
 }

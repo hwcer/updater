@@ -505,20 +505,35 @@ func (this *Collection) format(op *operator.Operator) {
 type CollectionBulkWrite struct {
 	model   CollectionModel
 	updater *Updater
+	// bulk 指定往哪个 BulkWrite 写。nil 时用 Updater 那份**共享**实例（常规路径）；
+	// Mount.Submit 会传一份独立的进来，好让单表落库不捎带提交玩家数据。
+	bulk BulkWrite
 }
 
-func newCollectionBulkWrite(u *Updater, model CollectionModel) *CollectionBulkWrite {
-	return &CollectionBulkWrite{updater: u, model: model}
+// newCollectionBulkWrite 不传 bulk 就用 Updater 的共享实例。
+func newCollectionBulkWrite(u *Updater, model CollectionModel, bulk ...BulkWrite) *CollectionBulkWrite {
+	r := &CollectionBulkWrite{updater: u, model: model}
+	if len(bulk) > 0 {
+		r.bulk = bulk[0]
+	}
+	return r
+}
+
+func (w *CollectionBulkWrite) write() BulkWrite {
+	if w.bulk != nil {
+		return w.bulk
+	}
+	return w.updater.BulkWrite()
 }
 
 func (w *CollectionBulkWrite) Delete(where ...any) {
-	w.updater.BulkWrite().Delete(w.model, where...)
+	w.write().Delete(w.model, where...)
 }
 
 func (w *CollectionBulkWrite) Insert(documents ...any) {
-	w.updater.BulkWrite().Insert(w.model, documents...)
+	w.write().Insert(w.model, documents...)
 }
 
 func (w *CollectionBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
-	return w.model.Setter(w.updater, w.updater.BulkWrite(), _id, dirty, unset)
+	return w.model.Setter(w.updater, w.write(), _id, dirty, unset)
 }
