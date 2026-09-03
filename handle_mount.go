@@ -151,13 +151,19 @@ type Mount struct {
 	model   MountModel
 	remove  []string //待从内存移除的 _id，submit 时统一处理（落库之后再摘，别丢掉未保存的改动）
 	dataset *dataset.Collection
-	// itype 模型声明的 IType（ModelIType.IType(0)，没声明就是 0）。
+	// itype 取自 ModelIType.IType(0)，取不到就是 0。
 	//
-	// 🔴 它同时决定**产出的 operator 要不要走通用更新下发客户端**：
-	// 非 0 才下发。这不是一个可以随便拨的开关，而是"客户端认不认得出"的直接后果 ——
-	// 客户端按 IType 分发变更，一条 IType=0 的 operator 到了对面就是无主数据。
-	// 想让某张挂载表走通用通道，就给它的模型加上 ModelIType；不想走，
-	// 就用 Operators() 自己组协议。
+	// 🔴 它同时决定**产出的 operator 要不要走通用更新下发客户端**：非 0 才下发。
+	//
+	// 这**不是一个可以拨的开关，而是物理事实**：IType 是客户端找到"这条变更属于哪张表"
+	// 的唯一钥匙(operator 里只有 OID、字段和值)。客户端的分发入口第一行就是
+	// `if (op.IType == 0) return;` —— 带 0 发过去连丢在哪都不知道，Display 飘字也不会触发。
+	// 所以这段逻辑订死，不必再找别的策略。不下发时用 Operators() 自己组协议。
+	//
+	// ⚠️ **判据是"IType(0) 返回非 0"，不是"实现了 ModelIType"** —— 后者几乎恒成立：
+	// 项目侧的模型基类往往自带一个 IType(iid) 转发给全局配置，于是每个模型都"自动满足"
+	// 这个接口，而全局配置对 iid=0 通常返回 0。想让某张挂载表走通用通道，
+	// 模型必须**显式覆盖** IType 返回该表自己的类型，光加一行接口断言不起作用。
 	itype   int32
 	unmount bool //已标记卸载，Release 阶段才真正摘除，见 Updater.Unmount
 }
@@ -325,6 +331,41 @@ func (this *Mount) Range(handle func(string, *dataset.Document) bool) {
 // 立即摘的话会把这条尚未保存的改动一起丢掉。
 func (this *Mount) Remove(id ...string) {
 	this.remove = append(this.remove, id...)
+}
+
+// Discard 立即从内存移除若干文档，**连本次针对它们的未提交改动一起作废** ——
+// 不动数据库、不产 operator。
+//
+// 与 Remove 的分界：Remove 要等 submit 落库之后才摘（它是"这条已经走完了，别占内存"）；
+// Discard 是当场摘（"这条现在起就不算数了"）。
+//
+// 给「绕开事务直接写了库」的场合用：那一下之后内存里这份就过期了，而长命挂载跨请求存活，
+// 留着会被后续请求当真。Remove 帮不上忙 —— 那种场合通常紧接着 return error，
+// 压根走不到 submit。本次对它产生的 operator 也没有意义了（本来就会随 error 回滚）。
+//
+// ⚠️ **摘文档必须连它的 operator 一起摘**，否则 verify 阶段 parseSet 找不到文档，
+// 报 ErrItemNotExist、整个请求失败 —— 那就成了"清理反而把业务搞挂"。
+// 队列里的 operator 就地摘除、**不还 sync.Pool**：业务可能刚从 Operators() 里
+// 把同一批对象拿在手上，还池子会造成悬垂引用。少一点复用，交给 GC。
+//
+// 🔴 什么时候能清由**业务**判断，框架不替它猜：这里不会因为"还有未提交的改动"就悄悄跳过。
+func (this *Mount) Discard(id ...string) {
+	for _, k := range id {
+		this.statement.operator = dropOperator(this.statement.operator, k)
+		this.statement.cache = dropOperator(this.statement.cache, k)
+		this.dataset.Remove(k) //dataset.Remove 同时清 dirty
+	}
+}
+
+// dropOperator 摘掉队列里所有针对该 _id 的操作，原地复用底层数组。
+func dropOperator(ops []*operator.Operator, id string) []*operator.Operator {
+	r := ops[:0]
+	for _, op := range ops {
+		if op == nil || op.OID != id {
+			r = append(r, op)
+		}
+	}
+	return r
 }
 
 // Receive 把**已经在手上的**文档直接塞进内存，跳过 Select + Data 那次查库。

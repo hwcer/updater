@@ -592,8 +592,64 @@ func (m *mountITypeModel) IMax(int32) int64 { return 66 }
 
 const mountTestITypeId int32 = 990001
 
-// Remove 只是把 id 记进队列，真正从内存摘除在 submit —— 覆盖 submit 时漏抄那段，
-// Remove 就变成一个不报错也不生效的空调用。
+// Discard 立即摘除,连未提交的改动一起作废。
+//
+// 关键是作废之后 verify **不能**再去碰那条文档——operator 必须真的从队列里摘掉,
+// 否则就成了"清理反而把业务搞挂"。
+func TestMountDiscardDropsPendingOperator(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1", "row2")
+	coll, err := u.Mount(m, "row1", "row2")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+	if op := coll.Update("row1", dataset.Update{"val": int64(7)}); op == nil {
+		t.Fatalf("Update:%v", u.Error)
+	}
+	if op := coll.Update("row2", dataset.Update{"val": int64(8)}); op == nil {
+		t.Fatalf("Update:%v", u.Error)
+	}
+
+	coll.Discard("row1")
+	if coll.Get("row1") != nil {
+		t.Fatal("Discard 应当立即摘除")
+	}
+	//🔴 摘了文档就必须一并摘掉它的 operator,否则 verify 会 ErrItemNotExist、整个请求失败
+	if _, err = u.Submit(); err != nil {
+		t.Fatalf("Submit:%v —— Discard 没摘干净 operator", err)
+	}
+	//row2 不受牵连:它的改动照常落库
+	if coll.Get("row2") == nil {
+		t.Fatal("Discard 只该影响点名的那条")
+	}
+	if m.setter == 0 {
+		t.Fatal("row2 的改动应当照常落库")
+	}
+}
+
+// Discard 与 Remove 的分界:前者当场摘,后者等 submit 落库之后才摘。
+func TestMountDiscardImmediate(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1")
+	coll, err := u.Mount(m, "row1")
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+	if coll.Get("row1") == nil {
+		t.Fatal("挂载时应已加载")
+	}
+	coll.Discard("row1")
+	if coll.Get("row1") != nil {
+		t.Fatal("Discard 应当立即摘除,不等 submit")
+	}
+	if _, err = u.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if m.setter != 0 {
+		t.Fatalf("Discard 不该触发落库,setter 被调了 %d 次", m.setter)
+	}
+}
+
 func TestMountRemoveAppliedOnSubmit(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
