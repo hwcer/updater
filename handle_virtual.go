@@ -21,6 +21,19 @@ type Virtual struct {
 	statement
 	name  string //model database name
 	model VirtualModel
+	// cache 本次请求内**已处理过**的键值，Val 优先读它。
+	//
+	// 🔴 少了它就是一个静默丢数据的坑：Virtual 的 operator 带的是**绝对值**(d±value)，
+	// 而它委托出去的 Document.Set 要到 verify 才写内存 —— 不缓存的话，同一请求里
+	// 第二次 Add 读到的还是**旧值**，算出的绝对值会把前一次整个覆盖掉。
+	//
+	// 实测（充值发货，首充奖励与常规道具恰好是同一种货币）：
+	// 两次 Add(钻石,6) 只到账 6。不报错、operator 数量也对，纯静默。
+	// Sub 更危险：余额校验 `d < value` 也读旧值，同一请求扣两次能扣成负数。
+	//
+	// Values 那边没这毛病，因为它的 operator 是**增量**语义、verify 时依次累加；
+	// Virtual 走绝对值是为了把最终值直接交给委托方，所以只能自己记住中间态。
+	cache map[string]int64
 }
 
 func NewVirtual(u *Updater, m *Model) Handle {
@@ -36,8 +49,24 @@ func NewVirtual(u *Updater, m *Model) Handle {
 func (this *Virtual) Get(k any) (r any) {
 	return this.model.Get(this.Updater, k)
 }
+
+// Val 取当前值。**本次请求已经改过的键读缓存**，没改过才回落到模型（内存）。
+// 理由见 Virtual.cache —— 委托出去的写要到 verify 才生效，中途读模型拿到的是旧值。
 func (this *Virtual) Val(k any) (r int64) {
+	if _, key, ok := this.key(k); ok {
+		if v, exist := this.cache[key]; exist {
+			return v
+		}
+	}
 	return dataset.ParseInt64(this.model.Get(this.Updater, k))
+}
+
+// record 记下本次请求处理后该键的最新值，供后续 Val 读取。
+func (this *Virtual) record(key string, v int64) {
+	if this.cache == nil {
+		this.cache = map[string]int64{}
+	}
+	this.cache[key] = v
 }
 
 func (this *Virtual) Data() (err error) {
@@ -83,6 +112,7 @@ func (this *Virtual) save() (err error) {
 
 func (this *Virtual) reset() {
 	this.statement.reset()
+	this.cache = nil //防御:正常由 release 清,这里再兜一次,免得异常路径把中间态带进新请求
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.Updater, this.Updater.last) {
 			this.Updater.Error = this.reload()
@@ -91,6 +121,7 @@ func (this *Virtual) reset() {
 }
 
 func (this *Virtual) reload() error {
+	this.cache = nil //数据要重新加载,之前记的中间态一律作废
 	return this.model.Reload(this.Updater)
 }
 
@@ -100,6 +131,7 @@ func (this *Virtual) loading() error {
 
 func (this *Virtual) release() {
 	this.statement.release()
+	this.cache = nil //缓存只在单次请求内有效
 }
 
 func (this *Virtual) verify() (err error) {
@@ -147,6 +179,7 @@ func (this *Virtual) Add(k any, v any) {
 		return
 	}
 	this.model.Update(this.Updater, op)
+	this.record(key, d+value)
 	this.statement.insert(op)
 }
 
@@ -170,6 +203,7 @@ func (this *Virtual) Sub(k any, v any) {
 		return
 	}
 	this.model.Update(this.Updater, op)
+	this.record(key, d-value)
 	this.statement.insert(op)
 }
 
@@ -181,6 +215,7 @@ func (this *Virtual) Set(k any, v any) {
 	}
 	op := this.newOperator(operator.TypesSet, iid, key, 0, map[string]any{key: v})
 	this.model.Update(this.Updater, op)
+	this.record(key, dataset.ParseInt64(v))
 	this.statement.insert(op)
 }
 
