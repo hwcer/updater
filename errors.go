@@ -27,24 +27,36 @@ func Errorf(code int32, msg any, args ...any) error {
 	return values.Errorf(code, msg, args...)
 }
 
+// 以下 helper 的参数**一律只进 Args,不进文案**。
+// 文案是固定的错误标识,参数由客户端从 Args 按约定顺序取,不必去解字符串。
+// 代价是服务端日志里 err.Error() 只剩这句固定文案,排查时要看 Args。
+
+// ErrArgsIllegal 参数非法。Args 即传入的那组参数,顺序由调用点决定。
 func ErrArgsIllegal(args ...any) error {
-	return Errorf(ErrCodeArgsIllegal, "args illegal:%v", args)
+	return values.Errorf(ErrCodeArgsIllegal, "args illegal").WithArgs(args...)
 }
 
+// ErrItemNotExist 道具不存在。Args 为 [道具ID或OID]。
 func ErrItemNotExist(id any) error {
-	return Errorf(ErrCodeItemNotExist, "Item Not Exist:%v", id)
+	return values.Errorf(ErrCodeItemNotExist, "Item Not Exist").WithArgs(id)
 }
 
+// ErrItemNotEnough 道具不足。
+//
+// 🔴 Args 顺序固定为 [道具ID, 需要数量, 当前持有] —— 客户端靠它提示「缺哪个道具、还差多少」。
+// 改顺序等于改协议,五个调用点(parse_val/parse_doc/parse_coll×2/handle_virtual)必须同时改。
 func ErrItemNotEnough(args ...any) error {
-	return Errorf(ErrCodeItemNotEnough, "Item Not Enough:%v", args)
+	return values.Errorf(ErrCodeItemNotEnough, "Item Not Enough").WithArgs(args...)
 }
 
+// ErrITypeNotExist IType 不存在。Args 为 [道具ID]。
 func ErrITypeNotExist(iid int32) error {
-	return Errorf(ErrCodeITypeNotExist, "IType Not Exist:%v", iid)
+	return values.Errorf(ErrCodeITypeNotExist, "IType Not Exist").WithArgs(iid)
 }
 
+// ErrObjectIdEmpty OID 为空。Args 即传入的那组参数,通常首位是道具ID。
 func ErrObjectIdEmpty(args ...any) error {
-	return Errorf(ErrCodeObjectIdEmpty, "oid empty:%v", args)
+	return values.Errorf(ErrCodeObjectIdEmpty, "oid empty").WithArgs(args...)
 }
 
 var (
