@@ -3,6 +3,7 @@ package updater
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/hwcer/logger"
@@ -164,6 +165,9 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 			u.handles[name] = handle
 		}
 		if err = handle.loading(); err != nil {
+			//回退标志:否则幂等闸门(status.Has(StatusInit))会让重试静默返回nil,
+			//玩家带着缺数据的句柄进游戏
+			u.status.Unset(StatusInit)
 			return
 		}
 	}
@@ -222,8 +226,8 @@ func (u *Updater) Release() {
 	u.Error = nil
 	u.CreditAllowed = false
 	hs := u.Handles()
-	for i := len(hs) - 1; i >= 0; i-- {
-		hs[i].release()
+	for _, h := range slices.Backward(hs) {
+		h.release()
 	}
 	//临时句柄的卸载收在这里:Unmount 只打标记,句柄留到请求走完整条生命周期
 	//(Data/verify/submit 一样不落)才摘除,短流程与长流程走同一条路。
@@ -352,8 +356,8 @@ func (u *Updater) verify(hs []Handle) (err error) {
 	}
 	u.status.Unset(StatusOperated)
 	u.Emit(EventTypeVerify)
-	for i := len(hs) - 1; i >= 0; i-- {
-		if err = hs[i].verify(); err != nil {
+	for _, h := range slices.Backward(hs) {
+		if err = h.verify(); err != nil {
 			return
 		}
 	}
@@ -370,8 +374,8 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 		return
 	}
 	hs := u.Handles()
-	for i := len(hs) - 1; i >= 0; i-- {
-		if err = hs[i].submit(); err != nil {
+	for _, h := range slices.Backward(hs) {
+		if err = h.submit(); err != nil {
 			return
 		}
 	}
@@ -477,8 +481,8 @@ func (u *Updater) Handles() (r []Handle) {
 // 仅缓存模式下需要且必要执行
 func (u *Updater) Destroy() (err error) {
 	hs := u.Handles()
-	for i := len(hs) - 1; i >= 0; i-- {
-		if err = hs[i].destroy(); err != nil {
+	for _, h := range slices.Backward(hs) {
+		if err = h.destroy(); err != nil {
 			return
 		}
 	}

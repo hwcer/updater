@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"maps"
 	"strconv"
 	"testing"
 
@@ -48,9 +49,7 @@ func (m *virtualModel) Reload(*Updater) error   { return nil }
 
 // flush 相当于 verify 阶段把 operator 应用到内存
 func (m *virtualModel) flush() {
-	for k, v := range m.pending {
-		m.store[k] = v
-	}
+	maps.Copy(m.store, m.pending)
 	m.pending = map[string]int64{}
 }
 

@@ -464,7 +464,7 @@ func (this *Collection) format(op *operator.Operator) {
 	data := dataset.Update{}
 	result, ok := op.Result.(dataset.Update)
 	if !ok {
-		this.Updater.Error = fmt.Errorf("Operator.set return error name:%s  result:%v", this.name, op.Result)
+		this.Updater.Error = fmt.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
 		return
 	}
 	sch := this.Schema()

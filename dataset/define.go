@@ -33,4 +33,3 @@ type ModelClone interface {
 type ModelUnset interface {
 	Unset(k string)
 }
-

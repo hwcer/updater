@@ -1,5 +1,7 @@
 package dataset
 
+import "maps"
+
 type Update map[string]any
 
 func (d Update) Has(k string) (ok bool) {
@@ -19,9 +21,7 @@ func (d Update) Del(k string) {
 }
 
 func (d Update) Merge(from Update) {
-	for k, v := range from {
-		d[k] = v
-	}
+	maps.Copy(d, from)
 }
 
 func NewUpdate(k string, v any) Update {

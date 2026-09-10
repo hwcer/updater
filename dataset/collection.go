@@ -188,6 +188,10 @@ type CollectionWriter interface {
 }
 
 func (coll *Collection) Save(w CollectionWriter) (err error) {
+	//只摘除已成功处理的条目:Setter失败时,失败条目(恢复doc级脏标记)与
+	//尚未轮到的条目都必须留在dirty里,调用方"失败等待下次同步"的重试才有数据可重发;
+	//旧实现无条件coll.dirty = nil,一次失败等于永久丢改动
+	processed := make([]string, 0, len(coll.dirty))
 	for k, v := range coll.dirty {
 		if v.op.Has(collOperatorDelete) {
 			doc := coll.dataset.GetAndDel(k)
@@ -210,17 +214,23 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 		} else if v.op.Has(collOperatorUpdate) {
 			doc, _ := coll.dataset.Get(k)
 			if doc == nil {
+				processed = append(processed, k)
 				continue
 			}
 			dirty, unsets := doc.Save()
 			if len(dirty) > 0 || len(unsets) > 0 {
 				if err = w.Setter(k, dirty, unsets); err != nil {
+					//doc.Save已消费doc级脏标记,恢复之,下次Save重新生成载荷
+					doc.restore(dirty, unsets)
 					break
 				}
 			}
 		}
+		processed = append(processed, k)
 	}
-	coll.dirty = nil
+	for _, k := range processed {
+		delete(coll.dirty, k)
+	}
 	return
 }
 

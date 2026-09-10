@@ -3,6 +3,7 @@ package dataset
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 
@@ -173,6 +174,25 @@ func (doc *Document) Save() (dirty Update, unsets []string) {
 func (doc *Document) Release() {
 	doc.dirty = nil
 	doc.unset = nil
+}
+
+// restore 持久化失败时恢复脏标记,使下次Save能重新生成更新载荷
+// dirty/unset为Save刚返回的载荷(已含业务转换结果),直接回填幂等
+func (doc *Document) restore(dirty Update, unsets []string) {
+	if len(dirty) > 0 {
+		if doc.dirty == nil {
+			doc.dirty = Update{}
+		}
+		maps.Copy(doc.dirty, dirty)
+	}
+	if len(unsets) > 0 {
+		if doc.unset == nil {
+			doc.unset = make(map[string]struct{}, len(unsets))
+		}
+		for _, k := range unsets {
+			doc.unset[k] = struct{}{}
+		}
+	}
 }
 
 func (doc *Document) setter(k string, v any) (r any, err error) {

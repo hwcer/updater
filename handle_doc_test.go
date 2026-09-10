@@ -57,7 +57,7 @@ func TestDocumentFieldPathNormalizedPerSegment(t *testing.T) {
 	doc := newFieldTestDocument()
 
 	cases := map[string]string{
-		"soulrelics.1":    "SoulRelics.1",    //根字段换名
+		"soulrelics.1":    "SoulRelics.1", //根字段换名
 		"SoulRelics.1":    "SoulRelics.1",
 		"soulrelics.1.lv": "SoulRelics.1.Lv", //穿过 map 键继续下钻到值类型的字段
 		"SoulRelics.1.Lv": "SoulRelics.1.Lv",
