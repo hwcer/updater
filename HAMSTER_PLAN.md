@@ -168,6 +168,10 @@ type CollectionModel interface { /* Upsert/Schema/Getter/Setter 原样，*Update
 type MountModel interface { CollectionModel; schema.Tabler } //照搬 handle_mount.go:31-34
 
 // ---------- Handle 接口 = 现 Handle（handle.go:19-37）摘掉 Count/increase/decrease ----------
+// 🔴 Get/Val/Select 保留的理由（落地时复核）：核心包内部零消费，但消费方是扩展层的
+// iid 路由 —— u.Get/u.Val/u.Select 拿到句柄后经接口直调（w.Get(iid) 等），是玩家数据版
+// 冻结 API。留在接口上，句柄漏实现是编译错误；摘掉改断言则退化为"路由不到、静默返回 0"。
+// 与 Count/increase/decrease 的摘除情形不同：那三个逼 Mount 写恒空桩，这三个所有真句柄都有真实现。
 type Handle interface {
     Get(any) any
     Val(any) int64
