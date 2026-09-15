@@ -20,19 +20,24 @@ type ValuesModel interface {
 // 与扩展层 Values 的差异：没有 IType 查询（那边 IType 查不到会**静默丢弃操作**，
 // 这边没有丢弃路径）、没有溢出检查。适合积分、计数、公会资金这类纯数值场景。
 type Values struct {
-	Statement
+	statement Statement
 	name    string
 	model   ValuesModel
 	dataset *dataset.Values
+	// ---- 可选注入（扩展层道具语义入口）----
+	decorator OperatorDecorator //operator 构造后装饰（IType 填充/静默丢弃）
+	parseDec  ParseDecorator    //parse 分发前钩子（溢出检查）
 }
 
 func newValues(s *Store, m *Model) Handle {
 	r := &Values{}
 	r.name = m.name
 	r.model = m.model.(ValuesModel)
-	r.Statement = *NewStatement(s, m.ram, r.Has)
+	r.statement = *NewStatement(s, m.ram, r.Has)
 	//核心版产出的 operator IType 恒 0，默认不进通用更新通道（与 Collection 同口径）
-	r.Statement.Receiver(DiscardReceiver)
+	r.statement.Receiver(DiscardReceiver)
+	r.decorator, _ = m.model.(OperatorDecorator)
+	r.parseDec, _ = m.model.(ParseDecorator)
 	return r
 }
 
@@ -47,27 +52,27 @@ func (this *Values) Val(k any) (r int64) {
 }
 
 func (this *Values) Data() (err error) {
-	if err = this.Store.Error; err != nil {
+	if err = this.statement.Store.Error; err != nil {
 		return
 	}
-	if len(this.Keys()) == 0 {
+	if len(this.statement.keys) == 0 {
 		return nil
 	}
-	keys := this.Keys().ToInt32()
-	if err = this.model.Getter(this.Store, this.dataset, keys); err == nil {
-		this.Date()
+	keys := this.statement.keys.ToInt32()
+	if err = this.model.Getter(this.statement.Store, this.dataset, keys); err == nil {
+		this.statement.Date()
 	}
 	return
 }
 
 // Select 指定需要从数据库拉取的 key。内存模式(RAMTypeAlways)下数据已全量在内存，直接跳过。
 func (this *Values) Select(keys ...any) {
-	if this.RAM() == RAMTypeAlways {
+	if this.statement.ram == RAMTypeAlways {
 		return
 	}
 	for _, k := range keys {
 		if id, ok := dataset.TryParseInt32(k); ok {
-			this.Statement.Select(id)
+			this.statement.Select(id)
 		}
 	}
 }
@@ -78,84 +83,87 @@ func (this *Values) Parser() Parser {
 
 // ===================== Handle 接口生命周期方法 =====================
 
-func (this *Values) Save() (err error) {
-	bw := this.Store.BulkWrite()
+func (this *Values) save() (err error) {
+	bw := this.statement.Store.BulkWrite()
 	if bw == nil {
 		return ErrBulkWriteNotInit
 	}
 	dirty, unsets := this.dataset.Save()
 	if len(dirty) > 0 || len(unsets) > 0 {
-		if err = this.model.Setter(this.Store, bw, dirty, unsets); err != nil {
+		if err = this.model.Setter(this.statement.Store, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
-			logger.Alert("database save error,id:%s,Values:%s\nOperation:%s\nerror:%s", this.Store.Id(), this.name, ds, err.Error())
+			logger.Alert("database save error,id:%s,Values:%s\nOperation:%s\nerror:%s", this.statement.Store.Id(), this.name, ds, err.Error())
 		}
 	}
 	return
 }
 
-func (this *Values) Reset() {
-	this.Statement.Reset()
+func (this *Values) reset() {
+	this.statement.Reset()
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
+	if r, ok := this.model.(ModelReset); ok && r.Reset(this.statement.Store, this.statement.Store.Last()) {
+		this.statement.Store.Error = this.reload()
+	}
 }
 
-func (this *Values) Reload() error {
+func (this *Values) reload() error {
 	this.dataset = nil
-	this.Statement.Reload()
-	return this.Loading()
+	this.statement.Reload()
+	return this.loading()
 }
 
-func (this *Values) Loading() error {
+func (this *Values) loading() error {
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
-	if this.Statement.Loading() {
-		this.Store.Error = this.model.Getter(this.Store, this.dataset, nil)
-		if err := this.Store.Error; err == nil {
-			this.SetLoaded(true)
+	if this.statement.Loading() {
+		this.statement.Store.Error = this.model.Getter(this.statement.Store, this.dataset, nil)
+		if err := this.statement.Store.Error; err == nil {
+			this.statement.loader = true
 		}
 	}
-	return this.Store.Error
+	return this.statement.Store.Error
 }
 
-func (this *Values) Release() {
-	this.Statement.Release()
-	if this.RAM() == RAMTypeNone {
+func (this *Values) release() {
+	this.statement.Release()
+	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
 	}
 }
 
-func (this *Values) Destroy() (err error) {
-	return this.Save()
+func (this *Values) destroy() (err error) {
+	return this.save()
 }
 
-func (this *Values) Commit() (err error) {
-	if err = this.Store.WriteAble(); err != nil {
+func (this *Values) commit() (err error) {
+	if err = this.statement.Store.WriteAble(); err != nil {
 		return
 	}
-	this.Statement.Submit()
-	if err = this.Save(); err != nil && this.RAM() != RAMTypeNone {
+	this.statement.Submit()
+	if err = this.save(); err != nil && this.statement.ram != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
 	}
 	return
 }
 
-func (this *Values) Verify() (err error) {
-	if err = this.Store.WriteAble(); err != nil {
+func (this *Values) verify() (err error) {
+	if err = this.statement.Store.WriteAble(); err != nil {
 		return
 	}
 	// 下标遍历(而非 range)：当前 parse 分支都不追加操作，但那是实现的性质、不是接口保证。
 	// ⚠️ Ops() 每轮重取：append 扩容后旧切片头看不见新增。
-	for i := 0; i < len(this.Ops()); i++ {
-		if err = this.Parse(this.Ops()[i]); err != nil {
+	for i := 0; i < len(this.statement.operator); i++ {
+		if err = this.Parse(this.statement.operator[i]); err != nil {
 			return
 		}
 	}
-	this.Statement.Verify()
+	this.statement.Verify()
 	return
 }
 
@@ -194,18 +202,18 @@ func (this *Values) Range(f func(int32, int64) bool) {
 }
 
 func (this *Values) Insert(op *operator.Operator, before ...bool) {
-	this.Statement.Insert(op, before...)
+	this.statement.Insert(op, before...)
 }
 
 // Operators 本次请求已通过 verify、尚未 submit 的 operator 列表（只读）
 func (this *Values) Operators() []*operator.Operator {
-	return this.Statement.cache
+	return this.statement.cache
 }
 
 // ===================== 类型特有私有方法 =====================
 
 func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Operator {
-	if err := this.Store.WriteAble(); err != nil {
+	if err := this.statement.Store.WriteAble(); err != nil {
 		return nil
 	}
 	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
@@ -213,7 +221,11 @@ func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Opera
 	}
 	op := operator.New(t, "", v, nil)
 	op.IID = k //键复用协议的 IID 字段；IType 恒 0（无主数据，默认不进下发通道）
-	this.Statement.Select(k)
-	this.Statement.Insert(op)
+	this.statement.Select(k)
+	if this.decorator != nil && !this.decorator.DecorateOperator(this.statement.Store, op) {
+		op.Release() //含道具侧"IType 查不到静默丢弃"语义，错误由装饰方打脏
+		return nil
+	}
+	this.statement.Insert(op)
 	return op
 }

@@ -26,8 +26,9 @@ Module path: `github.com/hwcer/updater`
 
 - **`hamster/` 核心版**：GET/SET/DEL + 脏标记 + 批量落库的文档/集合存储引擎。`hamster.Store` 持有生命周期（Loading/Reset/Data/Verify/Submit/Release/Destroy）、`hamster.Document`（主档承载者，窄接口 New/Getter/Setter）、`hamster.Collection`（Mount 泛化 + 字段级 Add/Sub）、`Entity` 主体。**零道具概念** —— hamster 代码里出现 iid 路由/IMax/ParseId/溢出即设计漂移。核心版 operator 的 `IType` 恒 0，默认 `DiscardReceiver` 不进下发通道。
 - **根包 updater 扩展层** = **核心包的封装层**（只做 IID/IType 转换与道具语义）：`Updater` **内嵌** `*hamster.Store`、`Mount` **内嵌** `*hamster.Collection` —— Error/Cache/CreditAllowed/dirty/生命周期全部提升自核心（单字段零镜像，无同步纪律）。
-  🔴 内嵌纪律（三稿修订，取代旧"绝不内嵌"）：封装层允许内嵌，条件是**只加方法**；仅有的两处覆盖（`Loading` 的 Config 预检、`Destroy` 的反查表清理）都是 store 内部从不自调的方法，无虚派发陷阱。**道具句柄（Values/Document/Collection/Virtual）仍然禁止内嵌核心句柄** —— operator 构造需要多态分派，内嵌具体类型会复刻 Mount 三稿事故（内部调用命中核心版实现）；道具句柄与核心句柄靠共享 `hamster.Statement` + 同一 Handle 接口协作。
-  道具概念清单：IType 路由（modelsDict/itypesDict）、`Add/Sub/Get/Val/Select` 便捷 API、溢出分解（funcs.go）、`pushDirty` 之外的变更通道；变更流水即 `store.dirty`（`u.Dirty`/`u.Operators` 提升自核心）。
+  🔴 内嵌纪律（三稿修订，取代旧"绝不内嵌"）：封装层允许内嵌，条件是**只加方法**；仅有的两处覆盖（`Loading` 的 Config 预检、`Destroy` 的反查表清理）都是 store 内部从不自调的方法，无虚派发陷阱。
+  **句柄只有一份，全在核心**（三稿修订，取代 D4 双类型）：道具句柄类型已删除，`u.Document(name)` 等直接返回 `*hamster.Document` 等核心句柄。道具语义经注册期**适配器**注入核心句柄的可选接口：`Keyer`（iid→字段/OID）、`OperatorDecorator`（IType 填充/预读监听/拦截丢弃）、`ParseDecorator`（溢出检查/装备生成分支）、`ModelReset`（跨天重置，签名 *Store）。适配器（adapters.go）把业务模型接口（*Updater 签名，业务零改动）桥到核心，并在调用时经 `updaterOf` 反查 Updater。
+  `hamster.Handle` 的生命周期方法**未导出**（与主干一致，业务不可见）—— 可行的前提是 hamster 包是接口的唯一实现者集合。`u.Add/Sub` 路由后按句柄形态调用其字段级 Add/Sub；溢出（funcs.go）按模型口径计算持有量。
 
 两层接缝只有两处：① `Register` 的 HandleFactory 工厂闭包（hamster 注册表只认 name，iid 路由表是扩展层私产）；② statement 的 `handleResult` 函数字段（扩展层注入 ITypeResult 填充，机制不得反向引用道具注册表）。身份接口 `Entity{Id() string}` 取代 Player/Uid —— **API 冻结的唯一豁免**。
 

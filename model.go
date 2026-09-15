@@ -3,21 +3,61 @@ package updater
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/operator"
 	"github.com/hwcer/updater/hamster"
 )
 
-type handleFunc func(updater *Updater, model *Model) Handle
+// ---------------- 扩展层模型接口（业务实现，签名含 *Updater） ----------------
+//
+// 它们经 adapters.go 桥接成 hamster 模型；Getter/Setter 在调用时经 updaterOf
+// 反查 *Updater，业务模型零改动。
 
-// handles 句柄工厂表：Parser → 构造函数。hamster 注册时经闭包桥接（见 Register）。
-var handles = make(map[Parser]handleFunc)
-
-// NewHandle 注册新解析器的句柄工厂
-func NewHandle(name Parser, f handleFunc) {
-	handles[name] = f
+// ValuesModel 数字型键值对模型接口
+// 可选实现 ModelIMax / ModelIType 覆盖全局 Config 的上限与类型查询
+type ValuesModel interface {
+	Getter(u *Updater, data *dataset.Values, keys []int32) error
+	Setter(u *Updater, bulkWrite BulkWrite, dirty dataset.Data, unset []int32) error
 }
+
+// DocumentModel 文档模型接口
+// 建议在业务model中实现 dataset.ModelGet 和 dataset.ModelSet 接口提高性能
+// 可选实现 ModelIMax 覆盖全局 Config 的上限查询
+// IType 为必需方法(等价 ModelIType):Document 大部分操作按 field 定位,iid 为 0,
+// 只能由模型给出默认 IType,全局 Config.IType(0) 无法兜底;Values/Virtual 无此需求,IType 是可选的
+type DocumentModel interface {
+	New(update *Updater) any
+	IType(int32) int32
+	Field(update *Updater, iid int32) (string, error)
+	Getter(update *Updater, data *dataset.Document, keys []string) error
+	Setter(update *Updater, bulkWrite BulkWrite, dirty dataset.Update, unset []string) error
+}
+
+type CollectionModel interface {
+	Upsert(update *Updater, op *operator.Operator) bool
+	Schema() *schema.Schema
+	Getter(update *Updater, data *dataset.Collection, keys []string) error
+	Setter(update *Updater, bulkWrite BulkWrite, _id string, dirty dataset.Update, unset []string) error
+}
+
+type CollectionModelValueJSName interface {
+	GetValueJSName() string //获取value值的jsname
+}
+
+// VirtualModel 虚拟模型接口
+// 可选实现 ModelIMax / ModelIType 覆盖全局 Config 的上限与类型查询
+type VirtualModel interface {
+	Has(u *Updater, k any) bool
+	Get(u *Updater, k any) (r any)
+	Field(int32) (string, bool) //格式化字段
+	Update(u *Updater, op *operator.Operator)
+	Select(u *Updater, keys ...any)
+	Reload(u *Updater) error
+}
+
+// ---------------- 道具路由表（扩展层私产） ----------------
 
 // ModelIMax 可选接口,模型未实现时回落到全局 Config.IMax
 type ModelIMax interface {
@@ -58,32 +98,33 @@ func modelIType(model any, iid int32) IType {
 	return itypesDict[it]
 }
 
-// ModelReset 返回true时 重新调用 model.Getter
+// NewHandle 注册新解析器的句柄工厂。
 //
-// 第二个参数是【上次请求的时间】,用于判断跨天/跨周等需要重置的场景。
-// 类型为 time.Time 而非 unix 秒:时间比较应带完整精度与时区信息,
-// 秒级时间戳在跨天判定这类场景要额外拼 time.Unix 才能用。
-// 零值(IsZero)表示本 Updater 实例尚未处理过任何请求。
-//
-// 🔴 实现方必须加一行编译期断言:
-//
-//	var _ updater.ModelReset = (*YourModel)(nil)
-//
-// 本接口靠类型断言 model.(ModelReset) 识别,签名写错【不会编译报错】,
-// 只会让断言不再命中、Reset 从此永不被调用,功能悄无声息地失效。
-// 接口一旦改签名,没有断言的实现方就是这样中招的。
-type ModelReset interface {
-	Reset(*Updater, time.Time) bool
+// ⚠️ 句柄并入核心后，工厂不再参与句柄创建（hamster 按 Parser 用固定适配器构造）；
+// 保留本函数只为兼容既有注册代码，自定义句柄类型已不支持。
+func NewHandle(name Parser, f handleFunc) {
+	handles[name] = f
+}
+
+type handleFunc func(updater *Updater, model *Model) Handle
+
+var handles = make(map[Parser]handleFunc)
+
+func init() {
+	//仅作 Parser 合法性标记（句柄创建已由 hamster 按适配器固定构造，见 Register）
+	NewHandle(ParserTypeValues, nil)
+	NewHandle(ParserTypeDocument, nil)
+	NewHandle(ParserTypeCollection, nil)
+	NewHandle(ParserTypeVirtual, nil)
 }
 
 // modelsDict/itypesDict 道具路由表：iid 的 IType → 模型/IType。
 // 🔴 它们是**扩展层私产**，核心版（hamster）的注册表只认 name ——
-// 两层注册表的唯一接缝是 Register 里的 HandleFactory（HAMSTER_PLAN.md 第六节①）。
+// 两层注册表的唯一接缝是 Register 里的适配器桥接（HAMSTER_PLAN.md 第六节①）。
 var modelsDict = make(map[int32]*Model)
 var itypesDict = make(map[int32]IType) //ITypeId = IType
 
 // Model 已注册道具模型的元数据（扩展层）。
-// hamster 侧注册在 Register 内部桥接完成，本结构只服务 iid 路由。
 type Model struct {
 	ram    RAMType
 	name   string
@@ -109,13 +150,12 @@ func Models(f func(int32, any) bool) {
 
 // Register 注册道具模型。
 //
-// 内部做两件事：①经 HandleFactory 桥接进 hamster 注册表（hamster 只认 name，
+// 内部做两件事：①按 Parser 选择适配器桥接进 hamster 注册表（核心版只认 name，
 // 加载顺序/重名检查/生命周期驱动都归它）；②把 IType 归属记进扩展层路由表。
 func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 	if _, ok := handles[parser]; !ok {
 		return fmt.Errorf("parser unknown:%v", parser)
 	}
-
 	if err := verifyModel(parser, model); err != nil {
 		return err
 	}
@@ -132,13 +172,24 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 		mod.order = -1
 	}
 
-	// 两层注册表的唯一合法接缝：工厂闭包捕获扩展层构造函数与模型元数据，
+	// 两层注册表的唯一合法接缝：适配器实现 hamster 模型接口与全部可选注入接口，
 	// hamster.Loading 创建句柄时经 updaterOf 找回 Updater 实例。
-	factory := func(s *hamster.Store, _ *hamster.Model) hamster.Handle {
-		return handles[parser](updaterOf(s), mod)
+	var opts []hamster.RegisterOption
+	opts = append(opts, hamster.WithParser(parser), hamster.WithTableOrder(mod.order))
+	var err error
+	switch parser {
+	case ParserTypeValues:
+		err = hamster.RegisterValues(mod.name, ram, &valuesAdapter{m: model.(ValuesModel)}, opts...)
+	case ParserTypeDocument:
+		err = hamster.RegisterDocument(mod.name, ram, &docAdapter{m: model.(DocumentModel)}, opts...)
+	case ParserTypeCollection:
+		err = hamster.RegisterCollection(mod.name, ram, &collAdapter{m: model.(CollectionModel)}, opts...)
+	case ParserTypeVirtual:
+		err = hamster.RegisterVirtual(mod.name, ram, &virtualAdapter{m: model.(VirtualModel)}, opts...)
+	default:
+		err = fmt.Errorf("parser unknown:%v", parser)
 	}
-	if err := hamster.Register(mod.name, ram, model, factory,
-		hamster.WithParser(parser), hamster.WithTableOrder(mod.order)); err != nil {
+	if err != nil {
 		return err
 	}
 
@@ -190,7 +241,7 @@ func verifyIType(parser Parser, name string, it IType) error {
 	return nil
 }
 
-// updaterOf 由 hamster.Store 反查所属 Updater（扩展层句柄的 model 回调需要 *Updater）。
+// updaterOf 由 hamster.Store 反查所属 Updater（适配器的模型回调需要 *Updater）。
 // 注册在 New，注销在 Destroy。
 var updaters sync.Map // *hamster.Store → *Updater
 

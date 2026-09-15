@@ -18,6 +18,11 @@ func init() {
 }
 
 func (this *Values) Parse(op *operator.Operator) (err error) {
+	if this.parseDec != nil {
+		if handled, err := this.parseDec.DecorateParse(this, this.statement.Store, op); err != nil || handled {
+			return err
+		}
+	}
 	if f, ok := valuesParseHandle[op.OType]; ok {
 		return f(this, op)
 	}
@@ -40,7 +45,7 @@ func valuesParseSub(this *Values, op *operator.Operator) error {
 	}
 	d := this.dataset.Val(op.IID)
 	r := d - op.Value
-	if d < op.Value && !this.Store.CreditAllowed {
+	if d < op.Value && !this.statement.Store.CreditAllowed {
 		return ErrNotEnough(op.IID, op.Value, d)
 	}
 	op.Result = map[int32]int64{op.IID: r}

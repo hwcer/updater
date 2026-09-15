@@ -6,6 +6,7 @@ import (
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/hamster"
+	"github.com/hwcer/updater/operator"
 )
 
 // Updater 玩家数据更新器（核心版 hamster 之上的道具扩展层）。
@@ -81,18 +82,47 @@ func (u *Updater) Destroy() error {
 
 // Add 添加道具,num 支持 int32|int64
 func (u *Updater) Add(iid int32, num any) {
-	if w := u.handleWithKey(iid); w != nil {
-		if h, ok := w.(itemHandle); ok {
-			h.increase(iid, dataset.ParseInt64(num))
-		}
-	}
+	u.itemChange(operator.TypesAdd, iid, num)
 }
 
 // Sub 扣除道具,num 支持 int32|int64
 func (u *Updater) Sub(iid int32, num any) {
-	if w := u.handleWithKey(iid); w != nil {
-		if h, ok := w.(itemHandle); ok {
-			h.decrease(iid, dataset.ParseInt64(num))
+	u.itemChange(operator.TypesSub, iid, num)
+}
+
+// itemChange 顶层道具增减：按 iid 路由到核心句柄，按句柄形态调用其字段级 Add/Sub
+//（数量语义/溢出检查由注册期注入的钩子在该句柄的 verify 阶段完成）。
+func (u *Updater) itemChange(t operator.Types, iid int32, num any) {
+	w := u.handleWithKey(iid)
+	if w == nil {
+		return
+	}
+	add := t == operator.TypesAdd
+	switch h := w.(type) {
+	case *hamster.Values:
+		if add {
+			h.Add(iid, num)
+		} else {
+			h.Sub(iid, num)
+		}
+	case *hamster.Document:
+		if add {
+			h.Add(iid, num)
+		} else {
+			h.Sub(iid, num)
+		}
+	case *hamster.Collection:
+		//集合的道具增减走模型声明的数值字段
+		if add {
+			h.Add(iid, h.Field(), num)
+		} else {
+			h.Sub(iid, h.Field(), num)
+		}
+	case *hamster.Virtual:
+		if add {
+			h.Add(iid, num)
+		} else {
+			h.Sub(iid, num)
 		}
 	}
 }
@@ -183,39 +213,41 @@ func (u *Updater) handleWithIType(id int32) Handle {
 	return u.Handle(mod.name)
 }
 
-func (u *Updater) Values(name any) *Values {
+// 类型访问器：参数放宽为 any（string 表名或命名整型 IType），返回**核心句柄**。
+// 道具语义（iid 解析、IType、溢出）已由适配器注入这些句柄 —— 根包没有第二套句柄类型。
+func (u *Updater) Values(name any) *hamster.Values {
 	i := u.handleWithAny(name)
 	if i == nil {
 		return nil
 	}
-	r, _ := i.(*Values)
+	r, _ := i.(*hamster.Values)
 	return r
 }
-func (u *Updater) Virtual(name any) *Virtual {
+func (u *Updater) Virtual(name any) *hamster.Virtual {
 	i := u.handleWithAny(name)
 	if i == nil {
 		return nil
 	}
-	r, _ := i.(*Virtual)
-	return r
-}
-
-// Document/Collection 遮蔽提升的同名方法：参数放宽为 any（string 表名或命名整型 IType），
-// 返回**道具扩展句柄**。要核心版句柄时用 u.Store.Document(name)。
-func (u *Updater) Document(name any) *Document {
-	i := u.handleWithAny(name)
-	if i == nil {
-		return nil
-	}
-	r, _ := i.(*Document)
+	r, _ := i.(*hamster.Virtual)
 	return r
 }
 
-func (u *Updater) Collection(name any) *Collection {
+// Document 遮蔽提升的同名方法（参数放宽为 any）
+func (u *Updater) Document(name any) *hamster.Document {
 	i := u.handleWithAny(name)
 	if i == nil {
 		return nil
 	}
-	r, _ := i.(*Collection)
+	r, _ := i.(*hamster.Document)
+	return r
+}
+
+// Collection 遮蔽提升的同名方法（参数放宽为 any）
+func (u *Updater) Collection(name any) *hamster.Collection {
+	i := u.handleWithAny(name)
+	if i == nil {
+		return nil
+	}
+	r, _ := i.(*hamster.Collection)
 	return r
 }

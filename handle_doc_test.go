@@ -1,9 +1,11 @@
 package updater
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/hamster"
 )
 
 // fieldTestDoc 只为 Field() 的字段名解析服务。字段名故意用 PascalCase、不带 bson 标签，
@@ -19,12 +21,53 @@ type fieldTestRelic struct {
 	Lv int32
 }
 
-// newFieldTestDocument 构造一个仅够跑 Field() 的 Document：
-// Field 只用到 dataset(取 Schema) 与 Updater(出错时置 Error)，不需要完整的 Model 注册。
-func newFieldTestDocument() *Document {
-	doc := &Document{dataset: dataset.NewDoc(&fieldTestDoc{})}
-	doc.updater = New(&mountPlayer{uid: "doc_field_test"})
-	return doc
+type fieldTestDocModel struct{}
+
+func (m *fieldTestDocModel) TableName() string                        { return "doc_field_test" }
+func (m *fieldTestDocModel) New(*hamster.Store) any                   { return &fieldTestDoc{} }
+func (m *fieldTestDocModel) Getter(_ *hamster.Store, d *dataset.Document, _ []string) error {
+	d.Reset(&fieldTestDoc{})
+	return nil
+}
+func (m *fieldTestDocModel) Setter(*hamster.Store, hamster.BulkWrite, dataset.Update, []string) error {
+	return nil
+}
+
+var (
+	fieldDocOnce     sync.Once
+	fieldDocNoneOnce sync.Once
+)
+
+// newFieldTestStore 注册一次（注册表无反注册）并返回载好主档的 Store
+func newFieldTestStore(t *testing.T) *hamster.Store {
+	t.Helper()
+	fieldDocOnce.Do(func() {
+		if err := hamster.RegisterDocument("doc_field_test", hamster.RAMTypeAlways, &fieldTestDocModel{}); err != nil {
+			t.Fatalf("RegisterDocument:%v", err)
+		}
+	})
+	s := hamster.New(&mountPlayer{uid: "doc_field_test"})
+	if err := s.Loading(); err != nil {
+		t.Fatalf("Loading:%v", err)
+	}
+	s.Reset()
+	return s
+}
+
+// RAMTypeNone 版：Release 后 dataset/schema 被置空（schema-unavailable 场景用）
+func newFieldTestStoreNone(t *testing.T) *hamster.Store {
+	t.Helper()
+	fieldDocNoneOnce.Do(func() {
+		if err := hamster.RegisterDocument("doc_field_test_none", hamster.RAMTypeNone, &fieldTestDocModel{}); err != nil {
+			t.Fatalf("RegisterDocument(none):%v", err)
+		}
+	})
+	s := hamster.New(&mountPlayer{uid: "doc_field_test_none"})
+	if err := s.Loading(); err != nil {
+		t.Fatalf("Loading:%v", err)
+	}
+	s.Reset()
+	return s
 }
 
 // 子键路径的根字段必须校验存在。
@@ -33,7 +76,8 @@ func newFieldTestDocument() *Document {
 // dataset.Document.Set，被那里的 `if !doc.Has(k) { return }` 静默丢弃——调用方拿不到
 // 错误，还以为写成功了。
 func TestDocumentFieldSubKeyValidatesRoot(t *testing.T) {
-	doc := newFieldTestDocument()
+	s := newFieldTestStore(t)
+	doc := s.Document("doc_field_test")
 
 	//多级路径(mongo 风格 a.b.c)同样按第一个点取根字段
 	for _, key := range []string{"nosuchfield.1", "nosuchfield.1.2", "nosuchfield.a.b.c"} {
@@ -47,14 +91,10 @@ func TestDocumentFieldSubKeyValidatesRoot(t *testing.T) {
 }
 
 // 🔴 多级路径逐段规范化成 json 名，map 键原样保留。
-//
-// updater 内部统一用 json 名：op.Field / op.Result 直接就是发给客户端的 key，
-// 落库名由 cosmo 在边界换（Update.Transform / Selector.Projection 都走 schema.DBName）。
 // 本测试的模型不带任何 tag，故 json 名 = Go 字段名（PascalCase）。
-//
-// 反过来 map 键的大小写有业务含义，动了就是写错地方。逐段判定由 schema 负责。
 func TestDocumentFieldPathNormalizedPerSegment(t *testing.T) {
-	doc := newFieldTestDocument()
+	s := newFieldTestStore(t)
+	doc := s.Document("doc_field_test")
 
 	cases := map[string]string{
 		"soulrelics.1":    "SoulRelics.1", //根字段换名
@@ -78,7 +118,8 @@ func TestDocumentFieldPathNormalizedPerSegment(t *testing.T) {
 // 路径越界必须报错：以前只校验根字段，中间段和末段写错这一层查不出来，
 // 会一路放行到 dataset.Document.Set 被静默丢弃。
 func TestDocumentFieldRejectsBadPath(t *testing.T) {
-	doc := newFieldTestDocument()
+	s := newFieldTestStore(t)
+	doc := s.Document("doc_field_test")
 
 	bad := map[string]string{
 		"SoulRelics.1.Nope": "map 值结构体里没有这个字段",
@@ -92,44 +133,40 @@ func TestDocumentFieldRejectsBadPath(t *testing.T) {
 	}
 }
 
-// schema 取不到时必须报错。
-//
-// 旧实现 Name() 在 Schema() 返回 nil 时走完 if 直接 return，得到 ("", nil)——
-// Field 把空字段名当成解析成功交给调用方，写入落到一个空 key 上。
+// schema 取不到时必须报错：dataset 不可用时 Field 不能把空字段名当成解析成功。
+// RAMTypeNone 的句柄在 Release 后 dataset 被置空 —— 旧实现此刻 Field 返回 ("", nil)。
 func TestDocumentFieldSchemaUnavailable(t *testing.T) {
-	doc := &Document{name: "unittest"}
-	doc.updater = New(&mountPlayer{uid: "doc_field_test"})
+	s := newFieldTestStoreNone(t)
+	s.Release() //RAMTypeNone → dataset = nil, schema = nil
 
-	if key, err := doc.Field("breaklv"); err == nil {
-		t.Fatalf("dataset 未初始化时 Field 应报错，实际返回 key=%q", key)
+	doc := s.Document("doc_field_test_none")
+	if _, err := doc.Field("breaklv"); err == nil {
+		t.Fatal("dataset 不可用时 Field 应报错")
 	}
 }
 
-// 🔴 写接口不得清掉已挂起的 Updater.Error。
+// 🔴 写接口不得清掉已挂起的 Store.Error。
 //
-// 旧代码 `field, this.Updater.Error = this.Field(k)` 无条件赋值：字段解析成功时把 nil
-// 写回 Updater.Error，抹掉之前的错误，紧接着的 WriteAble 便误判为可写，
-// 本该被整体拦下的写入照样落库。
+// 旧代码无条件赋值：字段解析成功时把 nil 写回，抹掉之前的错误，紧接着的
+// WriteAble 便误判为可写，本该被整体拦下的写入照样落库。
 func TestDocumentWriteKeepsPendingError(t *testing.T) {
-	doc := newFieldTestDocument()
+	s := newFieldTestStore(t)
+	doc := s.Document("doc_field_test")
 	pending := ErrArgsIllegal(1, 1)
-	doc.updater.Error = pending
+	s.Error = pending
 
 	if op := doc.Set("breaklv", 1); op != nil {
-		t.Error("Updater 已处于错误状态，Set 不应产出操作")
+		t.Error("已处于错误状态，Set 不应产出操作")
 	}
-	if doc.updater.Error != pending {
-		t.Fatalf("挂起的错误被覆盖了: %v", doc.updater.Error)
+	if s.Error != pending {
+		t.Fatalf("挂起的错误被覆盖了: %v", s.Error)
 	}
 }
 
-// 整字段按 schema 规范化成 json 名。
-//
-// 🔴 不是 DBName：op.Field / op.Result 同时喂客户端 payload 与落库两条路，
-// 带 json 名则客户端直通，落库那侧由 cosmo 在边界统一换成 DBName。
-// 反过来带 DBName 就要求客户端认库名，且 Collection 的 op.Result 还得再转一次。
+// 整字段按 schema 规范化成 json 名（不是 DBName）。
 func TestDocumentFieldWholeFieldNormalizedToJSName(t *testing.T) {
-	doc := newFieldTestDocument()
+	s := newFieldTestStore(t)
+	doc := s.Document("doc_field_test")
 
 	for _, key := range []string{"breaklv", "BreakLv"} {
 		got, err := doc.Field(key)

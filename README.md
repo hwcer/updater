@@ -154,46 +154,30 @@ v.Add(2001, 1)  // 委托给其他模块处理，同时生成 Operator 返回前
 
 ```
 updater/
-├── updater.go          Updater 扩展层（IType 路由/Add/Sub/委托 hamster.Store）
+├── updater.go          Updater 扩展层（内嵌 hamster.Store + IID/IType 路由 + Add/Sub）
 ├── define.go           IType 接口 + Config + 核心版类型别名
-├── model.go            模型注册（Register 桥接 hamster）+ 道具路由表
-├── statement.go        扩展层 statement 构造（默认接收器 + handleResult 注入）
-├── handle.go           Handle 别名 + 道具句柄小接口
-├── handle_val.go       Values 实现
-├── handle_doc.go       Document 实现
-├── handle_coll.go      Collection 实现
-├── handle_virtual.go   Virtual 实现（委托模式 + 可选前端转发）
-├── handle_mount.go     Mount 薄包装（委托 hamster.Collection）
-├── parse_val.go        Values 操作解析（含溢出）
-├── parse_doc.go        Document 操作解析（含溢出）
-├── parse_coll.go       Collection 操作解析（含 New/叠加/不叠加）
-├── funcs.go            溢出处理（overflow → Resolve）
+├── model.go            扩展层模型接口 + Register（适配器桥接 hamster）+ 道具路由表
+├── adapters.go         模型适配器（道具语义 → 核心钩子：Keyer/OperatorDecorator/ParseDecorator）
+├── statement.go        handleResult 注入（ITypeResult 填充）
+├── handle.go           Handle 别名
+├── handle_mount.go     Mount（内嵌 hamster.Collection + Count）
+├── funcs.go            溢出处理（overflow → Resolve，模型口径）
 ├── errors.go           错误定义 + 灾难熔断机制
 ├── events.go           事件系统（Listener/Middleware）
 ├── cache.go / middleware.go  全局缓存/中间件
 ├── HAMSTER_PLAN.md     核心版拆分设计方案
 ├── HANDLER_MOUNT_PLAN.md / UNSET_PLAN.md  历史设计文档
-├── hamster/            核心版（存储引擎，无道具概念）
+├── hamster/            核心版（存储引擎，句柄唯一实现，生命周期未导出）
 │   ├── store.go        Store 生命周期 + Mount
 │   ├── statement.go    语句基类（含 handleResult 钩子）
-│   ├── handle.go       Handle 接口
-│   ├── model.go        注册表（工厂函数 + TableOrder）
-│   ├── document.go     核心版 Document（主档承载者）
-│   ├── collection.go   核心版 Collection（Mount 泛化 + 字段级 Add/Sub）
-│   ├── values.go       核心版 Values（纯数值 KV）
-│   ├── virtual.go      核心版 Virtual（纯 string 键委托视图）
+│   ├── handle.go       Handle 接口（生命周期未导出）
+│   ├── model.go        注册表 + 可选注入接口（Keyer/OperatorDecorator/ParseDecorator/ModelReset）
+│   ├── document.go     Document（主档承载者）
+│   ├── collection.go   Collection（Mount 泛化 + 字段级 Add/Sub）
+│   ├── values.go       Values（纯数值 KV）
+│   ├── virtual.go      Virtual（委托视图）
 │   ├── bulkwrite.go    CollectionBulkWrite 适配器
 │   └── errors.go / events.go / cache.go / middleware.go / define.go
-├── dataset/
-│   ├── document.go     Document 数据封装（Get/Set/Save/Clone）
-│   ├── collection.go   Collection 数据集（Insert/Update/Delete/BulkWrite）
-│   ├── dirty.go        脏数据追踪（Insert/Update/Delete 三态标记）
-│   ├── values.go       Values 数据封装（map[int32]int64）
-│   ├── cursor.go       快照分页游标
-│   ├── update.go       Update map 封装
-│   ├── define.go       Model/BulkWrite 接口定义
-│   └── utils.go        类型转换工具
-└── operator/
-    ├── operator.go     Operator 结构体（OType/IID/OID/IType/Value/Result）
-    └── types.go        操作类型枚举（Add/Sub/Set/Del/New/Drop/Resolve/Overflow）
+├── dataset/            数据封装层（两包共享）
+└── operator/           Operator 协议（两包共用，序列化零变更）
 ```

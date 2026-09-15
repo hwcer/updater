@@ -3,9 +3,11 @@ package updater
 import (
 	"maps"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/hamster"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -53,28 +55,55 @@ func (m *virtualModel) flush() {
 	m.pending = map[string]int64{}
 }
 
-func newVirtualUpdater(t *testing.T, m *virtualModel) (*Updater, *Virtual) {
+var sharedVirtualModel = newVirtualModel()
+var virtualRegisterOnce sync.Once
+
+// namedVirtualModel 给虚拟模型挂表名（Register 派生注册名用）
+type namedVirtualModel struct {
+	*virtualModel
+	name string
+}
+
+func (m *namedVirtualModel) TableName() string { return m.name }
+
+// newVirtualUpdater 注册一次（注册表无反注册）并返回驱动好的 Updater、Virtual 句柄与共享模型。
+// 每个用例重置共享模型状态（注册表持有的就是这一个实例）。
+func newVirtualUpdater(t *testing.T) (*Updater, *hamster.Virtual, *virtualModel) {
 	t.Helper()
 	old := Config.BulkWrite
 	Config.BulkWrite = func(*Updater) BulkWrite { return &mountBulk{} }
 	t.Cleanup(func() { Config.BulkWrite = old })
 
-	mod := &Model{ram: RAMTypeAlways, name: "virtual_test", model: m, parser: ParserTypeVirtual}
+	m := sharedVirtualModel
+	m.store = map[string]int64{}
+	m.pending = map[string]int64{}
+
+	virtualRegisterOnce.Do(func() {
+		if err := Register(ParserTypeVirtual, RAMTypeAlways, &namedVirtualModel{virtualModel: m, name: "virtual_test"}); err != nil {
+			t.Fatalf("Register(Virtual):%v", err)
+		}
+	})
+
 	u := New(&mountPlayer{uid: "virtual_uid"})
-	v := &Virtual{name: mod.name, model: m, updater: u}
-	v.statement = *newStatement(u, mod, v.Has)
-	return u, v
+	if err := u.Loading(); err != nil {
+		t.Fatalf("Loading:%v", err)
+	}
+	u.Reset()
+	v := u.Virtual("virtual_test")
+	if v == nil {
+		t.Fatal("Virtual 句柄取不到")
+	}
+	return u, v, m
 }
 
 // 🔴 同一请求内对**同一个键**连加两次，必须累加。
 //
 // Virtual 的 operator 带的是绝对值(d+value)，而委托出去的写要到 verify 才生效 ——
-// 不缓存中间态的话，第二次 Add 读到的还是旧值，算出的绝对值会把第一次整个盖掉。
+// 不缓存中间态的话，第二次 Add 读到的还是**旧值**，算出的绝对值会把第一次整个覆盖掉。
 // 实测踩过：充值发货时首充奖励与常规道具恰好是同一种货币，两次 Add(钻石,6) 只到账 6。
 // 不报错、operator 数量也对，纯静默。
 func TestVirtualAddSameKeyTwice(t *testing.T) {
-	m := newVirtualModel()
-	_, v := newVirtualUpdater(t, m)
+	_, v, m := newVirtualUpdater(t)
 
 	v.Add(int32(12001), 6)
 	v.Add(int32(12001), 6)
@@ -88,9 +117,8 @@ func TestVirtualAddSameKeyTwice(t *testing.T) {
 // Sub 同理，而且更危险：余额校验 `d < value` 也读旧值，
 // 不缓存的话同一请求扣两次能扣成负数（绕过 CreditAllowed 那道闸）。
 func TestVirtualSubSameKeyTwice(t *testing.T) {
-	m := newVirtualModel()
+	u, v, m := newVirtualUpdater(t)
 	m.store["goods.12001"] = 10
-	u, v := newVirtualUpdater(t, m)
 
 	v.Sub(int32(12001), 6)
 	if u.Error != nil {
@@ -109,9 +137,8 @@ func TestVirtualSubSameKeyTwice(t *testing.T) {
 
 // Set 之后再 Add，要从 Set 的新值继续算。
 func TestVirtualSetThenAdd(t *testing.T) {
-	m := newVirtualModel()
+	_, v, m := newVirtualUpdater(t)
 	m.store["goods.12001"] = 100
-	_, v := newVirtualUpdater(t, m)
 
 	v.Set(int32(12001), 5)
 	v.Add(int32(12001), 3)
@@ -122,21 +149,18 @@ func TestVirtualSetThenAdd(t *testing.T) {
 	}
 }
 
-// 缓存只在单次请求内有效：release 之后必须回到读模型。
+// 缓存只在单次请求内有效：Release 之后必须回到读模型。
 func TestVirtualCacheClearedOnRelease(t *testing.T) {
-	m := newVirtualModel()
-	_, v := newVirtualUpdater(t, m)
+	u, v, m := newVirtualUpdater(t)
 
 	v.Add(int32(12001), 6)
 	if got := v.Val(int32(12001)); got != 6 {
 		t.Fatalf("同请求内 Val 应读到中间态 6,实际 %d", got)
 	}
 	m.flush()
-	v.Release()
-	if v.cache != nil {
-		t.Fatal("release 之后缓存必须清空,否则跨请求读到陈旧中间态")
-	}
-	if got := v.Val(int32(12001)); got != 6 {
-		t.Fatalf("release 之后应回落到模型值 6,实际 %d", got)
+	m.store["goods.12001"] = 99 //把模型值改成与缓存不同，才能区分"读了缓存"还是"读了模型"
+	u.Release()
+	if got := v.Val(int32(12001)); got != 99 {
+		t.Fatalf("Release 之后应回落到模型值 99,实际 %d（中间态没清）", got)
 	}
 }

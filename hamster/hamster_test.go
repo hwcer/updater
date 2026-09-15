@@ -546,7 +546,7 @@ func TestVirtualPureDelegate(t *testing.T) {
 	//release 清中间态：把模型值改成与缓存不同的数，Val 必须回落到模型值 ——
 	//若缓存没清，这里会读到陈旧的 12
 	m.store["score"] = 99
-	vt.Release()
+	s.Release()
 	if got := vt.Val("score"); got != 99 {
 		t.Fatalf("release 之后 Val 应回落到模型值 99,实际 %d（中间态没清）", got)
 	}

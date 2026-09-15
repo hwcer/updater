@@ -11,6 +11,11 @@ import (
 // Set/Unset/Del/New 与 Mount 同款；Add/Sub 是字段级数值增减（无溢出检查 —— 核心版没有溢出概念，
 // 没有 Drop/Resolve 分支，那是溢出分解的事）。
 func (this *Collection) parse(op *operator.Operator) error {
+	if this.parseDec != nil {
+		if handled, err := this.parseDec.DecorateParse(this, this.statement.Store, op); err != nil || handled {
+			return err
+		}
+	}
 	switch op.OType {
 	case operator.TypesSet:
 		return this.parseSet(op)
@@ -34,7 +39,7 @@ func (this *Collection) parseSet(op *operator.Operator) error {
 		return ErrArgsIllegal(op.OID, op.Result)
 	}
 	if !this.dataset.Has(op.OID) {
-		if ok := this.model.Upsert(this.Store, op); !ok {
+		if ok := this.model.Upsert(this.statement.Store, op); !ok {
 			return ErrItemNotExist(op.OID)
 		}
 	}
@@ -103,7 +108,7 @@ func (this *Collection) parseSub(op *operator.Operator) error {
 	}
 	d := doc.GetInt64(op.Field)
 	r := d - op.Value
-	if d < op.Value && !this.Store.CreditAllowed {
+	if d < op.Value && !this.statement.Store.CreditAllowed {
 		return ErrNotEnough(op.OID, op.Value, d)
 	}
 	if err := this.dataset.Set(op.OID, op.Field, r); err != nil {

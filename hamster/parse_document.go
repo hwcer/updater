@@ -19,6 +19,11 @@ func init() {
 }
 
 func (this *Document) Parse(op *operator.Operator) (err error) {
+	if this.parseDec != nil {
+		if handled, err := this.parseDec.DecorateParse(this, this.statement.Store, op); err != nil || handled {
+			return err
+		}
+	}
 	if f, ok := documentParseHandle[op.OType]; ok {
 		return f(this, op)
 	}
@@ -42,7 +47,7 @@ func documentParseSub(this *Document, op *operator.Operator) error {
 	}
 	d, _ := this.val(op.Field)
 	r := d - op.Value
-	if d < op.Value && !this.Store.CreditAllowed {
+	if d < op.Value && !this.statement.Store.CreditAllowed {
 		return ErrNotEnough(op.Field, op.Value, d)
 	}
 	this.dataset.Set(op.Field, r)

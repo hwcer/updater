@@ -5,18 +5,6 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-// newStatement 构造扩展层句柄的流水线基类。
-//
-// 句柄以**具名字段** statement hamster.Statement 使用它（不直接嵌入）——
-// 一是保持既有代码 this.statement.xxx 的调用形态，二是避免把 Statement 的
-// 导出方法提升到句柄公开面上。
-//
-// 不设接收器：statement 默认把已校验操作插进 store.dirty，
-// 与根包的变更流水是同一份（Updaters 内嵌 Store 后 u.dirty 即 store.dirty）。
-func newStatement(u *Updater, m *Model, exist func(any) bool) *hamster.Statement {
-	return hamster.NewStatement(u.Store, m.ram, exist)
-}
-
 // itemResultFill handleResult 钩子：按 op.IType 查注册表填充 ITypeResult.Result。
 //
 // 🔴 这是拆包第一硬阻（statement 基类硬引用 itypesDict）的解法：机制回调扩展层

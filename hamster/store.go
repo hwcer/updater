@@ -151,7 +151,7 @@ func (s *Store) Testing(on bool) error {
 // 调用方必须持有属主锁（与其它 Store 方法一致）。
 func (s *Store) Reload() error {
 	for _, w := range s.Handles() {
-		if err := w.Reload(); err != nil {
+		if err := w.reload(); err != nil {
 			return err
 		}
 	}
@@ -181,7 +181,7 @@ func (s *Store) Loading(cb ...func()) (err error) {
 			handle = model.factory(s, model)
 			s.handles[name] = handle
 		}
-		if err = handle.Loading(); err != nil {
+		if err = handle.loading(); err != nil {
 			//回退标志:否则幂等闸门(status.Has(StatusInit))会让重试静默返回nil,
 			//属主带着缺数据的句柄进业务
 			s.status.Unset(StatusInit)
@@ -218,7 +218,7 @@ func (s *Store) Reset(t ...time.Time) {
 	}
 	s.status.Set(StatusSubmit) // 确保 Submit 收敛循环至少执行一次
 	for _, w := range s.Handles() {
-		w.Reset()
+		w.reset()
 	}
 
 	if disaster.Load() > 0 {
@@ -242,7 +242,7 @@ func (s *Store) Release() {
 	s.CreditAllowed = false
 	hs := s.Handles()
 	for _, h := range slices.Backward(hs) {
-		h.Release()
+		h.release()
 	}
 	//临时句柄的卸载收在这里:Unmount 只打标记,句柄留到请求走完整条生命周期
 	//(Data/Verify/Commit 一样不落)才摘除,短流程与长流程走同一条路。
@@ -319,7 +319,7 @@ func (s *Store) verify(hs []Handle) (err error) {
 	s.status.Unset(StatusOperated)
 	s.Emit(EventTypeVerify)
 	for _, h := range slices.Backward(hs) {
-		if err = h.Verify(); err != nil {
+		if err = h.verify(); err != nil {
 			return
 		}
 	}
@@ -337,7 +337,7 @@ func (s *Store) Submit() (r []*operator.Operator, err error) {
 	}
 	hs := s.Handles()
 	for _, h := range slices.Backward(hs) {
-		if err = h.Commit(); err != nil {
+		if err = h.commit(); err != nil {
 			return
 		}
 	}
@@ -357,7 +357,7 @@ func (s *Store) Submit() (r []*operator.Operator, err error) {
 // Save 保存所有缓存数据
 func (s *Store) Save() (err error) {
 	for _, w := range s.Handles() {
-		if err = w.Save(); err != nil {
+		if err = w.save(); err != nil {
 			return
 		}
 	}
@@ -369,7 +369,7 @@ func (s *Store) Save() (err error) {
 func (s *Store) Destroy() (err error) {
 	hs := s.Handles()
 	for _, h := range slices.Backward(hs) {
-		if err = h.Destroy(); err != nil {
+		if err = h.destroy(); err != nil {
 			return
 		}
 	}
@@ -472,9 +472,9 @@ func (s *Store) Mount(m MountModel, keys ...string) (*Collection, error) {
 		//ram 强制 RAMTypeMaybe：只影响 statement.Has 里 `Always && loader` 那条短路，
 		//绝不能命中——命中之后 Select 会跳过每一个 key，Data 永不执行、Get 全 nil 且不报错。
 		r = &Collection{name: name, model: m, dataset: dataset.NewColl()}
-		r.Statement = *NewStatement(s, RAMTypeMaybe, r.exist)
-		r.Statement.Receiver(DiscardReceiver)
-		r.Reset()
+		r.statement = *NewStatement(s, RAMTypeMaybe, r.exist)
+		r.statement.Receiver(DiscardReceiver)
+		r.reset()
 		s.mounts[name] = r
 	}
 	r.unmount = false //改主意了:上一次标记的卸载作废

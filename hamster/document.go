@@ -26,20 +26,27 @@ type DocumentModel interface {
 // 首要角色是**主档**：以 TableOrder 声明最大加载顺序，即可先于其他模型加载，
 // 其余模型的 Getter 以 Store.Id() 为键基础派生查询。
 type Document struct {
-	Statement
+	statement Statement
 	name string
 	// schema 首次解析成功后缓存:整个 handle 生命周期内文档类型固定(model.New 只产出一种类型),
 	// 而 Field/Name/Table/Select 每次调用都要查字段,不缓存就要反复走 schema.Parse(反射取类型 + 全局 sync.Map)
 	schema  *schema.Schema
 	model   DocumentModel
 	dataset *dataset.Document
+	// ---- 可选注入（扩展层道具语义入口，核心自身不实现）----
+	keyer      Keyer              //非 string key → 字段名（如 iid→字段）
+	decorator  OperatorDecorator  //operator 构造后装饰（填 IType/预读监听/拦截）
+	parseDec   ParseDecorator     //parse 分发前钩子（溢出检查等）
 }
 
 func newDocument(s *Store, m *Model) Handle {
 	r := &Document{}
 	r.name = m.name
 	r.model = m.model.(DocumentModel)
-	r.Statement = *NewStatement(s, m.ram, r.Has)
+	r.statement = *NewStatement(s, m.ram, r.Has)
+	r.keyer, _ = m.model.(Keyer)
+	r.decorator, _ = m.model.(OperatorDecorator)
+	r.parseDec, _ = m.model.(ParseDecorator)
 	return r
 }
 
@@ -62,15 +69,15 @@ func (this *Document) Val(k any) (r int64) {
 }
 
 func (this *Document) Data() (err error) {
-	if err = this.Store.Error; err != nil {
+	if err = this.statement.Store.Error; err != nil {
 		return
 	}
-	if len(this.keys) == 0 {
+	if len(this.statement.keys) == 0 {
 		return nil
 	}
-	keys := this.keys.ToString()
-	if err = this.model.Getter(this.Store, this.dataset, keys); err == nil {
-		this.Statement.Date()
+	keys := this.statement.keys.ToString()
+	if err = this.model.Getter(this.statement.Store, this.dataset, keys); err == nil {
+		this.statement.Date()
 	}
 	return
 }
@@ -78,7 +85,7 @@ func (this *Document) Data() (err error) {
 func (this *Document) Select(keys ...any) {
 	for _, k := range keys {
 		if key, err := this.Field(k); err == nil {
-			this.Statement.Select(key)
+			this.statement.Select(key)
 		} else {
 			logger.Alert("Document Select error,name:%s,key:%v,err:%v", this.name, k, err)
 		}
@@ -91,53 +98,56 @@ func (this *Document) Parser() Parser {
 
 // ===================== Handle 接口生命周期方法 =====================
 
-func (this *Document) Save() (err error) {
-	bw := this.Store.BulkWrite()
+func (this *Document) save() (err error) {
+	bw := this.statement.Store.BulkWrite()
 	if bw == nil {
 		return ErrBulkWriteNotInit
 	}
 	dirty, unsets := this.dataset.Save()
 	if len(dirty) > 0 || len(unsets) > 0 {
-		if err = this.model.Setter(this.Store, bw, dirty, unsets); err != nil {
+		if err = this.model.Setter(this.statement.Store, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
-			logger.Alert("database save error,id:%s,Document:%s\nOperation:%s\nerror:%s", this.Store.Id(), this.name, ds, err.Error())
+			logger.Alert("database save error,id:%s,Document:%s\nOperation:%s\nerror:%s", this.statement.Store.Id(), this.name, ds, err.Error())
 		}
 	}
 	return
 }
 
-func (this *Document) Reset() {
-	this.Statement.Reset()
+func (this *Document) reset() {
+	this.statement.Reset()
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
+	if r, ok := this.model.(ModelReset); ok && r.Reset(this.statement.Store, this.statement.Store.Last()) {
+		this.statement.Store.Error = this.reload()
+	}
 }
 
-func (this *Document) Reload() error {
+func (this *Document) reload() error {
 	this.dataset = nil
 	this.schema = nil
-	this.Statement.Reload()
-	return this.Loading()
+	this.statement.Reload()
+	return this.loading()
 }
 
-func (this *Document) Loading() (err error) {
+func (this *Document) loading() (err error) {
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
-	if this.Statement.Loading() {
-		this.Store.Error = this.model.Getter(this.Store, this.dataset, nil)
-		if err = this.Store.Error; err == nil {
-			this.loader = true
+	if this.statement.Loading() {
+		this.statement.Store.Error = this.model.Getter(this.statement.Store, this.dataset, nil)
+		if err = this.statement.Store.Error; err == nil {
+			this.statement.loader = true
 		}
 	} else if this.dataset.IsNil() {
-		this.dataset.Reset(this.model.New(this.Store))
+		this.dataset.Reset(this.model.New(this.statement.Store))
 	}
-	return this.Store.Error
+	return this.statement.Store.Error
 }
 
-func (this *Document) Release() {
-	this.Statement.Release()
-	if this.Statement.ram == RAMTypeNone {
+func (this *Document) release() {
+	this.statement.Release()
+	if this.statement.ram == RAMTypeNone {
 		this.dataset = nil
 		this.schema = nil
 	} else {
@@ -145,35 +155,35 @@ func (this *Document) Release() {
 	}
 }
 
-func (this *Document) Destroy() (err error) {
-	return this.Save()
+func (this *Document) destroy() (err error) {
+	return this.save()
 }
 
-func (this *Document) Commit() (err error) {
-	if err = this.Store.WriteAble(); err != nil {
+func (this *Document) commit() (err error) {
+	if err = this.statement.Store.WriteAble(); err != nil {
 		return
 	}
-	this.Statement.Submit()
-	if err = this.Save(); err != nil && this.Statement.ram != RAMTypeNone {
+	this.statement.Submit()
+	if err = this.save(); err != nil && this.statement.ram != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
 		err = nil
 	}
 	return
 }
 
-func (this *Document) Verify() (err error) {
-	if err = this.Store.WriteAble(); err != nil {
+func (this *Document) verify() (err error) {
+	if err = this.statement.Store.WriteAble(); err != nil {
 		return
 	}
 	// 下标遍历(而非 range)：当前 parse 分支都不追加操作，但那是实现的性质、不是接口保证
 	// —— range 按初始长度迭代，哪天有分支开始追加就会静默漏掉新增的那几条。
-	// 🔴 用 this.Statement.operator 限定：Document 上的 operator 方法会遮蔽嵌入的同名字段。
-	for i := 0; i < len(this.Statement.operator); i++ {
-		if err = this.Parse(this.Statement.operator[i]); err != nil {
+	// 🔴 用 this.statement.operator 限定：Document 上的 operator 方法会遮蔽嵌入的同名字段。
+	for i := 0; i < len(this.statement.operator); i++ {
+		if err = this.Parse(this.statement.operator[i]); err != nil {
 			return
 		}
 	}
-	this.Statement.Verify()
+	this.statement.Verify()
 	return
 }
 
@@ -220,12 +230,12 @@ func (this *Document) Schema() *schema.Schema {
 		return this.schema
 	}
 	if this.dataset == nil {
-		this.Store.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
+		this.statement.Store.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
 		return nil
 	}
 	sch, err := this.dataset.Schema()
 	if err != nil {
-		this.Store.Error = err
+		this.statement.Store.Error = err
 		return nil
 	}
 	this.schema = sch
@@ -239,7 +249,7 @@ func (this *Document) sch() (*schema.Schema, error) {
 	if sch := this.Schema(); sch != nil {
 		return sch, nil
 	}
-	if err := this.Store.Error; err != nil {
+	if err := this.statement.Store.Error; err != nil {
 		return nil, err
 	}
 	return nil, fmt.Errorf("document schema not ready,model:%s", this.name)
@@ -259,15 +269,20 @@ func (this *Document) Name(k string) (r string, err error) {
 }
 
 // Field 字段名定位与校验（json 名规范化，含多级路径 a.b.c）。
+// 注入 Keyer 后非 string key（如 iid）先经它换算成字段名。
 //
 // 🔴 校验必不可少：不校验则字段名写错(nosuchfield.1)会一路放行到 dataset.Document.Set，
 // 那里 `if !doc.Has(k) { return }` 直接静默返回，调用方拿不到错误、还以为写成功了。
 func (this *Document) Field(k any) (key string, err error) {
-	v, ok := k.(string)
-	if !ok {
+	if v, ok := k.(string); ok {
+		key = v
+	} else if this.keyer != nil {
+		if key, err = this.keyer.Key(this.statement.Store, k); err != nil {
+			return "", err
+		}
+	} else {
 		return "", fmt.Errorf("document field must be string:%+v", k)
 	}
-	key = v
 	sch, err := this.sch()
 	if err != nil {
 		return "", err
@@ -276,7 +291,7 @@ func (this *Document) Field(k any) (key string, err error) {
 }
 
 func (this *Document) Insert(op *operator.Operator, before ...bool) {
-	this.Statement.Insert(op, before...)
+	this.statement.Insert(op, before...)
 }
 
 // ===================== 类型特有私有方法 =====================
@@ -295,7 +310,7 @@ func (this *Document) val(k string) (r int64, ok bool) {
 func (this *Document) fieldOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
 	field, err := this.Field(k)
 	if err != nil {
-		this.Store.Error = err
+		this.statement.Store.Error = err
 		return nil
 	}
 	return this.operator(t, field, v, r)
@@ -303,7 +318,7 @@ func (this *Document) fieldOperator(t operator.Types, k any, v int64, r any) *op
 
 // operator 构造并入队一条操作。核心版 operator 的 IType 恒 0（合法值，默认不进下发通道）。
 func (this *Document) operator(t operator.Types, k string, v int64, r any) *operator.Operator {
-	if err := this.Store.WriteAble(); err != nil {
+	if err := this.statement.Store.WriteAble(); err != nil {
 		return nil
 	}
 	if t == operator.TypesDel {
@@ -314,7 +329,11 @@ func (this *Document) operator(t operator.Types, k string, v int64, r any) *oper
 		return nil
 	}
 	op := operator.New(t, k, v, r)
-	this.Statement.Select(op.Field)
-	this.Statement.Insert(op)
+	this.statement.Select(op.Field)
+	if this.decorator != nil && !this.decorator.DecorateOperator(this.statement.Store, op) {
+		op.Release() //装饰方决定丢弃（含静默丢弃场景），错误由装饰方打脏
+		return nil
+	}
+	this.statement.Insert(op)
 	return op
 }
