@@ -19,15 +19,6 @@ type MountModel interface {
 	schema.Tabler
 }
 
-// errorState 错误状态外接钩子。
-//
-// 扩展层(updater)在 New 时注入，让核心版的错误读写命中扩展层实例的公开 Error 字段 ——
-// 那是 API 冻结面，用户直接读写 `updater.Updater.Error`。nil 时用本地 Error 字段。
-type errorState interface {
-	GetError() error
-	SetError(error)
-}
-
 // Store 核心版存储引擎：颊囊预载（内存缓存）→ 囤货入仓（批量落库）→ 记得囤了什么（脏标记）。
 //
 // 每个数据属主（公会/玩家/临时副本）持有一个实例，通过
@@ -44,12 +35,10 @@ type Store struct {
 	mounts    map[string]*Collection //临时挂载的数据集合，见 Mount
 	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
 
-	errState errorState //错误状态外接钩子（扩展层注入），nil 时用本地 Error
-
 	emitHook func(s *Store, t EventType) //扩展层事件桥：内部 Emit 前先交给扩展层分发
 
 	Cache         Cache       //自定义缓存数据
-	Error         error       //本地错误状态（errState 为 nil 时生效）
+	Error         error       //错误状态（唯一权威字段；扩展层经同步纪律镜像到 Updater.Error）
 	Events        Events      //生命周期事件
 	Middleware    Middlewares //中间件，所有事件类型都会触发
 	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
@@ -58,9 +47,6 @@ type Store struct {
 func New(e Entity) *Store {
 	return &Store{entity: e, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}
 }
-
-// SetErrorState 错误状态外接（扩展层注入）：注入后 store 的错误读写命中外部实例
-func (s *Store) SetErrorState(es errorState) { s.errState = es }
 
 // SetEmitHook 事件桥（扩展层注入）：内部 Emit 时先回调，再走 hamster 自己的监听器
 func (s *Store) SetEmitHook(f func(s *Store, t EventType)) { s.emitHook = f }
@@ -90,22 +76,7 @@ func (s *Store) Milli() int64 {
 	return s.now.UnixMilli()
 }
 
-// ---------------- 错误状态（经 errState 外接或本地） ----------------
-
-func (s *Store) getError() error {
-	if s.errState != nil {
-		return s.errState.GetError()
-	}
-	return s.Error
-}
-
-func (s *Store) setError(err error) {
-	if s.errState != nil {
-		s.errState.SetError(err)
-		return
-	}
-	s.Error = err
-}
+// ---------------- 错误状态 ----------------
 
 func (s *Store) Errorf(format any, args ...any) error {
 	var err error
@@ -117,12 +88,12 @@ func (s *Store) Errorf(format any, args ...any) error {
 	default:
 		err = fmt.Errorf("%v", v)
 	}
-	s.setError(err)
+	s.Error = err
 	return err
 }
 
 func (s *Store) WriteAble() error {
-	return s.getError()
+	return s.Error
 }
 
 // ---------------- 事件与扩展 ----------------
@@ -133,7 +104,7 @@ func (s *Store) On(t EventType, handle Listener) {
 
 // Emit 内部事件分发：错误闸门 → 扩展层桥 → hamster 监听器 → 中间件。
 func (s *Store) Emit(t EventType) {
-	if s.getError() != nil && t != EventTypeRelease {
+	if s.Error != nil && t != EventTypeRelease {
 		return
 	}
 	if s.emitHook != nil {
@@ -251,7 +222,7 @@ func (s *Store) Reset(t ...time.Time) {
 	}
 
 	if disaster.Load() > 0 {
-		s.setError(ErrServerDeniedService) //存在灾难性错误，拒绝服务
+		s.Error = ErrServerDeniedService //存在灾难性错误，拒绝服务
 	} else {
 		s.Emit(EventTypeReset)
 	}
@@ -267,7 +238,7 @@ func (s *Store) Release() {
 	s.dirty = nil
 	s.status = s.status & (StatusInit | StatusTesting | StatusDevelop)
 	s.bulkWrite = nil
-	s.setError(nil)
+	s.Error = nil
 	s.CreditAllowed = false
 	hs := s.Handles()
 	for _, h := range slices.Backward(hs) {
@@ -314,7 +285,7 @@ func (s *Store) converge() (err error) {
 		s.status.Unset(StatusSubmit)
 		s.Emit(EventTypeSubmit)
 		if loop = loop + 1; loop >= 100 {
-			s.setError(ErrSubmitEndlessLoop)
+			s.Error = ErrSubmitEndlessLoop
 			return ErrSubmitEndlessLoop
 		}
 	}
@@ -322,7 +293,7 @@ func (s *Store) converge() (err error) {
 }
 
 func (s *Store) data(hs []Handle) (err error) {
-	if err = s.getError(); err != nil {
+	if err = s.Error; err != nil {
 		return
 	}
 	if !s.status.Has(StatusChanged) {
@@ -339,7 +310,7 @@ func (s *Store) data(hs []Handle) (err error) {
 }
 
 func (s *Store) verify(hs []Handle) (err error) {
-	if err = s.getError(); err != nil {
+	if err = s.Error; err != nil {
 		return
 	}
 	if !s.status.Has(StatusOperated) {

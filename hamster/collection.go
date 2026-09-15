@@ -77,7 +77,7 @@ func (this *Collection) operator(t operator.Types, id string, field string, v in
 		return nil
 	}
 	if id == "" {
-		this.Store.setError(ErrObjectIdEmpty(t.ToString()))
+		this.Store.Error = ErrObjectIdEmpty(t.ToString())
 		return nil
 	}
 	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
@@ -87,7 +87,7 @@ func (this *Collection) operator(t operator.Types, id string, field string, v in
 	op.OID = id
 	op.IType = this.itype //客户端分发键：0 即无主数据，对面按 IType 分发认不出
 	this.format(op)
-	if this.Store.getError() != nil {
+	if this.Store.Error != nil {
 		op.Release()
 		return nil
 	}
@@ -290,7 +290,7 @@ func (this *Collection) Val(key any) (r int64) {
 
 // Data 拉取 Select 标记的文档。keys 为空时不查库。
 func (this *Collection) Data() (err error) {
-	if err = this.Store.getError(); err != nil {
+	if err = this.Store.Error; err != nil {
 		return
 	}
 	if len(this.keys) == 0 {
@@ -385,7 +385,7 @@ func (this *Collection) Loading() error {
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
 	}
-	return this.Store.getError()
+	return this.Store.Error
 }
 
 // Reload 丢弃内存，下次 Select+Data 重新查库。
@@ -435,19 +435,19 @@ func (this *Collection) format(op *operator.Operator) {
 	}
 	result, ok := op.Result.(dataset.Update)
 	if !ok {
-		this.Store.setError(fmt.Errorf("collection[%s] operator result must be dataset.Update:%v", this.name, op.Result))
+		this.Store.Error = fmt.Errorf("collection[%s] operator result must be dataset.Update:%v", this.name, op.Result)
 		return
 	}
 	sch := this.Schema()
 	if sch == nil {
-		this.Store.setError(fmt.Errorf("collection[%s] schema empty", this.name))
+		this.Store.Error = fmt.Errorf("collection[%s] schema empty", this.name)
 		return
 	}
 	data := dataset.Update{}
 	for k, v := range result {
 		name, err := sch.JSName(k)
 		if err != nil {
-			this.Store.setError(fmt.Errorf("collection[%s] field error,field:%s,error:%v", this.name, k, err))
+			this.Store.Error = fmt.Errorf("collection[%s] field error,field:%s,error:%v", this.name, k, err)
 			return
 		}
 		data[name] = v

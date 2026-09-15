@@ -78,6 +78,8 @@ func (u *Updater) Mount(model MountModel, keys ...string) (*Mount, error) {
 			return nil, Errorf(0, "mount name conflicts with registered model:%v", name)
 		}
 	}
+	u.syncErrIn()
+	defer u.syncErrOut()
 	c, err := u.store.Mount(&mountAdapter{m: model, u: u}, keys...)
 	if c == nil {
 		return nil, err //唯一会返回 nil 的是重名：压根没挂上
@@ -146,6 +148,8 @@ type Mount struct {
 
 // Update 批量改字段。只是入队，verify 阶段才真正写进内存。
 func (this *Mount) Update(id string, data dataset.Update) *operator.Operator {
+	this.updater.syncErrIn()
+	defer this.updater.syncErrOut() //format 失败会把错误落在 store 上，镜像回根包
 	return this.coll.Update(id, data)
 }
 
@@ -156,11 +160,15 @@ func (this *Mount) Set(id string, field string, value any) *operator.Operator {
 
 // Unset 删字段。
 func (this *Mount) Unset(id string, fields ...string) *operator.Operator {
+	this.updater.syncErrIn()
+	defer this.updater.syncErrOut()
 	return this.coll.Unset(id, fields...)
 }
 
 // Delete 删文档。
 func (this *Mount) Delete(id string) *operator.Operator {
+	this.updater.syncErrIn()
+	defer this.updater.syncErrOut()
 	return this.coll.Delete(id)
 }
 
@@ -168,6 +176,8 @@ func (this *Mount) Delete(id string) *operator.Operator {
 //
 // ⚠️ **不要另给一个 id 参数**：真正决定落库主键的是对象自己的 _id。
 func (this *Mount) Insert(v any) *operator.Operator {
+	this.updater.syncErrIn()
+	defer this.updater.syncErrOut()
 	return this.coll.Insert(v)
 }
 
@@ -185,6 +195,8 @@ func (this *Mount) Operators() []*operator.Operator {
 // ⚠️ 失败时内存已经是新值、库还是旧的：要么重试，要么 Unmount 整张表。
 // ⚠️ 全局的 StatusOperated **不会**被清除：它是所有 handle 共用的标志。
 func (this *Mount) Submit() error {
+	this.updater.syncErrIn()
+	defer this.updater.syncErrOut()
 	return this.coll.Submit()
 }
 
@@ -246,6 +258,8 @@ func (this *Mount) Val(key any) (r int64) {
 
 // Data 拉取 Select 标记的文档。keys 为空时不查库。
 func (this *Mount) Data() (err error) {
+	this.updater.syncErrIn()
+	defer this.updater.syncErrOut()
 	return this.coll.Data()
 }
 

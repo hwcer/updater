@@ -31,7 +31,7 @@ func (e Events) On(t EventType, handle Listener) {
 }
 
 func (e Events) emit(s *Store, t EventType) {
-	if s.getError() != nil && t != EventTypeRelease {
+	if s.Error != nil && t != EventTypeRelease {
 		return
 	}
 	for _, h := range globalEvents[t] {

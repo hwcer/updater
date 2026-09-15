@@ -20,8 +20,8 @@ import (
 // 内嵌会让 hamster.Store 的方法透传成隐式 API，任何"想让 Submit 多做一点"的改动
 // 都会变成同名覆盖雷区。生命周期委托方法一次写清，不得在委托里偷改时序。
 //
-// 错误状态：Error 字段是唯一权威（API 冻结面，用户直接读写），
-// 经 errState 钩子外接给 store —— store 内部的错误闸门读到的是本字段，双向零拷贝。
+// 错误状态：store.Error 是唯一权威字段（生命周期闸门都读它），Error 字段是
+// API 冻结的公开镜像（用户直接读写），经同步纪律保持一致（见 syncErrIn/syncErrOut）。
 // 变更流水：dirty 字段是唯一权威，句柄 statement 的默认接收器直接推进本字段。
 type Updater struct {
 	store *hamster.Store      //核心版存储引擎（生命周期/落库/mounts）
@@ -43,17 +43,38 @@ func New(e Entity) *Updater {
 	st := hamster.New(e)
 	u := &Updater{store: st}
 	u.Cache = Cache(st.Cache) //共享同一块底层 map（同底层类型的 map 转换是重挂类型、不拷贝）
-	st.SetErrorState(u)       //错误状态外接：store 的读写命中 u.Error
 	st.SetEmitHook(func(_ *hamster.Store, t hamster.EventType) {
-		u.emitRoot(EventType(t)) //扩展层事件按根包语义分发（Events 带错误闸门，Middleware 不带）
+		u.syncErrOut() //事件分发前先镜像：监听器读 u.Error 才是新鲜的
+		u.emitRoot(EventType(t))
 	})
 	updaters.Store(st, u)
 	return u
 }
 
-// GetError/SetError 实现 hamster 的 errorState：store 内部经此读写 u.Error
-func (u *Updater) GetError() error    { return u.Error }
-func (u *Updater) SetError(err error) { u.Error = err }
+// 🔴 错误状态同步纪律（store.Error 是唯一权威字段，u.Error 是冻结的公开镜像字段）：
+//   1. 委托进 store 生命周期的公开方法：入口 syncErrIn、出口 syncErrOut；
+//   2. 扩展句柄写错误一律走 setError（双写两个字段）；
+//   3. Mount 包装方法委托前后同样 syncErrIn / syncErrOut；
+//   4. 事件桥分发前先 syncErrOut。
+// 漏一处 = 错误闸门读到陈旧值 = 静默失效；新增公开方法必须照此办理。
+func (u *Updater) syncErrIn() {
+	if u.store != nil {
+		u.store.Error = u.Error
+	}
+}
+func (u *Updater) syncErrOut() {
+	if u.store != nil {
+		u.Error = u.store.Error
+	}
+}
+
+// setError 扩展句柄专用：双写错误状态（u.Error 供用户/句柄读，store.Error 供闸门读）
+func (u *Updater) setError(err error) {
+	u.Error = err
+	if u.store != nil {
+		u.store.Error = err
+	}
+}
 
 // emitRoot 根包事件分发（拆分前 Emit 的原语义）
 func (u *Updater) emitRoot(t EventType) {
@@ -99,18 +120,21 @@ func (u *Updater) Last() time.Time {
 func (u *Updater) Errorf(format any, args ...any) error {
 	switch v := format.(type) {
 	case string:
-		u.Error = fmt.Errorf(v, args...)
+		u.setError(fmt.Errorf(v, args...))
 	case error:
-		u.Error = v
+		u.setError(v)
 	default:
-		u.Error = fmt.Errorf("%v", v)
+		u.setError(fmt.Errorf("%v", v))
 	}
 	return u.Error
 }
 
 // Save 保存所有缓存数并自动关闭异步模式
 func (u *Updater) Save() (err error) {
-	return u.store.Save()
+	u.syncErrIn()
+	err = u.store.Save()
+	u.syncErrOut()
+	return
 }
 
 func (u *Updater) Loader() bool {
@@ -124,7 +148,10 @@ func (u *Updater) Develop(v ...bool) bool {
 
 // Testing 测试模式开关，开启后所有操作仅在内存生效不写库，关闭时强制从数据库重新加载
 func (u *Updater) Testing(on bool) error {
-	return u.store.Testing(on)
+	u.syncErrIn()
+	err := u.store.Testing(on)
+	u.syncErrOut()
+	return err
 }
 
 // Reload 丢弃所有已加载的内存数据，下次访问时重新从数据库读取。
@@ -137,7 +164,10 @@ func (u *Updater) Testing(on bool) error {
 //
 // ⚠ 对**在线**玩家只重载服务端内存，客户端手上那份仍是旧的，通常还需要让客户端重新拉取。
 func (u *Updater) Reload() error {
-	return u.store.Reload()
+	u.syncErrIn()
+	err := u.store.Reload()
+	u.syncErrOut()
+	return err
 }
 
 // loadGlobalCache 把 RegisterGlobalCache 注册的全局缓存载入实例
@@ -161,29 +191,35 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 	//handles → 时钟 → cb → hamster全局缓存 → Emit(Init)，
 	//追加的闭包在 Emit 之前执行，与拆分前「globalCache 先于 Init 事件」的时序一致。
 	cb = append(cb, u.loadGlobalCache)
-	return u.store.Loading(cb...)
+	u.syncErrIn()
+	err = u.store.Loading(cb...)
+	u.syncErrOut()
+	return
 }
 
 // Reset 重置,每次请求开始时调用
 func (u *Updater) Reset(t ...time.Time) {
+	u.syncErrIn()
 	u.store.Reset(t...)
+	u.syncErrOut()
 }
 
 // Release 释放并返回所有已执行的操作,每次请求结束时调用
 // 无论有无错误,都应该执行Release
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
+	u.syncErrIn()
 	u.store.Release() //内部含 Emit(EventTypeRelease)：错误闸门对 Release 放行
+	u.syncErrOut()    //u.Error/bulkWrite/status 的清理在 store.Release 内完成
 	for _, op := range u.dirty {
 		op.Release()
 	}
 	u.dirty = nil
 	u.CreditAllowed = false
-	//u.Error/u.bulkWrite/status 的清理在 store.Release 内完成
-	//（Error 经 errState 钩子写回本字段）
 }
 
 func (u *Updater) Emit(t EventType) {
+	u.syncErrIn()
 	u.store.Emit(hamster.EventType(t))
 }
 
@@ -231,7 +267,10 @@ func (u *Updater) Select(keys ...any) {
 }
 
 func (u *Updater) Data() (err error) {
-	return u.store.Data()
+	u.syncErrIn()
+	err = u.store.Data()
+	u.syncErrOut()
+	return
 }
 
 // Verify 手动执行校验：把当前已入队的操作全部跑完 data→verify，但不落库。
@@ -246,13 +285,19 @@ func (u *Updater) Data() (err error) {
 // Verify 之后再 Submit 是安全的：status 已被消耗，Submit 的收敛循环直接跳过，
 // 走 commit 落库已 Parse 进 cache 的操作。
 func (u *Updater) Verify() (err error) {
-	return u.store.Verify()
+	u.syncErrIn()
+	err = u.store.Verify()
+	u.syncErrOut()
+	return
 }
 
 // Submit 收敛循环执行 data→verify→commit 直到无新操作产生，最多100轮防止死循环
 // 返回本次请求所有操作的 Operator 列表，用于同步给前端
 func (u *Updater) Submit() (r []*operator.Operator, err error) {
-	if _, err = u.store.Submit(); err != nil {
+	u.syncErrIn()
+	_, err = u.store.Submit()
+	u.syncErrOut()
+	if err != nil {
 		return nil, err
 	}
 	//变更流水在根包这份 dirty（句柄默认接收器 pushDirty 收集），
@@ -337,9 +382,12 @@ func (u *Updater) Handles() []Handle {
 // Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
 // 仅缓存模式下需要且必要执行
 func (u *Updater) Destroy() (err error) {
+	u.syncErrIn()
 	if err = u.store.Destroy(); err != nil {
+		u.syncErrOut()
 		return
 	}
+	u.syncErrOut()
 	for _, op := range u.dirty {
 		op.Release()
 	}
@@ -365,10 +413,11 @@ func (u *Updater) Dirty(opt ...*operator.Operator) {
 }
 
 func (u *Updater) WriteAble() error {
-	if u.Error != nil {
+	//直接读 store 那份：生命周期中途（尚未 syncErrOut）它也比镜像新鲜
+	if u.store == nil {
 		return u.Error
 	}
-	return nil
+	return u.store.WriteAble()
 }
 
 func (u *Updater) Values(name any) *Values {

@@ -152,7 +152,7 @@ func (this *Virtual) Sub(k any, v any) {
 		return
 	}
 	if d < value && !this.Store.CreditAllowed {
-		this.Store.setError(ErrNotEnough(key, value, d))
+		this.Store.Error = ErrNotEnough(key, value, d)
 		return
 	}
 	op := this.newOperator(operator.TypesSub, key, value, map[string]any{key: d - value})

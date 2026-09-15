@@ -47,7 +47,7 @@ func (this *Values) Val(k any) (r int64) {
 }
 
 func (this *Values) Data() (err error) {
-	if err = this.Store.getError(); err != nil {
+	if err = this.Store.Error; err != nil {
 		return
 	}
 	if len(this.Keys()) == 0 {
@@ -111,12 +111,12 @@ func (this *Values) Loading() error {
 		this.dataset = dataset.NewValues()
 	}
 	if this.Statement.Loading() {
-		this.Store.setError(this.model.Getter(this.Store, this.dataset, nil))
-		if err := this.Store.getError(); err == nil {
+		this.Store.Error = this.model.Getter(this.Store, this.dataset, nil)
+		if err := this.Store.Error; err == nil {
 			this.SetLoaded(true)
 		}
 	}
-	return this.Store.getError()
+	return this.Store.Error
 }
 
 func (this *Values) Release() {

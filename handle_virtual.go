@@ -118,7 +118,7 @@ func (this *Virtual) Reset() {
 	this.cache = nil //防御:正常由 release 清,这里再兜一次,免得异常路径把中间态带进新请求
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.updater, this.updater.Last()) {
-			this.updater.Error = this.Reload()
+			this.updater.setError(this.Reload())
 		}
 	}
 }
@@ -198,7 +198,7 @@ func (this *Virtual) Sub(k any, v any) {
 		return
 	}
 	if d < value && !this.updater.CreditAllowed {
-		this.updater.Error = ErrItemNotEnough(iid, value, d)
+		this.updater.setError(ErrItemNotEnough(iid, value, d))
 		return
 	}
 	op := this.newOperator(operator.TypesSub, iid, key, value, map[string]any{key: d - value})

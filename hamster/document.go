@@ -62,7 +62,7 @@ func (this *Document) Val(k any) (r int64) {
 }
 
 func (this *Document) Data() (err error) {
-	if err = this.Store.getError(); err != nil {
+	if err = this.Store.Error; err != nil {
 		return
 	}
 	if len(this.keys) == 0 {
@@ -125,14 +125,14 @@ func (this *Document) Loading() (err error) {
 		this.dataset = dataset.NewDoc(nil)
 	}
 	if this.Statement.Loading() {
-		this.Store.setError(this.model.Getter(this.Store, this.dataset, nil))
-		if err = this.Store.getError(); err == nil {
+		this.Store.Error = this.model.Getter(this.Store, this.dataset, nil)
+		if err = this.Store.Error; err == nil {
 			this.loader = true
 		}
 	} else if this.dataset.IsNil() {
 		this.dataset.Reset(this.model.New(this.Store))
 	}
-	return this.Store.getError()
+	return this.Store.Error
 }
 
 func (this *Document) Release() {
@@ -220,12 +220,12 @@ func (this *Document) Schema() *schema.Schema {
 		return this.schema
 	}
 	if this.dataset == nil {
-		this.Store.setError(fmt.Errorf("document dataset not init,model:%s", this.name))
+		this.Store.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
 		return nil
 	}
 	sch, err := this.dataset.Schema()
 	if err != nil {
-		this.Store.setError(err)
+		this.Store.Error = err
 		return nil
 	}
 	this.schema = sch
@@ -239,7 +239,7 @@ func (this *Document) sch() (*schema.Schema, error) {
 	if sch := this.Schema(); sch != nil {
 		return sch, nil
 	}
-	if err := this.Store.getError(); err != nil {
+	if err := this.Store.Error; err != nil {
 		return nil, err
 	}
 	return nil, fmt.Errorf("document schema not ready,model:%s", this.name)
@@ -295,7 +295,7 @@ func (this *Document) val(k string) (r int64, ok bool) {
 func (this *Document) fieldOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
 	field, err := this.Field(k)
 	if err != nil {
-		this.Store.setError(err)
+		this.Store.Error = err
 		return nil
 	}
 	return this.operator(t, field, v, r)
