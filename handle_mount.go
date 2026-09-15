@@ -74,28 +74,32 @@ func (u *Updater) Mount(model MountModel, keys ...string) (*Mount, error) {
 	}
 	r := u.mountOf(c)
 	// 下发客户端与否由模型有没有声明 ModelIType 决定，没有开关：
-	// IType(0) 非 0 才给 operator 盖分发键并接进变更流水（通用更新通道），
-	// 否则保持核心版默认的 Discard。幂等：重复 Mount 走到这里是重复盖同一个键。
+	// IType(0) 非 0 才在提交时给 operator 盖分发键并接进变更流水（通用更新通道），
+	// 否则保持核心版默认的 Discard。盖键在 Receiver 里做（核心 ops 恒 IType=0）。
 	// ⚠️ 判据是"IType(0) 返回非 0"，不是"实现了 ModelIType" —— 项目侧模型基类往往自带
 	// IType(iid) 转发全局配置，对 iid=0 通常返回 0；想让挂载表走通用通道必须显式覆盖。
 	if m, ok := model.(ModelIType); ok {
 		if it := m.IType(0); it != 0 {
-			c.SetIType(it)
-			c.Receiver(func(_ *hamster.Store, ops []*operator.Operator) { u.Dirty(ops...) })
+			c.Receiver(func(_ *hamster.Store, ops []*operator.Operator) {
+				for _, o := range ops {
+					o.IType = it
+				}
+				u.Dirty(ops...)
+			})
 		}
 	}
 	return r, err //查库失败时句柄已挂上且可用，连句柄一起返回（挂载与取数是两码事）
 }
 
 // mountOf 取挂载包装句柄：**同一底层集合恒返回同一 *Mount 指针**（幂等语义的组成部分，
-// 业务拿它做句柄比较/长命缓存）。包装对象存在 hamster.Collection 的扩展槽里。
+// 业务拿它做句柄比较/长命缓存）。包装缓存放在根包（核心保持干净）。
 func (u *Updater) mountOf(c *hamster.Collection) *Mount {
-	if m, ok := c.Ext().(*Mount); ok {
-		return m
+	if v, ok := u.mountViews.Load(c); ok {
+		return v.(*Mount)
 	}
 	m := &Mount{Collection: c}
-	c.SetExt(m)
-	return m
+	v, _ := u.mountViews.LoadOrStore(c, m)
+	return v.(*Mount)
 }
 
 // Mounted 取回已挂载的临时集合，未挂载返回 nil。它**只取不挂**，也不取数。

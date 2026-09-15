@@ -18,11 +18,6 @@ func init() {
 }
 
 func (this *Values) Parse(op *operator.Operator) (err error) {
-	if this.parseDec != nil {
-		if handled, err := this.parseDec.DecorateParse(this, this.statement.Store, op); err != nil || handled {
-			return err
-		}
-	}
 	if f, ok := valuesParseHandle[op.OType]; ok {
 		return f(this, op)
 	}

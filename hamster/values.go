@@ -24,9 +24,6 @@ type Values struct {
 	name    string
 	model   ValuesModel
 	dataset *dataset.Values
-	// ---- 可选注入（扩展层道具语义入口）----
-	decorator OperatorDecorator //operator 构造后装饰（IType 填充/静默丢弃）
-	parseDec  ParseDecorator    //parse 分发前钩子（溢出检查）
 }
 
 func newValues(s *Store, m *Model) Handle {
@@ -36,8 +33,6 @@ func newValues(s *Store, m *Model) Handle {
 	r.statement = *NewStatement(s, m.ram, r.Has)
 	//核心版产出的 operator IType 恒 0，默认不进通用更新通道（与 Collection 同口径）
 	r.statement.Receiver(DiscardReceiver)
-	r.decorator, _ = m.model.(OperatorDecorator)
-	r.parseDec, _ = m.model.(ParseDecorator)
 	return r
 }
 
@@ -222,10 +217,6 @@ func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Opera
 	op := operator.New(t, "", v, nil)
 	op.IID = k //键复用协议的 IID 字段；IType 恒 0（无主数据，默认不进下发通道）
 	this.statement.Select(k)
-	if this.decorator != nil && !this.decorator.DecorateOperator(this.statement.Store, op) {
-		op.Release() //含道具侧"IType 查不到静默丢弃"语义，错误由装饰方打脏
-		return nil
-	}
 	this.statement.Insert(op)
 	return op
 }

@@ -28,9 +28,6 @@ type Virtual struct {
 	name  string //model database name
 	model VirtualModel
 	cache map[string]int64 //本次请求内已处理过的键值，Val 优先读它
-	// ---- 可选注入（扩展层道具语义入口）----
-	keyer     Keyer             //非 string key → 委托键（如 iid→字段）
-	decorator OperatorDecorator //operator 构造后装饰（IType 填充）
 }
 
 func newVirtual(s *Store, m *Model) Handle {
@@ -38,8 +35,6 @@ func newVirtual(s *Store, m *Model) Handle {
 	r.name = m.name
 	r.model = m.model.(VirtualModel)
 	r.statement = *NewStatement(s, m.ram, r.Has)
-	r.keyer, _ = m.model.(Keyer)
-	r.decorator, _ = m.model.(OperatorDecorator)
 	return r
 }
 
@@ -127,10 +122,6 @@ func (this *Virtual) key(i any) (key string, ok bool) {
 	if key, ok = i.(string); ok {
 		return
 	}
-	if this.keyer != nil {
-		key, err := this.keyer.Key(this.statement.Store, i)
-		return key, err == nil && key != ""
-	}
 	return "", false
 }
 
@@ -206,9 +197,5 @@ func (this *Virtual) newOperator(t operator.Types, key string, v int64, r any) *
 		return nil
 	}
 	op := operator.New(t, key, v, r)
-	if this.decorator != nil && !this.decorator.DecorateOperator(this.statement.Store, op) {
-		op.Release()
-		return nil
-	}
 	return op
 }

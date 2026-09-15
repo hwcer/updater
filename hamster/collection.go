@@ -38,19 +38,7 @@ type Collection struct {
 	remove  []string //待从内存移除的 _id，submit 时统一处理（落库之后再摘，别丢掉未保存的改动）
 	dataset *dataset.Collection
 	unmount bool //已标记卸载，Release 阶段才真正摘除（仅挂载形态使用）
-	ext     any  //扩展层挂载的包装对象槽（hamster 不解读），保证包装句柄指针同一
-	// itype 每条 operator 的客户端分发键。恒 0 = 无主数据（默认 Discard 接收器，不进通用更新）；
-	// 非 0 时新产出的 operator 携带该键（语义同拆分前 Mount.itype，见 HAMSTER_PLAN.md 第八节）。
-	itype int32
-	// ---- 可选注入（扩展层道具语义入口）----
-	keyer      Keyer             //非 string id → OID（如 iid→oid）
-	decorator  OperatorDecorator //operator 构造后装饰（ParseId/IType/预读监听/拦截）
-	parseDec   ParseDecorator    //parse 分发前钩子（溢出/装备生成分支）
 }
-
-// SetIType 声明客户端分发键（显式opt-in；0 恢复无主数据）。
-// 只管给 operator 盖键；要不要进通用更新通道由调用方自行装接收器。
-func (c *Collection) SetIType(n int32) { c.itype = n }
 
 // Receiver 装载变更接收器（默认 DiscardReceiver）；nil 恢复默认。
 // 需要变更记录的业务在此接管，或用 Operators()/Submit() 返回值自组协议。
@@ -62,12 +50,6 @@ func (c *Collection) Receiver(f func(*Store, []*operator.Operator)) {
 	c.statement.Receiver(f)
 }
 
-// Ext 取扩展层挂载的包装对象
-func (c *Collection) Ext() any { return c.ext }
-
-// SetExt 存扩展层挂载的包装对象
-func (c *Collection) SetExt(v any) { c.ext = v }
-
 func newCollection(s *Store, m *Model) Handle {
 	r := &Collection{}
 	r.name = m.name
@@ -76,9 +58,6 @@ func newCollection(s *Store, m *Model) Handle {
 	//核心版产出的 operator IType 恒 0，客户端认不出无主数据，默认别进通用更新通道。
 	//要变更记录的业务装自己的接收器，或用 Operators()/Submit() 返回值自组协议。
 	r.statement.Receiver(DiscardReceiver)
-	r.keyer, _ = m.model.(Keyer)
-	r.decorator, _ = m.model.(OperatorDecorator)
-	r.parseDec, _ = m.model.(ParseDecorator)
 	return r
 }
 
@@ -86,30 +65,32 @@ func newCollection(s *Store, m *Model) Handle {
 
 // operator 构造并入队一条 Operator。
 //
-// 🔴 与扩展层 Collection.operator 的分界在这里：那边对 string 型 id 会调 Config.ParseId
-// 解析 iid —— 本集合的 _id 是业务自己的主键（uid-code、平台订单号…），不是项目的 OID 格式；
-// IID 恒 0，IType 恒 0。
-// oidOf key→OID 解析：string 直通；注入 Keyer 后非 string（如 iid）经它换算。
-func (this *Collection) oidOf(k any) (oid string, err error) {
-	if s, ok := k.(string); ok {
-		return s, nil
+// key→OID 解析：string 主键直通；数值键（IID）经模型的 OIDMaker 换算并随 op 携带
+// —— 不可叠加形态返回空 OID，交由 parseAdd 的按件生成分支处理。
+func (this *Collection) oidOf(k any) (oid string, iid int32, err error) {
+	switch v := k.(type) {
+	case string:
+		return v, 0, nil
+	case int32:
+		if om, ok := this.model.(OIDMaker); ok {
+			oid, err = om.OID(this.statement.Store, v)
+			return oid, v, err
+		}
+		return "", v, nil
 	}
-	if this.keyer != nil {
-		return this.keyer.Key(this.statement.Store, k)
-	}
-	return "", fmt.Errorf("collection key must be string:%+v", k)
+	return "", 0, fmt.Errorf("collection key must be string or int32:%+v", k)
 }
 
 func (this *Collection) operator(t operator.Types, id any, field string, v int64, r any) *operator.Operator {
 	if err := this.statement.Store.WriteAble(); err != nil {
 		return nil
 	}
-	oid, err := this.oidOf(id)
+	oid, iid, err := this.oidOf(id)
 	if err != nil {
 		this.statement.Store.Error = err
 		return nil
 	}
-	if oid == "" {
+	if oid == "" && iid == 0 {
 		this.statement.Store.Error = ErrObjectIdEmpty(t.ToString())
 		return nil
 	}
@@ -118,16 +99,7 @@ func (this *Collection) operator(t operator.Types, id any, field string, v int64
 	}
 	op := operator.New(t, field, v, r)
 	op.OID = oid
-	op.IType = this.itype //客户端分发键：0 即无主数据，对面按 IType 分发认不出
-	if this.decorator != nil && !this.decorator.DecorateOperator(this.statement.Store, op) {
-		op.Release() //装饰方拦截（错误由装饰方打脏）
-		return nil
-	}
-	if op.OID != "" && this.decorator != nil {
-		//装饰过的句柄（道具语义）写操作自动预取该文档 —— 与拆分前 mayChange 的
-		//statement.Select 同口径；未装饰（挂载/核心直用）保持显式 Select。
-		this.statement.Select(op.OID)
-	}
+	op.IID = iid
 	this.format(op)
 	if this.statement.Store.Error != nil {
 		op.Release()
@@ -246,7 +218,7 @@ func (this *Collection) Field(field ...string) string {
 
 // Document 取文档，不存在返回 nil。
 func (this *Collection) Document(id any) *dataset.Document {
-	oid, err := this.oidOf(id)
+	oid, _, err := this.oidOf(id)
 	if err != nil {
 		return nil
 	}
@@ -254,7 +226,7 @@ func (this *Collection) Document(id any) *dataset.Document {
 }
 
 func (this *Collection) Has(id any) bool {
-	oid, err := this.oidOf(id)
+	oid, _, err := this.oidOf(id)
 	return err == nil && this.dataset.Has(oid)
 }
 
@@ -366,20 +338,14 @@ func (this *Collection) Data() (err error) {
 }
 
 // Select 标记待拉取的 _id，随后由 Store.Data() 统一查库。
-// 已在内存中的 key 直接跳过；注入 Keyer 后非 string key（如 iid）先经它换算。
+// 已在内存中的 key 直接跳过。非 string key（如 iid→OID）由封装层先换算。
 func (this *Collection) Select(keys ...any) {
 	for _, k := range keys {
 		if id, ok := k.(string); ok {
 			this.statement.Select(id)
-			continue
+		} else {
+			logger.Alert("hamster.Collection(%v).Select key 必须是文档 _id(string):%v", this.name, k)
 		}
-		if this.keyer != nil {
-			if id, err := this.keyer.Key(this.statement.Store, k); err == nil && id != "" {
-				this.statement.Select(id)
-				continue
-			}
-		}
-		logger.Alert("hamster.Collection(%v).Select key 必须是文档 _id(string):%v", this.name, k)
 	}
 }
 
@@ -490,7 +456,7 @@ func (this *Collection) exist(k any) bool {
 
 // document Get/Val 用：key 经 oidOf 解析，非字符串且无 Keyer 记一条告警后当作查不到。
 func (this *Collection) document(key any) *dataset.Document {
-	id, err := this.oidOf(key)
+	id, _, err := this.oidOf(key)
 	if err != nil {
 		logger.Alert("hamster.Collection(%v) %v", this.name, err)
 		return nil

@@ -19,11 +19,6 @@ func init() {
 }
 
 func (this *Document) Parse(op *operator.Operator) (err error) {
-	if this.parseDec != nil {
-		if handled, err := this.parseDec.DecorateParse(this, this.statement.Store, op); err != nil || handled {
-			return err
-		}
-	}
 	if f, ok := documentParseHandle[op.OType]; ok {
 		return f(this, op)
 	}

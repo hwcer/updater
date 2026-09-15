@@ -105,8 +105,8 @@ func newVirtualUpdater(t *testing.T) (*Updater, *hamster.Virtual, *virtualModel)
 func TestVirtualAddSameKeyTwice(t *testing.T) {
 	_, v, m := newVirtualUpdater(t)
 
-	v.Add(int32(12001), 6)
-	v.Add(int32(12001), 6)
+	v.Add(m.field(12001), 6)
+	v.Add(m.field(12001), 6)
 	m.flush()
 
 	if got := m.store["goods.12001"]; got != 12 {
@@ -120,12 +120,12 @@ func TestVirtualSubSameKeyTwice(t *testing.T) {
 	u, v, m := newVirtualUpdater(t)
 	m.store["goods.12001"] = 10
 
-	v.Sub(int32(12001), 6)
+	v.Sub(m.field(12001), 6)
 	if u.Error != nil {
 		t.Fatalf("第一次扣 6 应当成功:%v", u.Error)
 	}
 	//余额只剩 4,再扣 6 必须被拦下
-	v.Sub(int32(12001), 6)
+	v.Sub(m.field(12001), 6)
 	if u.Error == nil {
 		t.Fatal("余额不足时第二次 Sub 应当报错 —— 校验读到的是旧余额,能扣成负数")
 	}
@@ -140,8 +140,8 @@ func TestVirtualSetThenAdd(t *testing.T) {
 	_, v, m := newVirtualUpdater(t)
 	m.store["goods.12001"] = 100
 
-	v.Set(int32(12001), 5)
-	v.Add(int32(12001), 3)
+	v.Set(m.field(12001), 5)
+	v.Add(m.field(12001), 3)
 	m.flush()
 
 	if got := m.store["goods.12001"]; got != 8 {
@@ -153,14 +153,14 @@ func TestVirtualSetThenAdd(t *testing.T) {
 func TestVirtualCacheClearedOnRelease(t *testing.T) {
 	u, v, m := newVirtualUpdater(t)
 
-	v.Add(int32(12001), 6)
-	if got := v.Val(int32(12001)); got != 6 {
+	v.Add(m.field(12001), 6)
+	if got := v.Val(m.field(12001)); got != 6 {
 		t.Fatalf("同请求内 Val 应读到中间态 6,实际 %d", got)
 	}
 	m.flush()
 	m.store["goods.12001"] = 99 //把模型值改成与缓存不同，才能区分"读了缓存"还是"读了模型"
 	u.Release()
-	if got := v.Val(int32(12001)); got != 99 {
+	if got := v.Val(m.field(12001)); got != 99 {
 		t.Fatalf("Release 之后应回落到模型值 99,实际 %d（中间态没清）", got)
 	}
 }

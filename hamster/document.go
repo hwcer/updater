@@ -33,10 +33,6 @@ type Document struct {
 	schema  *schema.Schema
 	model   DocumentModel
 	dataset *dataset.Document
-	// ---- 可选注入（扩展层道具语义入口，核心自身不实现）----
-	keyer      Keyer              //非 string key → 字段名（如 iid→字段）
-	decorator  OperatorDecorator  //operator 构造后装饰（填 IType/预读监听/拦截）
-	parseDec   ParseDecorator     //parse 分发前钩子（溢出检查等）
 }
 
 func newDocument(s *Store, m *Model) Handle {
@@ -44,9 +40,6 @@ func newDocument(s *Store, m *Model) Handle {
 	r.name = m.name
 	r.model = m.model.(DocumentModel)
 	r.statement = *NewStatement(s, m.ram, r.Has)
-	r.keyer, _ = m.model.(Keyer)
-	r.decorator, _ = m.model.(OperatorDecorator)
-	r.parseDec, _ = m.model.(ParseDecorator)
 	return r
 }
 
@@ -273,16 +266,17 @@ func (this *Document) Name(k string) (r string, err error) {
 //
 // 🔴 校验必不可少：不校验则字段名写错(nosuchfield.1)会一路放行到 dataset.Document.Set，
 // 那里 `if !doc.Has(k) { return }` 直接静默返回，调用方拿不到错误、还以为写成功了。
+// Field 字段名定位与校验（json 名规范化，含多级路径 a.b.c）。
+// 非 string key（如 iid→字段）由封装层先换算，核心只收字段名。
+//
+// 🔴 校验必不可少：不校验则字段名写错(nosuchfield.1)会一路放行到 dataset.Document.Set，
+// 那里 `if !doc.Has(k) { return }` 直接静默返回，调用方拿不到错误、还以为写成功了。
 func (this *Document) Field(k any) (key string, err error) {
-	if v, ok := k.(string); ok {
-		key = v
-	} else if this.keyer != nil {
-		if key, err = this.keyer.Key(this.statement.Store, k); err != nil {
-			return "", err
-		}
-	} else {
+	v, ok := k.(string)
+	if !ok {
 		return "", fmt.Errorf("document field must be string:%+v", k)
 	}
+	key = v
 	sch, err := this.sch()
 	if err != nil {
 		return "", err
@@ -330,10 +324,6 @@ func (this *Document) operator(t operator.Types, k string, v int64, r any) *oper
 	}
 	op := operator.New(t, k, v, r)
 	this.statement.Select(op.Field)
-	if this.decorator != nil && !this.decorator.DecorateOperator(this.statement.Store, op) {
-		op.Release() //装饰方决定丢弃（含静默丢弃场景），错误由装饰方打脏
-		return nil
-	}
 	this.statement.Insert(op)
 	return op
 }

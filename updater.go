@@ -2,6 +2,7 @@ package updater
 
 import (
 	"reflect"
+	"sync"
 
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
@@ -23,6 +24,8 @@ type Updater struct {
 
 	Events     Events      //生命周期事件（扩展层签名 Listener(*Updater)，遮蔽提升的同名字段）
 	Middleware Middlewares //中间件（同上）
+
+	mountViews sync.Map //挂载包装缓存：*hamster.Collection → *Mount（保证句柄指针同一）
 }
 
 // Entity 数据属主（取代 Player/Uid 用词 —— 核心版不绑玩家域）。
@@ -90,8 +93,9 @@ func (u *Updater) Sub(iid int32, num any) {
 	u.itemChange(operator.TypesSub, iid, num)
 }
 
-// itemChange 顶层道具增减：按 iid 路由到核心句柄，按句柄形态调用其字段级 Add/Sub
-//（数量语义/溢出检查由注册期注入的钩子在该句柄的 verify 阶段完成）。
+// itemChange 顶层道具增减：路由到核心句柄，把 IID 换算成句柄的 key 形态
+//（Values 数值键直用；Document/Virtual 换算字段名；Collection 直传数值键，
+// 由核心经模型的 OIDMaker/Stacker 完成 OID 换算、按件生成与溢出控制）。
 func (u *Updater) itemChange(t operator.Types, iid int32, num any) {
 	w := u.handleWithKey(iid)
 	if w == nil {
@@ -106,25 +110,42 @@ func (u *Updater) itemChange(t operator.Types, iid int32, num any) {
 			h.Sub(iid, num)
 		}
 	case *hamster.Document:
-		if add {
-			h.Add(iid, num)
-		} else {
-			h.Sub(iid, num)
+		//IID → 字段名（模型 DocumentModel.Field）
+		mod, _ := modelsDict[u.itemModelKey(iid)]
+		if dm, ok := mod.model.(DocumentModel); ok {
+			if field, err := dm.Field(u, iid); err == nil {
+				if add {
+					h.Add(field, num)
+				} else {
+					h.Sub(field, num)
+				}
+			}
 		}
 	case *hamster.Collection:
-		//集合的道具增减走模型声明的数值字段
+		//数值键直传：核心经模型的 Stacker/OIDMaker 完成换算、按件生成与溢出控制
 		if add {
 			h.Add(iid, h.Field(), num)
 		} else {
 			h.Sub(iid, h.Field(), num)
 		}
 	case *hamster.Virtual:
-		if add {
-			h.Add(iid, num)
-		} else {
-			h.Sub(iid, num)
+		//IID → 委托键（模型 VirtualModel.Field）
+		mod, _ := modelsDict[u.itemModelKey(iid)]
+		if vm, ok := mod.model.(VirtualModel); ok {
+			if field, ok := vm.Field(iid); ok {
+				if add {
+					h.Add(field, num)
+				} else {
+					h.Sub(field, num)
+				}
+			}
 		}
 	}
+}
+
+// itemModelKey 查 iid 所属模型的注册名
+func (u *Updater) itemModelKey(iid int32) int32 {
+	return Config.IType(iid)
 }
 
 // Get 通过 iid 获取原始数据，返回类型取决于 Handle 类型

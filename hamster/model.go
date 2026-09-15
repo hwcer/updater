@@ -16,28 +16,35 @@ type TableOrder interface {
 	TableOrder() int32
 }
 
-// ---- 可选注入接口（扩展层的道具语义从这里进入核心句柄；核心自身不实现任何一个）----
+// ---- 可选模型接口（完整数据流的可选能力，核心句柄原生消费）----
 //
-// 它们由模型/适配器在注册时以"可选接口"形式提供，句柄构造时做一次类型断言捕获。
-// 核心代码只认这几个中性名字，任何 iid/IType/溢出词汇出现在核心即设计漂移。
+// 全部按"有没有实现"启用；核心分发表/溢出控制直接调用，不经任何注入机制。
 
-// Keyer 可选接口：key 解析。默认实现是"string 直通"；
-// 注入后非 string 的 key（如道具 iid）经它换算成字段名/OID。
-type Keyer interface {
-	Key(s *Store, k any) (string, error)
+// Limiter 可选接口：数值上限（0 = 不限）。key 形态随句柄：
+// Document 为字段名、Values 为数值键、Collection 为分组键（文档 Fields.IID）。
+type Limiter interface {
+	Limit(s *Store, key any) int64
 }
 
-// OperatorDecorator 可选接口：operator 构造后的装饰（填 IType、换算 OID、预读监听、
-// 校验拦截等）。返回 false 表示**丢弃该操作**（含静默丢弃场景），装饰方自行负责打脏错误。
-type OperatorDecorator interface {
-	DecorateOperator(s *Store, op *operator.Operator) (keep bool)
+// Overflower 可选接口：超限部分的处理。返回的键值对原样记进 op 附件
+// （op.GetResolve()），发放/消费由上层负责；返回 nil 表示纯截断（另产 TypesOverflow 通知）。
+type Overflower interface {
+	Overflow(s *Store, key any, n int64) (map[int32]int64, error)
 }
 
-// ParseDecorator 可选接口：parse 分发前的钩子（溢出检查/装备生成分支等）。
-// h 是本操作所属句柄（钩子可取数据/写内存）。handled=true 表示钩子已自行处理该操作，
-// 核心分发表跳过；handled=false 且 err==nil 表示仅调整（如溢出截断 op.Value），继续核心分发。
-type ParseDecorator interface {
-	DecorateParse(h Handle, s *Store, op *operator.Operator) (handled bool, err error)
+// DocFactory 可选接口：集合缺失文档时生成新对象（Upsert/新增语义）。
+type DocFactory interface {
+	NewDoc(s *Store, op *operator.Operator) (any, error)
+}
+
+// Stacker 可选接口：同 key 是否单文档。false = 多文档计数（新增按件生成）。
+type Stacker interface {
+	Stacked(s *Store, key any) bool
+}
+
+// OIDMaker 可选接口：数值分组键 → 文档 OID（仅可叠加形态需要）。
+type OIDMaker interface {
+	OID(s *Store, iid int32) (string, error)
 }
 
 // ModelReset 可选接口：返回 true 时重新调用 model.Getter（跨天/跨周重置）。
