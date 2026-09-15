@@ -461,6 +461,26 @@ func (s *Store) Collection(name string) *Collection {
 	return r
 }
 
+// Values 取数值 KV 句柄，未注册返回 nil
+func (s *Store) Values(name string) *Values {
+	i := s.handles[name]
+	if i == nil {
+		return nil
+	}
+	r, _ := i.(*Values)
+	return r
+}
+
+// Virtual 取委托视图句柄，未注册返回 nil
+func (s *Store) Virtual(name string) *Virtual {
+	i := s.handles[name]
+	if i == nil {
+		return nil
+	}
+	r, _ := i.(*Virtual)
+	return r
+}
+
 // Mount 挂载/取回一个临时数据集合，keys 非空时顺带把这几条**当场查出来**。
 //
 // 幂等：同模型重复 Mount 直接返回已挂句柄。带 keys 时等价于 Select(keys...) + Data()。

@@ -180,6 +180,8 @@ updater/
 │   ├── model.go        注册表（工厂函数 + TableOrder）
 │   ├── document.go     核心版 Document（主档承载者）
 │   ├── collection.go   核心版 Collection（Mount 泛化 + 字段级 Add/Sub）
+│   ├── values.go       核心版 Values（纯数值 KV）
+│   ├── virtual.go      核心版 Virtual（纯 string 键委托视图）
 │   ├── bulkwrite.go    CollectionBulkWrite 适配器
 │   └── errors.go / events.go / cache.go / middleware.go / define.go
 ├── dataset/

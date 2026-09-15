@@ -1,6 +1,6 @@
 # 核心版拆分（hamster 子包）设计方案
 
-> 分支 `hamster` · 第一稿 · 本文取代此前所有讨论稿
+> 分支 `hamster` · 第二稿（二稿修订：Values/Virtual 以纯数据结构形态下沉核心，见「明确不做」末条的修订记录）· 本文取代此前所有讨论稿
 
 **一句话定位**：本仓库拆成两层 —— **hamster**（GET/SET/DEL + 脏标记 + 批量落库的文档/集合存储引擎，
 颊囊预载、囤货入仓：数据预载进内存、攒一批原子入库、脏标记记得囤了什么）与 **updater**（其上的玩家道具扩展层，
@@ -385,6 +385,11 @@ Mount 返回 `*hamster.Collection`、Register 正式拆分、hamster 一等公�
 - **hamster 不做 Values / Virtual / 数值 KV**：Collection + 字段级 Add/Sub 已覆盖公会资金/成员贡献；
   双 KV 并存的维护成本大于未发生的需求，需求真出现时单独立项（含 dataset.Values 键型问题的整体评估，
   勿与本次捆绑 —— 同 HANDLER_MOUNT_PLAN 对泛型化的处理口径）;
+  ✅ **二稿修订（推翻本条）**：Values/Virtual 已以**纯数据结构**形态下沉核心
+  （hamster.Values = int32→int64 纯 KV，去掉扩展层"IType 查不到静默丢弃"路径；
+  hamster.Virtual = 纯 string 键委托视图 + 请求内中间态缓存，iid→Field 映射留在扩展层）。
+  下沉的边界依旧：**道具语义一律不过核心** —— 无 IType 盖键、无溢出、无 iid 路由。
+  RegisterValues/RegisterVirtual 入口与 Document/Collection 同款。
 - **不动 operator 协议**：字段、json tag、枚举数值一概不改；
 - **不动 dataset 包**：原样共享，dataset.Values 的 int32 键耦合留在原地，不为此改名/泛型化；
 - **不做顶层 `Store.Set(name, id, field, v)` 语法糖**：路由糖是扩展层身份的一部分（第六节④）；

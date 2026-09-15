@@ -35,8 +35,16 @@ type testBulk struct {
 	submits int
 }
 
-func (b *testBulk) Submit() error                      { b.submits++; return nil }
-func (b *testBulk) Update(_ any, _ any, where ...any)  { b.updates = append(b.updates, where[0].(string)) }
+func (b *testBulk) Submit() error { b.submits++; return nil }
+func (b *testBulk) Update(_ any, _ any, where ...any) {
+	if len(where) > 0 {
+		if s, ok := where[0].(string); ok {
+			b.updates = append(b.updates, s)
+			return
+		}
+	}
+	b.updates = append(b.updates, "") //Values 整表一行的落库没有 where 子句
+}
 func (b *testBulk) Insert(_ any, _ ...any)             { b.inserts++ }
 func (b *testBulk) Delete(_ any, _ ...any)             { b.deletes++ }
 func (b *testBulk) String() string                     { return "" }
@@ -367,3 +375,179 @@ type namedCollModel struct {
 }
 
 func (m *namedCollModel) TableName() string { return m.name }
+
+// ---------------- Values（纯数值 KV）与 Virtual（纯委托视图） ----------------
+
+// testValuesModel 数值 KV 模型：库在内存 map，记录 Getter/Setter 次数
+type testValuesModel struct {
+	data   map[int32]int64
+	getter int
+	setter int
+}
+
+func (m *testValuesModel) TableName() string { return "hamster_test_values" }
+func (m *testValuesModel) Getter(_ *hamster.Store, data *dataset.Values, keys []int32) error {
+	m.getter++
+	for _, k := range keys {
+		if v, ok := m.data[k]; ok {
+			data.Set(k, v)
+		}
+	}
+	return nil
+}
+func (m *testValuesModel) Setter(_ *hamster.Store, bw hamster.BulkWrite, dirty dataset.Data, _ []int32) error {
+	m.setter++
+	bw.Update(m, dirty)
+	return nil
+}
+
+// testVirtualModel 委托视图模型：刻意模拟真实委托方 —— Update 记 pending，flush 才生效
+type testVirtualModel struct {
+	store   map[string]int64
+	pending map[string]int64
+}
+
+func newTestVirtualModel() *testVirtualModel {
+	return &testVirtualModel{store: map[string]int64{}, pending: map[string]int64{}}
+}
+
+func (m *testVirtualModel) TableName() string { return "hamster_test_virtual" }
+func (m *testVirtualModel) Has(_ *hamster.Store, _ any) bool  { return true }
+func (m *testVirtualModel) Get(_ *hamster.Store, k any) any   { return m.store[k.(string)] }
+func (m *testVirtualModel) Select(_ *hamster.Store, _ ...any) {}
+func (m *testVirtualModel) Reload(_ *hamster.Store) error     { return nil }
+func (m *testVirtualModel) Update(_ *hamster.Store, op *operator.Operator) {
+	for k, v := range op.Result.(map[string]any) {
+		m.pending[k] = dataset.ParseInt64(v) //🔴 不当场写 store，与真实委托方一致
+	}
+}
+func (m *testVirtualModel) flush() {
+	for k, v := range m.pending {
+		m.store[k] = v
+	}
+	m.pending = map[string]int64{}
+}
+
+var (
+	sharedValuesModel  = &testValuesModel{data: map[int32]int64{}}
+	sharedVirtualModel = newTestVirtualModel()
+	sharedUVOnce       sync.Once
+)
+
+// newValuesStore 建好带 Values + Virtual 的 Store（模型注册一次、状态每用例重置）
+func newValuesStore(t *testing.T) (*hamster.Store, *testValuesModel, *testVirtualModel, *testBulk) {
+	t.Helper()
+	bw := &testBulk{}
+	old := hamster.Config.BulkWrite
+	hamster.Config.BulkWrite = func(*hamster.Store) hamster.BulkWrite { return bw }
+	t.Cleanup(func() { hamster.Config.BulkWrite = old })
+
+	valuesModel := sharedValuesModel
+	valuesModel.data = map[int32]int64{9001: 100}
+	valuesModel.getter, valuesModel.setter = 0, 0
+	virtualModel := sharedVirtualModel
+	virtualModel.store = map[string]int64{}
+	virtualModel.pending = map[string]int64{}
+
+	sharedUVOnce.Do(func() {
+		if err := hamster.RegisterValues("hamster_test_values", hamster.RAMTypeMaybe, valuesModel); err != nil {
+			t.Fatalf("RegisterValues:%v", err)
+		}
+		if err := hamster.RegisterVirtual("hamster_test_virtual", hamster.RAMTypeAlways, virtualModel); err != nil {
+			t.Fatalf("RegisterVirtual:%v", err)
+		}
+	})
+
+	s := hamster.New(&testEntity{id: "kv_1"})
+	if err := s.Loading(); err != nil {
+		t.Fatalf("Loading:%v", err)
+	}
+	s.Reset(time.Now())
+	return s, valuesModel, virtualModel, bw
+}
+
+// Values 纯数值 KV：Add/Sub/Set/Unset 往返 + 落库；**没有 IType 静默丢弃路径** ——
+// 未注册任何 IType 的键照样能加减（扩展层那边 IType 查不到会静默丢操作）。
+func TestValuesPureKV(t *testing.T) {
+	s, vm, _, bw := newValuesStore(t)
+	vals := s.Values("hamster_test_values")
+	if vals == nil {
+		t.Fatal("Values 句柄取不到")
+	}
+	vals.Select(9001)
+	if err := s.Data(); err != nil {
+		t.Fatalf("Data:%v", err)
+	}
+	if got := vals.Val(9001); got != 100 {
+		t.Fatalf("Select→Data→Val 应回读 100,实际 %d", got)
+	}
+
+	vals.Add(9001, 10)
+	vals.Sub(9001, 4)
+	vals.Set(9002, 7)
+	if err := s.Verify(); err != nil {
+		t.Fatalf("Verify:%v", err)
+	}
+	if got := vals.Val(9001); got != 106 {
+		t.Fatalf("Add(10)+Sub(4) 应得 106,实际 %d", got)
+	}
+	//IType 恒 0
+	for _, op := range vals.Operators() {
+		if op.IType != 0 {
+			t.Fatalf("核心版 Values operator 的 IType 应恒 0,实际 %d", op.IType)
+		}
+	}
+	if _, err := s.Submit(); err != nil {
+		t.Fatalf("Submit:%v", err)
+	}
+	if vm.setter == 0 || len(bw.updates) == 0 {
+		t.Fatal("Submit 应经 model.Setter 落库")
+	}
+
+	vals.Unset(9002)
+	_ = s.Verify()
+	if vals.Has(9002) {
+		t.Fatal("Unset 之后不应再有该键")
+	}
+}
+
+// Virtual 纯委托视图：🔴 同一请求内对同一键连加两次必须累加 ——
+// operator 带绝对值，委托方的写要到 verify 才生效，不缓存中间态会把前一次覆盖掉。
+func TestVirtualPureDelegate(t *testing.T) {
+	s, _, m, _ := newValuesStore(t)
+	vt := s.Virtual("hamster_test_virtual")
+	if vt == nil {
+		t.Fatal("Virtual 句柄取不到")
+	}
+
+	vt.Add("score", 6)
+	vt.Add("score", 6)
+	if got := vt.Val("score"); got != 12 {
+		t.Fatalf("同请求两次 Add(6) 应累加到 12,实际 %d（中间态缓存失效）", got)
+	}
+	//此刻委托方还没生效（verify 语义），store 仍是旧值
+	if m.store["score"] != 0 {
+		t.Fatalf("委托方在 verify 前不该生效,实际 %v", m.store["score"])
+	}
+	if err := s.Verify(); err != nil {
+		t.Fatalf("Verify:%v", err)
+	}
+	m.flush()
+	if m.store["score"] != 12 {
+		t.Fatalf("verify 后委托方应拿到 12,实际 %v", m.store["score"])
+	}
+
+	//余额不足：中性错误（ErrNotEnough），打脏 Store.Error
+	vt.Sub("score", 100)
+	if s.Verify() == nil {
+		t.Fatal("余额不足的 Sub 应当报错")
+	}
+
+	//release 清中间态：把模型值改成与缓存不同的数，Val 必须回落到模型值 ——
+	//若缓存没清，这里会读到陈旧的 12
+	m.store["score"] = 99
+	vt.Release()
+	if got := vt.Val("score"); got != 99 {
+		t.Fatalf("release 之后 Val 应回落到模型值 99,实际 %d（中间态没清）", got)
+	}
+}

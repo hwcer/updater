@@ -101,6 +101,26 @@ func RegisterCollection(name string, ram RAMType, m CollectionModel, opts ...Reg
 	return Register(name, ram, m, factory, opts...)
 }
 
+// RegisterValues 按核心版窄接口注册数值 KV 模型（纯数据结构，无道具语义），内部使用默认工厂
+func RegisterValues(name string, ram RAMType, m ValuesModel, opts ...RegisterOption) error {
+	if m == nil {
+		return fmt.Errorf("hamster register model nil,name:%v", name)
+	}
+	factory := func(s *Store, mod *Model) Handle { return newValues(s, mod) }
+	opts = append(opts, WithParser(ParserTypeValues))
+	return Register(name, ram, m, factory, opts...)
+}
+
+// RegisterVirtual 按核心版窄接口注册委托视图（纯 string 键，无 iid→字段映射），内部使用默认工厂
+func RegisterVirtual(name string, ram RAMType, m VirtualModel, opts ...RegisterOption) error {
+	if m == nil {
+		return fmt.Errorf("hamster register model nil,name:%v", name)
+	}
+	factory := func(s *Store, mod *Model) Handle { return newVirtual(s, mod) }
+	opts = append(opts, WithParser(ParserTypeVirtual))
+	return Register(name, ram, m, factory, opts...)
+}
+
 // findModel 按名查找已注册模型
 func findModel(name string) *Model {
 	for _, m := range modelsRank {
