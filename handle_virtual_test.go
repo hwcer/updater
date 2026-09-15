@@ -61,7 +61,7 @@ func newVirtualUpdater(t *testing.T, m *virtualModel) (*Updater, *Virtual) {
 
 	mod := &Model{ram: RAMTypeAlways, name: "virtual_test", model: m, parser: ParserTypeVirtual}
 	u := New(&mountPlayer{uid: "virtual_uid"})
-	v := &Virtual{name: mod.name, model: m}
+	v := &Virtual{name: mod.name, model: m, updater: u}
 	v.statement = *newStatement(u, mod, v.Has)
 	return u, v
 }
@@ -132,7 +132,7 @@ func TestVirtualCacheClearedOnRelease(t *testing.T) {
 		t.Fatalf("同请求内 Val 应读到中间态 6,实际 %d", got)
 	}
 	m.flush()
-	v.release()
+	v.Release()
 	if v.cache != nil {
 		t.Fatal("release 之后缓存必须清空,否则跨请求读到陈旧中间态")
 	}

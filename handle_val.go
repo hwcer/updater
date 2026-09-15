@@ -5,6 +5,7 @@ import (
 
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/hamster"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -17,16 +18,18 @@ type ValuesModel interface {
 
 // Values 数字型键值对
 type Values struct {
-	statement
-	name    string
-	model   ValuesModel
-	dataset *dataset.Values
+	updater  *Updater
+	statement hamster.Statement //具名字段（非嵌入），见 newStatement
+	name     string
+	model    ValuesModel
+	dataset  *dataset.Values
 }
 
 func NewValues(u *Updater, m *Model) Handle {
 	r := &Values{}
 	r.name = m.name
 	r.model = m.model.(ValuesModel)
+	r.updater = u
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -41,15 +44,15 @@ func (this *Values) Val(k any) (r int64) {
 }
 
 func (this *Values) Data() (err error) {
-	if this.Updater.Error != nil {
-		return this.Updater.Error
+	if this.updater.Error != nil {
+		return this.updater.Error
 	}
-	if len(this.keys) == 0 {
+	if len(this.statement.Keys()) == 0 {
 		return nil
 	}
-	keys := this.keys.ToInt32()
-	if err = this.model.Getter(this.statement.Updater, this.dataset, keys); err == nil {
-		this.statement.date()
+	keys := this.statement.Keys().ToInt32()
+	if err = this.model.Getter(this.updater, this.dataset, keys); err == nil {
+		this.statement.Date()
 	}
 	return
 }
@@ -70,7 +73,7 @@ func (this *Values) IType(iid int32) IType {
 
 // Select 指定需要从数据库更新的字段
 func (this *Values) Select(keys ...any) {
-	if this.ram == RAMTypeAlways {
+	if this.statement.RAM() == RAMTypeAlways {
 		return
 	}
 	for _, k := range keys {
@@ -84,7 +87,7 @@ func (this *Values) Parser() Parser {
 	return ParserTypeValues
 }
 
-// ===================== Handle 接口私有方法 =====================
+// ===================== Handle 接口生命周期方法 =====================
 
 func (this *Values) increase(k int32, v int64) {
 	this.operator(operator.TypesAdd, k, v)
@@ -93,88 +96,90 @@ func (this *Values) decrease(k int32, v int64) {
 	this.operator(operator.TypesSub, k, v)
 }
 
-func (this *Values) save() (err error) {
-	bw := this.Updater.BulkWrite()
+func (this *Values) Save() (err error) {
+	bw := this.updater.BulkWrite()
 	if bw == nil {
 		return ErrBulkWriteNotInit
 	}
 	dirty, unsets := this.dataset.Save()
 	if len(dirty) > 0 || len(unsets) > 0 {
-		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
+		if err = this.model.Setter(this.updater, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
-			logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
+			logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.updater.Id(), this.name, ds, err.Error())
 		}
 	}
 	return
 }
 
-func (this *Values) reset() {
-	this.statement.reset()
+func (this *Values) Reset() {
+	this.statement.Reset()
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
 	if reset, ok := this.model.(ModelReset); ok {
-		if reset.Reset(this.Updater, this.Updater.last) {
-			this.Updater.Error = this.reload()
+		if reset.Reset(this.updater, this.updater.Last()) {
+			this.updater.Error = this.Reload()
 		}
 	}
 }
 
-func (this *Values) reload() error {
+func (this *Values) Reload() error {
 	this.dataset = nil
-	this.statement.reload()
-	return this.loading()
+	this.statement.Reload()
+	return this.Loading()
 }
 
-func (this *Values) loading() error {
+func (this *Values) Loading() error {
 	if this.dataset == nil {
 		this.dataset = dataset.NewValues()
 	}
-	if this.statement.loading() {
-		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
-			this.statement.loader = true
+	if this.statement.Loading() {
+		this.updater.Error = this.model.Getter(this.updater, this.dataset, nil)
+		if this.updater.Error == nil {
+			this.statement.SetLoaded(true)
 		}
 	}
-	return this.Updater.Error
+	return this.updater.Error
 }
 
-func (this *Values) release() {
-	this.statement.release()
-	if this.statement.ram == RAMTypeNone {
+func (this *Values) Release() {
+	this.statement.Release()
+	if this.statement.RAM() == RAMTypeNone {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
 	}
 }
 
-func (this *Values) destroy() (err error) {
-	return this.save()
+func (this *Values) Destroy() (err error) {
+	return this.Save()
 }
 
-func (this *Values) submit() (err error) {
-	if err = this.Updater.WriteAble(); err != nil {
+func (this *Values) Commit() (err error) {
+	if err = this.updater.WriteAble(); err != nil {
 		return
 	}
-	this.statement.submit()
-	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+	this.statement.Submit()
+	if err = this.Save(); err != nil && this.statement.RAM() != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
 	}
 	return
 }
 
-func (this *Values) verify() (err error) {
-	if err = this.Updater.WriteAble(); err != nil {
+func (this *Values) Verify() (err error) {
+	if err = this.updater.WriteAble(); err != nil {
 		return
 	}
 	// 下标遍历(而非 range):Parse 中 overflow→Resolve 可能往本 handle 追加操作(与自己同模型),
-	// range 按初始长度迭代会漏掉,使其被 statement.verify() 搬进 cache 却未 Parse、最终不落库。见 handle_coll.go。
-	for i := 0; i < len(this.statement.operator); i++ {
-		if err = this.Parse(this.statement.operator[i]); err != nil {
+	// range 按初始长度迭代会漏掉,使其被 statement.Verify() 搬进 cache 却未 Parse、最终不落库。
+	// ⚠️ Ops() 每轮重取：append 扩容后旧切片头看不见新增。
+	for i := 0; i < len(this.statement.Ops()); i++ {
+		if err = this.Parse(this.statement.Ops()[i]); err != nil {
 			return
 		}
 	}
-	this.statement.verify()
+	this.statement.Verify()
 	return
 }
 
@@ -212,13 +217,13 @@ func (this *Values) Range(f func(int32, int64) bool) {
 }
 
 func (this *Values) Insert(op *operator.Operator, before ...bool) {
-	this.statement.insert(op, before...)
+	this.statement.Insert(op, before...)
 }
 
 // ===================== 类型特有私有方法 =====================
 
 func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Operator {
-	if err := this.Updater.WriteAble(); err != nil {
+	if err := this.updater.WriteAble(); err != nil {
 		return nil
 	}
 	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
@@ -235,8 +240,8 @@ func (this *Values) operator(t operator.Types, k int32, v int64) *operator.Opera
 	}
 	op.IType = it.ID()
 	if listen, ok := it.(ITypeListener); ok {
-		listen.Listener(this.Updater, op)
+		listen.Listener(this.updater, op)
 	}
-	this.statement.insert(op)
+	this.statement.Insert(op)
 	return op
 }

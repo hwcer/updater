@@ -1,9 +1,14 @@
 package updater
 
 import (
+	"github.com/hwcer/updater/hamster"
 	"github.com/hwcer/updater/operator"
 )
 
+// Config 全局配置（扩展层）。
+//
+// IMax/IType/ParseId 是道具概念，归扩展层；BulkWrite 是核心存储概念，
+// hamster 侧经 init 桥接转发（见本文件底部），用户注册代码不变。
 var Config = struct {
 	IMax      func(iid int32) int64                                     //通过道具iid查找上限
 	IType     func(iid int32) int32                                     //通过道具iid查找IType ID
@@ -11,45 +16,63 @@ var Config = struct {
 	BulkWrite func(u *Updater) BulkWrite                                //全局 BulkWrite 工厂
 }{}
 
-// Status 状态位标记
-type Status uint8
+func init() {
+	// 🔴 BulkWrite 桥接：hamster.Store.BulkWrite() 走 hamster.Config，
+	// 这里把它指回 updater.Config（用户配置点不变）。工厂在调用时才解引用，
+	// 所以 Config.BulkWrite 的赋值时机不受 init 顺序影响。
+	// ⚠️ 同一进程里导入了 updater 后，hamster 独立实例的落库也须经 updater.Config 配置
+	// （bridge 找不到对应 Updater 时返回 nil，触发 ErrBulkWriteNotInit 而不是静默失效）。
+	hamster.Config.BulkWrite = func(s *hamster.Store) hamster.BulkWrite {
+		if Config.BulkWrite == nil {
+			return nil
+		}
+		u := updaterOf(s)
+		if u == nil {
+			return nil
+		}
+		return Config.BulkWrite(u)
+	}
+}
+
+// Status 状态位标记（核心版类型，别名保持 API 冻结）
+type Status = hamster.Status
 
 const (
-	StatusInit     Status = 1 << iota // 已初始化，按模块预设加载数据
-	StatusSubmit                      // 需要触发提交
-	StatusChanged                     // 数据变动，需要 Data 更新
-	StatusOperated                    // 新操作，需要 Verify 检查
-	StatusTesting                     // 测试模式，不写库
-	StatusDevelop                     // 开发者模式，业务层自取
+	StatusInit     = hamster.StatusInit     // 已初始化，按模块预设加载数据
+	StatusSubmit   = hamster.StatusSubmit   // 需要触发提交
+	StatusChanged  = hamster.StatusChanged  // 数据变动，需要 Data 更新
+	StatusOperated = hamster.StatusOperated // 新操作，需要 Verify 检查
+	StatusTesting  = hamster.StatusTesting  // 测试模式，不写库
+	StatusDevelop  = hamster.StatusDevelop  // 开发者模式，业务层自取
 )
 
-func (s *Status) Has(flags ...Status) bool {
-	for _, f := range flags {
-		if *s&f != 0 {
-			return true
-		}
-	}
-	return false
-}
-func (s *Status) Set(flags ...Status) {
-	for _, f := range flags {
-		*s |= f
-	}
-}
-func (s *Status) Unset(flags ...Status) {
-	for _, f := range flags {
-		*s &^= f
-	}
-}
+// RAMType 内存策略（核心版类型，别名保持 API 冻结）
+type RAMType = hamster.RAMType
 
-// BulkWrite 跨集合批量写入接口
-type BulkWrite interface {
-	Submit() error
-	Update(model any, data any, where ...any)
-	Insert(model any, documents ...any)
-	Delete(model any, where ...any)
-	String() string
-}
+const (
+	RAMTypeNone   = hamster.RAMTypeNone   //实时读写数据
+	RAMTypeMaybe  = hamster.RAMTypeMaybe  //按需读写
+	RAMTypeAlways = hamster.RAMTypeAlways //内存运行
+)
+
+// BulkWrite 跨集合批量写入接口（核心版类型，别名保持 API 冻结）
+type BulkWrite = hamster.BulkWrite
+
+// Keys 待拉取 key 集合（核心版类型，别名保持 API 冻结）
+type Keys = hamster.Keys
+
+// Parser 解析器类型（核心版枚举，别名保持数值不变）
+type Parser = hamster.Parser
+
+const (
+	ParserTypeValues     = hamster.ParserTypeValues     //Map[string]int64模式
+	ParserTypeDocument   = hamster.ParserTypeDocument   //Document 单文档模式
+	ParserTypeCollection = hamster.ParserTypeCollection //Collection 文档集合模式
+	ParserTypeVirtual    = hamster.ParserTypeVirtual    //Virtual 虚拟模式,本身不会存储数据，依赖于其他模块数据
+)
+
+// TableOrder 可选接口:控制模型加载顺序,值大的先加载（主档模式支柱，见 HAMSTER_PLAN.md D6）
+type TableOrder = hamster.TableOrder
 
 // IType 一个IType对于一种数据类型·
 // 多种数据类型 可以用一种数据模型(model,一张表结构)
@@ -85,45 +108,4 @@ type ITypeResult interface {
 }
 type ITypeListener interface {
 	Listener(u *Updater, op *operator.Operator)
-}
-
-type Keys map[any]struct{}
-
-func (this Keys) Has(k any) (ok bool) {
-	_, ok = this[k]
-	return
-}
-
-func (this Keys) Remove(k any) {
-	delete(this, k)
-}
-
-func (this Keys) ToString() (r []string) {
-	for k := range this {
-		if sk, ok := k.(string); ok {
-			r = append(r, sk)
-		}
-	}
-	return
-}
-
-func (this Keys) ToInt32() (r []int32) {
-	for k := range this {
-		if ik, ok := k.(int32); ok {
-			r = append(r, ik)
-		}
-	}
-	return
-}
-
-func (this Keys) Merge(src Keys) {
-	for k := range src {
-		this[k] = struct{}{}
-	}
-}
-
-func (this Keys) Select(ks ...any) {
-	for _, k := range ks {
-		this[k] = struct{}{}
-	}
 }

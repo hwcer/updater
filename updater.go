@@ -3,68 +3,97 @@ package updater
 import (
 	"fmt"
 	"reflect"
-	"slices"
 	"time"
 
 	"github.com/hwcer/logger"
+	"github.com/hwcer/updater/hamster"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
-type Player interface {
-	Uid() string
-}
-
-// Updater 玩家数据更新器，管理所有 Handle 的生命周期和持久化
-// 每个玩家持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
+// Updater 玩家数据更新器（核心版 hamster 之上的道具扩展层）。
+//
+// IType 路由、Add/Sub 便捷 API、溢出分解都长在这层；生命周期与批量落库委托给
+// 持有的 hamster.Store。
+//
+// 🔴 **持有，不内嵌**：Go 的方法提升没有虚派发（Mount 三稿教训，CLAUDE.md 明文），
+// 内嵌会让 hamster.Store 的方法透传成隐式 API，任何"想让 Submit 多做一点"的改动
+// 都会变成同名覆盖雷区。生命周期委托方法一次写清，不得在委托里偷改时序。
+//
+// 错误状态：Error 字段是唯一权威（API 冻结面，用户直接读写），
+// 经 errState 钩子外接给 store —— store 内部的错误闸门读到的是本字段，双向零拷贝。
+// 变更流水：dirty 字段是唯一权威，句柄 statement 的默认接收器直接推进本字段。
 type Updater struct {
-	now       time.Time            //当前请求时间
-	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
-	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
-	player    Player               //业务层角色对象
-	status    Status               //状态位：Init/Submit/Changed/Operated
-	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
-	mounts    map[string]*Mount    //临时挂载的数据集合，见 Mount
-	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
+	store *hamster.Store      //核心版存储引擎（生命周期/落库/mounts）
+	dirty []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
 
-	Cache         Cache       //自定义缓存数据
-	Error         error       //请求过程中的错误
+	Cache         Cache       //自定义缓存数据（与 store.Cache 同一块 map）
+	Error         error       //请求过程中的错误（唯一权威，经钩子外接给 store）
 	Events        Events      //生命周期事件
 	Middleware    Middlewares //中间件，所有事件类型都会触发
 	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
 }
 
-func New(p Player) *Updater {
-	return &Updater{player: p, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}
+// Entity 数据属主（取代 Player/Uid 用词 —— 核心版不绑玩家域）。
+// 🔴 这是 API 冻结的**唯一豁免**：用户迁移动作 = 把 Player 实现的 Uid() string 改名 Id() string。
+type Entity = hamster.Entity
+
+// New 创建更新器。
+func New(e Entity) *Updater {
+	st := hamster.New(e)
+	u := &Updater{store: st}
+	u.Cache = Cache(st.Cache) //共享同一块底层 map（同底层类型的 map 转换是重挂类型、不拷贝）
+	st.SetErrorState(u)       //错误状态外接：store 的读写命中 u.Error
+	st.SetEmitHook(func(_ *hamster.Store, t hamster.EventType) {
+		u.emitRoot(EventType(t)) //扩展层事件按根包语义分发（Events 带错误闸门，Middleware 不带）
+	})
+	updaters.Store(st, u)
+	return u
+}
+
+// GetError/SetError 实现 hamster 的 errorState：store 内部经此读写 u.Error
+func (u *Updater) GetError() error    { return u.Error }
+func (u *Updater) SetError(err error) { u.Error = err }
+
+// emitRoot 根包事件分发（拆分前 Emit 的原语义）
+func (u *Updater) emitRoot(t EventType) {
+	u.Events.emit(u, t)
+	u.Middleware.emit(u, t)
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
 	u.Events.On(t, handle)
 }
 
+// BulkWrite 共享 BulkWrite 实例（经 hamster 桥回 updater.Config 工厂，见 define.go init）
 func (u *Updater) BulkWrite() BulkWrite {
-	if u.bulkWrite == nil && Config.BulkWrite != nil {
-		u.bulkWrite = Config.BulkWrite(u)
-	}
-	return u.bulkWrite
+	return u.store.BulkWrite()
 }
 
-func (u *Updater) Uid() string {
-	return u.player.Uid()
+// Id 数据属主标识（取代 Uid，见 Entity）
+func (u *Updater) Id() string {
+	return u.store.Id()
 }
 
 func (u *Updater) Now() time.Time {
-	return u.now
+	return u.store.Now()
 }
 
 func (u *Updater) Unix() int64 {
-	return u.now.Unix()
+	return u.store.Unix()
 }
 func (u *Updater) Milli() int64 {
-	return u.now.UnixMilli()
+	return u.store.Milli()
 }
-func (u *Updater) Player() Player {
-	return u.player
+
+// Entity 返回数据属主
+func (u *Updater) Entity() Entity {
+	return u.store.Entity()
+}
+
+// Last 上次请求时间（零值表示尚未处理过请求），跨天重置判定用
+func (u *Updater) Last() time.Time {
+	return u.store.Last()
 }
 
 func (u *Updater) Errorf(format any, args ...any) error {
@@ -81,41 +110,21 @@ func (u *Updater) Errorf(format any, args ...any) error {
 
 // Save 保存所有缓存数并自动关闭异步模式
 func (u *Updater) Save() (err error) {
-	for _, w := range u.Handles() {
-		if err = w.save(); err != nil {
-			return
-		}
-	}
-	return
+	return u.store.Save()
 }
 
 func (u *Updater) Loader() bool {
-	return u.status.Has(StatusInit)
+	return u.store.Loader()
 }
 
 // Develop 设置或获取开发者模式标记，仅供业务层自取
 func (u *Updater) Develop(v ...bool) bool {
-	if len(v) > 0 {
-		if v[0] {
-			u.status.Set(StatusDevelop)
-		} else {
-			u.status.Unset(StatusDevelop)
-		}
-	}
-	return u.status.Has(StatusDevelop)
+	return u.store.Develop(v...)
 }
 
 // Testing 测试模式开关，开启后所有操作仅在内存生效不写库，关闭时强制从数据库重新加载
 func (u *Updater) Testing(on bool) error {
-	if on {
-		u.status.Set(StatusTesting)
-		return nil
-	}
-	if !u.status.Has(StatusTesting) {
-		return nil
-	}
-	u.status.Unset(StatusTesting)
-	return u.Reload()
+	return u.store.Testing(on)
 }
 
 // Reload 丢弃所有已加载的内存数据，下次访问时重新从数据库读取。
@@ -128,132 +137,71 @@ func (u *Updater) Testing(on bool) error {
 //
 // ⚠ 对**在线**玩家只重载服务端内存，客户端手上那份仍是旧的，通常还需要让客户端重新拉取。
 func (u *Updater) Reload() error {
-	for _, w := range u.Handles() {
-		if err := w.reload(); err != nil {
-			return err
-		}
+	return u.store.Reload()
+}
+
+// loadGlobalCache 把 RegisterGlobalCache 注册的全局缓存载入实例
+func (u *Updater) loadGlobalCache() {
+	for k, v := range globalCache {
+		_ = u.Cache.LoadOrCreate(u, k, v)
 	}
-	return nil
 }
 
 // Loading 重新加载数据,自动关闭异步数据
 // init 立即加载玩家所有数据
 func (u *Updater) Loading(cb ...func()) (err error) {
-	if u.status.Has(StatusInit) {
-		return
-	}
 	//🔴 开服自检：Config.BulkWrite 没配的话，**所有句柄的落库都会静默失效** ——
 	//save 报出的 ErrBulkWriteNotInit 会被 submit 吞成一行 Alert，玩家一路正常玩、
 	//一行数据都没落库，重启才发现。
-	//
-	//它相当于"数据库连接"级别的配置（本项目在 model.start() 连完 Mongo 之后设），
-	//与其让每个句柄在运行期各自发明一套更严的行为，不如在玩家数据第一次加载时就拦下来：
-	//这时还没产生任何数据改动，报错干净。
+	//先于 store.Loading 检查：工厂变量是本包配置面，nil 判定必须以它为准。
 	if Config.BulkWrite == nil {
 		return ErrBulkWriteNotInit
 	}
-	u.status.Set(StatusInit)
-
-	if u.handles == nil {
-		u.handles = make(map[string]Handle)
-	}
-	for _, model := range modelsRank {
-		name := model.name
-		handle := u.handles[name]
-		if handle == nil {
-			handle = handles[model.parser](u, model)
-			u.handles[name] = handle
-		}
-		if err = handle.loading(); err != nil {
-			//回退标志:否则幂等闸门(status.Has(StatusInit))会让重试静默返回nil,
-			//玩家带着缺数据的句柄进游戏
-			u.status.Unset(StatusInit)
-			return
-		}
-	}
-
-	if u.now.IsZero() {
-		u.now = time.Now()
-	}
-	u.last = u.now
-
-	for _, f := range cb {
-		f()
-	}
-
-	for k, v := range globalCache {
-		_ = u.Cache.LoadOrCreate(u, k, v)
-	}
-	u.Emit(EventTypeInit)
-
-	return
+	//全局缓存载入插在 cb 尾部：hamster.Loading 内部的顺序是
+	//handles → 时钟 → cb → hamster全局缓存 → Emit(Init)，
+	//追加的闭包在 Emit 之前执行，与拆分前「globalCache 先于 Init 事件」的时序一致。
+	cb = append(cb, u.loadGlobalCache)
+	return u.store.Loading(cb...)
 }
 
 // Reset 重置,每次请求开始时调用
 func (u *Updater) Reset(t ...time.Time) {
-	if len(t) > 0 {
-		u.now = t[0]
-	} else {
-		u.now = time.Now()
-	}
-	if u.now.IsZero() {
-		_ = u.Errorf("获取系统时间失败")
-	}
-	u.status.Set(StatusSubmit) // 确保 Submit 收敛循环至少执行一次
-	for _, w := range u.Handles() {
-		w.reset()
-	}
-
-	if disaster.Load() > 0 {
-		u.Error = ErrServerDeniedService //存在灾难性错误，拒绝服务
-	} else {
-		u.Emit(EventTypeReset)
-	}
+	u.store.Reset(t...)
 }
 
 // Release 释放并返回所有已执行的操作,每次请求结束时调用
 // 无论有无错误,都应该执行Release
 // Release 返回的错误仅代表本次请求过程中某一步产生的错误,不代表Release本身有错误
 func (u *Updater) Release() {
-	u.Emit(EventTypeRelease)
-	u.last = u.now
+	u.store.Release() //内部含 Emit(EventTypeRelease)：错误闸门对 Release 放行
 	for _, op := range u.dirty {
 		op.Release()
 	}
 	u.dirty = nil
-	u.status &= StatusInit | StatusTesting | StatusDevelop
-	u.bulkWrite = nil
-	u.Error = nil
 	u.CreditAllowed = false
-	hs := u.Handles()
-	for _, h := range slices.Backward(hs) {
-		h.release()
-	}
-	//临时句柄的卸载收在这里:Unmount 只打标记,句柄留到请求走完整条生命周期
-	//(Data/verify/submit 一样不落)才摘除,短流程与长流程走同一条路。
-	for k, h := range u.mounts {
-		if h.unmount {
-			delete(u.mounts, k)
-		}
-	}
+	//u.Error/u.bulkWrite/status 的清理在 store.Release 内完成
+	//（Error 经 errState 钩子写回本字段）
 }
 
 func (u *Updater) Emit(t EventType) {
-	u.Events.emit(u, t)
-	u.Middleware.emit(u, t)
+	u.store.Emit(hamster.EventType(t))
 }
 
 // Add 添加道具,num 支持 int32|int64
 func (u *Updater) Add(iid int32, num any) {
 	if w := u.handleWithKey(iid); w != nil {
-		w.increase(iid, dataset.ParseInt64(num))
+		if h, ok := w.(itemHandle); ok {
+			h.increase(iid, dataset.ParseInt64(num))
+		}
 	}
 }
 
 // Sub 扣除道具,num 支持 int32|int64
 func (u *Updater) Sub(iid int32, num any) {
 	if w := u.handleWithKey(iid); w != nil {
-		w.decrease(iid, dataset.ParseInt64(num))
+		if h, ok := w.(itemHandle); ok {
+			h.decrease(iid, dataset.ParseInt64(num))
+		}
 	}
 }
 
@@ -283,8 +231,7 @@ func (u *Updater) Select(keys ...any) {
 }
 
 func (u *Updater) Data() (err error) {
-	hs := u.Handles()
-	return u.data(hs)
+	return u.store.Data()
 }
 
 // Verify 手动执行校验：把当前已入队的操作全部跑完 data→verify，但不落库。
@@ -297,96 +244,19 @@ func (u *Updater) Data() (err error) {
 // 让框架跳过后续 Submit(yyds/context/service.go)；吞掉它会落库半成品。
 //
 // Verify 之后再 Submit 是安全的：status 已被消耗，Submit 的收敛循环直接跳过，
-// 走 submit 落库已 Parse 进 cache 的操作。
+// 走 commit 落库已 Parse 进 cache 的操作。
 func (u *Updater) Verify() (err error) {
-	if err = u.WriteAble(); err != nil {
-		return err
-	}
-	return u.converge()
+	return u.store.Verify()
 }
 
-// converge data→verify 收敛循环，直到不再产生新操作，最多 100 轮防止死循环。
-//
-// 单轮是不够的：verify 期间 IType 的 creator/overflow 会产生新操作(自动分解、溢出转化)，
-// 跑完 status 会重新变成 StatusOperated，这些新操作必须再过一轮才算校验完整。
-// Verify 与 Submit 共用本函数——前者只要校验结论，后者在此之后才落库。
-func (u *Updater) converge() (err error) {
-	hs := u.Handles()
-	loop := int8(1)
-	for u.status.Has(StatusSubmit, StatusChanged, StatusOperated) {
-		if err = u.data(hs); err != nil {
-			return
-		}
-		if err = u.verify(hs); err != nil {
-			return
-		}
-		u.status.Unset(StatusSubmit)
-		u.Emit(EventTypeSubmit)
-		if loop = loop + 1; loop >= 100 {
-			u.Error = ErrSubmitEndlessLoop
-			return u.Error
-		}
-	}
-	return
-}
-
-func (u *Updater) data(hs []Handle) (err error) {
-	if err = u.Error; err != nil {
-		return
-	}
-	if !u.status.Has(StatusChanged) {
-		return
-	}
-	u.status.Unset(StatusChanged)
-	u.Emit(EventTypeData)
-	for _, w := range hs {
-		if err = w.Data(); err != nil {
-			return
-		}
-	}
-	return
-}
-
-func (u *Updater) verify(hs []Handle) (err error) {
-	if err = u.Error; err != nil {
-		return
-	}
-	if !u.status.Has(StatusOperated) {
-		return
-	}
-	u.status.Unset(StatusOperated)
-	u.Emit(EventTypeVerify)
-	for _, h := range slices.Backward(hs) {
-		if err = h.verify(); err != nil {
-			return
-		}
-	}
-	return
-}
-
-// Submit 收敛循环执行 data→verify→submit 直到无新操作产生，最多100轮防止死循环
+// Submit 收敛循环执行 data→verify→commit 直到无新操作产生，最多100轮防止死循环
 // 返回本次请求所有操作的 Operator 列表，用于同步给前端
 func (u *Updater) Submit() (r []*operator.Operator, err error) {
-	if err = u.WriteAble(); err != nil {
+	if _, err = u.store.Submit(); err != nil {
 		return nil, err
 	}
-	if err = u.converge(); err != nil {
-		return
-	}
-	hs := u.Handles()
-	for _, h := range slices.Backward(hs) {
-		if err = h.submit(); err != nil {
-			return
-		}
-	}
-	if u.bulkWrite != nil {
-		if u.status.Has(StatusTesting) {
-			u.bulkWrite = nil
-		} else if err = u.bulkWrite.Submit(); err != nil {
-			return
-		}
-	}
-	u.Emit(EventTypeSuccess)
+	//变更流水在根包这份 dirty（句柄默认接收器 pushDirty 收集），
+	//store.Submit 返回的是核心版那份（核心版默认 Discard，恒空）。
 	r = u.dirty
 	u.dirty = nil
 	return
@@ -411,8 +281,6 @@ func (u *Updater) ParseId(key any) (iid int32, err error) {
 	return
 }
 
-// Handle 根据 name(string) || itype(int32) 查找，支持命名整型（如 protobuf 枚举）
-
 // handle 通过 iid 或 oid 路由到对应的 Handle 实例
 func (u *Updater) handleWithKey(k any) Handle {
 	iid, err := u.ParseId(k)
@@ -432,7 +300,7 @@ func (u *Updater) handleWithKey(k any) Handle {
 func (u *Updater) handleWithAny(name any) Handle {
 	switch k := name.(type) {
 	case string:
-		return u.handles[k]
+		return u.store.Handle(k)
 	case int:
 		return u.handleWithIType(int32(k))
 	case int32:
@@ -452,7 +320,7 @@ func (u *Updater) handleWithIType(id int32) Handle {
 	if mod == nil {
 		return nil
 	}
-	return u.handles[mod.name]
+	return u.store.Handle(mod.name)
 }
 
 // Handles 返回本次请求要驱动的全部句柄：**全局注册句柄 + 临时挂载句柄**。
@@ -462,43 +330,21 @@ func (u *Updater) handleWithIType(id int32) Handle {
 //
 // ⚠️ 两类句柄之间**没有顺序契约**：临时句柄不共享 IType 路由、不与全局句柄互相产生操作，
 // 同批次原子性由共享 bulkWrite 保证，与遍历顺序无关。
-// 具体到实现：临时句柄追加在尾部，而 Submit/verify/Release 是**倒序**遍历
-// —— 也就是说它们实际最先跑。别在这个次序上建立任何依赖。
-func (u *Updater) Handles() (r []Handle) {
-	r = make([]Handle, 0, len(modelsRank)+len(u.mounts))
-	for _, model := range modelsRank {
-		if h := u.handles[model.name]; h != nil {
-			r = append(r, h)
-		}
-	}
-	for _, h := range u.mounts {
-		r = append(r, h)
-	}
-	return
+func (u *Updater) Handles() []Handle {
+	return u.store.Handles()
 }
 
 // Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
 // 仅缓存模式下需要且必要执行
 func (u *Updater) Destroy() (err error) {
-	hs := u.Handles()
-	for _, h := range slices.Backward(hs) {
-		if err = h.destroy(); err != nil {
-			return
-		}
+	if err = u.store.Destroy(); err != nil {
+		return
 	}
-	if u.bulkWrite != nil {
-		if !u.status.Has(StatusTesting) {
-			err = u.bulkWrite.Submit()
-		}
-		u.bulkWrite = nil
-	}
-	u.player = nil
 	for _, op := range u.dirty {
 		op.Release()
 	}
-	u.handles = nil
-	u.mounts = nil
 	u.dirty = nil
+	updaters.Delete(u.store)
 	return
 }
 

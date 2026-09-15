@@ -2,34 +2,21 @@ package updater
 
 import (
 	"fmt"
-	"sort"
+	"sync"
 	"time"
 
 	"github.com/hwcer/cosgo/schema"
-)
-
-type Parser int8
-
-const (
-	ParserTypeValues     Parser = iota //Map[string]int64模式
-	ParserTypeDocument                 //Document 单文档模式
-	ParserTypeCollection               //Collection 文档集合模式
-	ParserTypeVirtual                  //Virtual 虚拟模式,本身不会存储数据，依赖于其他模块数据，如 日常 依赖 历史数据
+	"github.com/hwcer/updater/hamster"
 )
 
 type handleFunc func(updater *Updater, model *Model) Handle
 
+// handles 句柄工厂表：Parser → 构造函数。hamster 注册时经闭包桥接（见 Register）。
 var handles = make(map[Parser]handleFunc)
 
-func init() {
-	NewHandle(ParserTypeValues, NewValues)
-	NewHandle(ParserTypeDocument, NewDocument)
-	NewHandle(ParserTypeCollection, NewCollection)
-	NewHandle(ParserTypeVirtual, NewVirtual)
-}
-
-type TableOrder interface {
-	TableOrder() int32
+// NewHandle 注册新解析器的句柄工厂
+func NewHandle(name Parser, f handleFunc) {
+	handles[name] = f
 }
 
 // ModelIMax 可选接口,模型未实现时回落到全局 Config.IMax
@@ -85,24 +72,18 @@ func modelIType(model any, iid int32) IType {
 // 本接口靠类型断言 model.(ModelReset) 识别,签名写错【不会编译报错】,
 // 只会让断言不再命中、Reset 从此永不被调用,功能悄无声息地失效。
 // 接口一旦改签名,没有断言的实现方就是这样中招的。
-//
-// 框架无法替你自动检出:方法名与参数形态都不足以区分"想实现但写错"和"恰好同名的
-// 无关方法"——protobuf 生成的每个 message 都带无参 Reset(),而业务侧也可能有
-// Reset(*Updater, *dataset.Document) error 这类首参同样是 *Updater 的自有方法。
-// 试过按这些特征猜,两种情况都会误报并炸掉启动,故只能由实现方显式声明。
 type ModelReset interface {
 	Reset(*Updater, time.Time) bool
 }
 
-// NewHandle 注册新解析器
-func NewHandle(name Parser, f handleFunc) {
-	handles[name] = f
-}
-
-var modelsRank []*Model
+// modelsDict/itypesDict 道具路由表：iid 的 IType → 模型/IType。
+// 🔴 它们是**扩展层私产**，核心版（hamster）的注册表只认 name ——
+// 两层注册表的唯一接缝是 Register 里的 HandleFactory（HAMSTER_PLAN.md 第六节①）。
 var modelsDict = make(map[int32]*Model)
 var itypesDict = make(map[int32]IType) //ITypeId = IType
 
+// Model 已注册道具模型的元数据（扩展层）。
+// hamster 侧注册在 Register 内部桥接完成，本结构只服务 iid 路由。
 type Model struct {
 	ram    RAMType
 	name   string
@@ -125,6 +106,11 @@ func Models(f func(int32, any) bool) {
 		}
 	}
 }
+
+// Register 注册道具模型。
+//
+// 内部做两件事：①经 HandleFactory 桥接进 hamster 注册表（hamster 只认 name，
+// 加载顺序/重名检查/生命周期驱动都归它）；②把 IType 归属记进扩展层路由表。
 func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 	if _, ok := handles[parser]; !ok {
 		return fmt.Errorf("parser unknown:%v", parser)
@@ -145,10 +131,16 @@ func Register(parser Parser, ram RAMType, model any, its ...IType) error {
 	} else {
 		mod.order = -1
 	}
-	modelsRank = append(modelsRank, mod)
-	sort.SliceStable(modelsRank, func(i, j int) bool {
-		return modelsRank[i].order > modelsRank[j].order
-	})
+
+	// 两层注册表的唯一合法接缝：工厂闭包捕获扩展层构造函数与模型元数据，
+	// hamster.Loading 创建句柄时经 updaterOf 找回 Updater 实例。
+	factory := func(s *hamster.Store, _ *hamster.Model) hamster.Handle {
+		return handles[parser](updaterOf(s), mod)
+	}
+	if err := hamster.Register(mod.name, ram, model, factory,
+		hamster.WithParser(parser), hamster.WithTableOrder(mod.order)); err != nil {
+		return err
+	}
 
 	for _, it := range its {
 		if err := verifyIType(parser, mod.name, it); err != nil {
@@ -194,6 +186,20 @@ func verifyIType(parser Parser, name string, it IType) error {
 		}
 	default:
 		return nil
+	}
+	return nil
+}
+
+// updaterOf 由 hamster.Store 反查所属 Updater（扩展层句柄的 model 回调需要 *Updater）。
+// 注册在 New，注销在 Destroy。
+var updaters sync.Map // *hamster.Store → *Updater
+
+func updaterOf(s *hamster.Store) *Updater {
+	if s == nil {
+		return nil
+	}
+	if v, ok := updaters.Load(s); ok {
+		return v.(*Updater)
 	}
 	return nil
 }

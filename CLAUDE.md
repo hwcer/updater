@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 go build ./...
 go test ./...
+go test ./hamster/...       # run tests for hamster (core) subpackage only
 go test ./dataset/...       # run tests for dataset subpackage only
 go test ./operator/...      # run tests for operator subpackage only
 go test -run TestNew ./operator  # run a single test
@@ -19,6 +20,15 @@ go vet ./...
 
 Module path: `github.com/hwcer/updater`
 
+## Two-Layer Architecture (kernel + extension)
+
+仓库拆成两层（拆分设计全文见 `HAMSTER_PLAN.md`，🔴 必读其第七节组合结构纪律）：
+
+- **`hamster/` 核心版**：GET/SET/DEL + 脏标记 + 批量落库的文档/集合存储引擎。`hamster.Store` 持有生命周期（Loading/Reset/Data/Verify/Submit/Release/Destroy）、`hamster.Document`（主档承载者，窄接口 New/Getter/Setter）、`hamster.Collection`（Mount 泛化 + 字段级 Add/Sub）、`Entity` 主体。**零道具概念** —— hamster 代码里出现 iid 路由/IMax/ParseId/溢出即设计漂移。核心版 operator 的 `IType` 恒 0，默认 `DiscardReceiver` 不进下发通道。
+- **根包 updater 扩展层**：IType 路由（modelsDict/itypesDict）、`Add/Sub` 便捷 API、溢出分解（funcs.go）、Values/Virtual。`Updater` **持有** `*hamster.Store`（🔴 绝不内嵌 —— Go 方法提升没有虚派发，Mount 三稿教训），生命周期逐方法显式委托；错误状态经 errState 钩子外接（`u.Error` 是唯一权威）；变更流水经默认接收器 `pushDirty` 收进 `u.dirty`。
+
+两层接缝只有两处：① `Register` 的 HandleFactory 工厂闭包（hamster 注册表只认 name，iid 路由表是扩展层私产）；② statement 的 `handleResult` 函数字段（扩展层注入 ITypeResult 填充，机制不得反向引用道具注册表）。身份接口 `Entity{Id() string}` 取代 Player/Uid —— **API 冻结的唯一豁免**。
+
 ## Architecture
 
 ### Core Lifecycle
@@ -29,21 +39,21 @@ Every request follows this strict sequence:
 Loading → Reset → Business ops (Add/Sub/Set/Del) → Data (lazy DB fetch) → Verify (validation + overflow) → Submit (persist) → Release
 ```
 
-- `Loading` initializes handles based on registered models
+- `Loading` initializes handles based on registered models（实现整体在 `hamster.Store`，扩展层 `Updater` 同名方法只做委托 —— 🔴 委托里不得偷改时序）
 - `Reset` starts each request cycle, sets the clock, checks disaster state
-- `Submit` runs a convergence loop: `data → verify → submit` repeating until no more changes (capped at 100 iterations to prevent infinite loops)
+- `Submit` runs a convergence loop: `data → verify → submit` repeating until no more changes (capped at 100 iterations to prevent infinite loops)；核心版无溢出时天然单轮收敛，多轮机制的动机归道具层
 - `Release` clears per-request state; `Destroy` flushes everything to DB on player logout
 
 ### Four Data Models (Parser Types)
 
-Each model type has a matching trio: `handle_*.go` (Handle implementation), `parse_*.go` (operator dispatch table), and a `dataset/*` backing store. Virtual is the exception — it has no parse file and no backing store; it delegates all operations to other modules.
+Each model type has a matching trio: `handle_*.go` (Handle implementation), `parse_*.go` (operator dispatch table), and a `dataset/*` backing store. Virtual is the exception — it has no parse file and no backing store; it delegates all operations to other modules. 这四种是**扩展层（道具）句柄**；核心版 hamster 另有两份纯净实现 `hamster.Document` / `hamster.Collection`（无 IType，见顶层「Two-Layer Architecture」）。
 
 | Parser | Handle | Key Type | Backing Store | DB Model Interface |
 |--------|--------|----------|---------------|--------------------|
-| `ParserTypeValues` | `Values` | `int32` (IID) | `dataset.Values` (`map[int32]int64`) | `valuesModel` |
-| `ParserTypeDocument` | `Document` | `string` (field name) | `dataset.Document` (struct wrapper) | `documentModel` |
-| `ParserTypeCollection` | `Collection` | `string` (OID) | `dataset.Collection` (map of Documents) | `collectionModel` |
-| `ParserTypeVirtual` | `Virtual` | `any` | delegates to another module | `virtualModel` |
+| `ParserTypeValues` | `Values` | `int32` (IID) | `dataset.Values` (`map[int32]int64`) | `ValuesModel` |
+| `ParserTypeDocument` | `Document` | `string` (field name) | `dataset.Document` (struct wrapper) | `DocumentModel` |
+| `ParserTypeCollection` | `Collection` | `string` (OID) | `dataset.Collection` (map of Documents) | `CollectionModel` |
+| `ParserTypeVirtual` | `Virtual` | `any` | delegates to another module | `VirtualModel` |
 
 临时挂载集合（`Mount`）不另设 Parser —— 它不在全局注册表里，`Parser()` 那个返回值也没有任何消费者，报 `ParserTypeCollection` 即可，见下节。
 

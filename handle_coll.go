@@ -6,6 +6,7 @@ import (
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/hamster"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -21,8 +22,9 @@ type CollectionModelValueJSName interface {
 }
 
 type Collection struct {
-	statement
-	name string
+	updater   *Updater
+	statement hamster.Statement //具名字段（非嵌入），见 newStatement
+	name      string
 	// schema 首次取到后缓存。model 在 NewCollection 之后不再变,其 schema 也就固定,
 	// 故无需失效。业务侧的 model.Schema() 常见实现是 `schema.Parse(this)` —— 自己不缓存,
 	// 而 format 里每个 Set/Unset operator 都要取一次。
@@ -36,6 +38,7 @@ func NewCollection(u *Updater, m *Model) Handle {
 	r := &Collection{}
 	r.name = m.name
 	r.model = m.model.(CollectionModel)
+	r.updater = u
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -60,15 +63,15 @@ func (this *Collection) Val(key any) (r int64) {
 }
 
 func (this *Collection) Data() (err error) {
-	if this.Updater.Error != nil {
-		return this.Updater.Error
+	if this.updater.Error != nil {
+		return this.updater.Error
 	}
-	if len(this.keys) == 0 {
+	if len(this.statement.Keys()) == 0 {
 		return nil
 	}
-	keys := this.keys.ToString()
-	if err = this.model.Getter(this.Updater, this.dataset, keys); err == nil {
-		this.statement.date()
+	keys := this.statement.Keys().ToString()
+	if err = this.model.Getter(this.updater, this.dataset, keys); err == nil {
+		this.statement.Date()
 	}
 	return
 }
@@ -123,7 +126,7 @@ func (this *Collection) Parser() Parser {
 	return ParserTypeCollection
 }
 
-// ===================== Handle 接口私有方法 =====================
+// ===================== Handle 接口生命周期方法 =====================
 
 func (this *Collection) increase(id int32, v int64) {
 	field := this.Field()
@@ -134,63 +137,64 @@ func (this *Collection) decrease(id int32, v int64) {
 	this.operator(operator.TypesSub, id, field, v, nil)
 }
 
-func (this *Collection) save() (err error) {
-	if this.Updater.BulkWrite() == nil {
+func (this *Collection) Save() (err error) {
+	if this.updater.BulkWrite() == nil {
 		return ErrBulkWriteNotInit
 	}
-	return this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model))
+	return this.dataset.Save(newCollectionBulkWrite(this.updater, this.model))
 }
 
-func (this *Collection) reset() {
-	this.statement.reset()
+func (this *Collection) Reset() {
+	this.statement.Reset()
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
 	}
 	if reset, ok := this.model.(ModelReset); ok {
-		if reset.Reset(this.Updater, this.Updater.last) {
-			this.Updater.Error = this.reload()
+		if reset.Reset(this.updater, this.updater.Last()) {
+			this.updater.Error = this.Reload()
 		}
 	}
 }
 
-func (this *Collection) reload() error {
+func (this *Collection) Reload() error {
 	this.dataset = nil
-	this.statement.reload()
-	return this.loading()
+	this.statement.Reload()
+	return this.Loading()
 }
 
-func (this *Collection) loading() error {
+func (this *Collection) Loading() error {
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
 	}
-	if this.statement.loading() {
-		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
-			this.statement.loader = true
+	if this.statement.Loading() {
+		this.updater.Error = this.model.Getter(this.updater, this.dataset, nil)
+		if this.updater.Error == nil {
+			this.statement.SetLoaded(true)
 		}
 	}
-	return this.Updater.Error
+	return this.updater.Error
 }
 
-func (this *Collection) release() {
-	this.statement.release()
+func (this *Collection) Release() {
+	this.statement.Release()
 	this.remove = nil
-	if this.statement.ram == RAMTypeNone {
+	if this.statement.RAM() == RAMTypeNone {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
 	}
 }
 
-func (this *Collection) destroy() (err error) {
-	return this.save()
+func (this *Collection) Destroy() (err error) {
+	return this.Save()
 }
 
-func (this *Collection) submit() (err error) {
-	if err = this.Updater.WriteAble(); err != nil {
+func (this *Collection) Commit() (err error) {
+	if err = this.updater.WriteAble(); err != nil {
 		return
 	}
-	this.statement.submit()
-	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+	this.statement.Submit()
+	if err = this.Save(); err != nil && this.statement.RAM() != RAMTypeNone {
 		logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
@@ -201,19 +205,20 @@ func (this *Collection) submit() (err error) {
 	return
 }
 
-func (this *Collection) verify() (err error) {
-	if err = this.Updater.WriteAble(); err != nil {
+func (this *Collection) Verify() (err error) {
+	if err = this.updater.WriteAble(); err != nil {
 		return
 	}
 	// 下标遍历(而非 range):Parse 中 overflow→Resolve 可能往本 handle 追加操作
 	// (如超 IMax 的道具分解出的产物,与自己同模型/同集合),range 按初始长度迭代会漏掉这些新增 op,
-	// 使其被 statement.verify() 直接搬进 cache 却未 Parse、最终不落库。len 每轮重取即可覆盖。
-	for i := 0; i < len(this.statement.operator); i++ {
-		if err = this.Parse(this.statement.operator[i]); err != nil {
+	// 使其被 statement.Verify() 直接搬进 cache 却未 Parse、最终不落库。
+	// ⚠️ Ops() 每轮重取：append 扩容后旧切片头看不见新增。
+	for i := 0; i < len(this.statement.Ops()); i++ {
+		if err = this.Parse(this.statement.Ops()[i]); err != nil {
 			return
 		}
 	}
-	this.statement.verify()
+	this.statement.Verify()
 	return
 }
 
@@ -248,18 +253,18 @@ func (this *Collection) Set(id any, v ...any) *operator.Operator {
 	switch len(v) {
 	case 1:
 		if data = dataset.ParseUpdate(v[0]); data == nil {
-			this.Updater.Error = ErrArgsIllegal(id, v)
+			this.updater.Error = ErrArgsIllegal(id, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
 			data = dataset.NewUpdate(field, v[1])
 		} else {
-			this.Updater.Error = ErrArgsIllegal(id, v)
+			this.updater.Error = ErrArgsIllegal(id, v)
 		}
 	default:
-		this.Updater.Error = ErrArgsIllegal(id, v)
+		this.updater.Error = ErrArgsIllegal(id, v)
 	}
-	if this.Updater.Error != nil {
+	if this.updater.Error != nil {
 		return nil
 	}
 	return this.operator(operator.TypesSet, id, "", 0, data)
@@ -279,9 +284,9 @@ func (this *Collection) New(v dataset.Model) (err error) {
 	op.IID = v.GetIID()
 	if err = this.mayChange(op); err != nil {
 		op.Release()
-		return this.Updater.Errorf(err)
+		return this.updater.Errorf(err)
 	}
-	this.statement.insert(op)
+	this.statement.Insert(op)
 	return
 }
 
@@ -370,7 +375,7 @@ func (this *Collection) GetOID(key any) (oid string, err error) {
 	if !it.Stacked(iid) {
 		return "", ErrObjectIdEmpty(iid)
 	}
-	if oid = it.GetOID(this.Updater, iid); oid == "" {
+	if oid = it.GetOID(this.updater, iid); oid == "" {
 		err = ErrUnableUseIIDOperation
 	}
 	return
@@ -378,7 +383,7 @@ func (this *Collection) GetOID(key any) (oid string, err error) {
 
 func (this *Collection) Insert(op *operator.Operator, before ...bool) {
 	this.format(op)
-	this.statement.insert(op, before...)
+	this.statement.Insert(op, before...)
 }
 
 func (this *Collection) Dataset() *dataset.Collection {
@@ -407,7 +412,7 @@ func (this *Collection) val(id string) (r int64, ok bool) {
 
 // operator 封装 Operator，k oid||iid
 func (this *Collection) operator(t operator.Types, id any, k string, v int64, r any) *operator.Operator {
-	if err := this.Updater.WriteAble(); err != nil {
+	if err := this.updater.WriteAble(); err != nil {
 		return nil
 	}
 	if v <= 0 && (t == operator.TypesAdd || t == operator.TypesSub) {
@@ -418,21 +423,21 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 	switch d := id.(type) {
 	case string:
 		op.OID = d
-		op.IID, this.Updater.Error = Config.ParseId(this.Updater, op.OID)
+		op.IID, this.updater.Error = Config.ParseId(this.updater, op.OID)
 	default:
 		op.IID = dataset.ParseInt32(id)
 	}
 
-	if this.Updater.Error != nil {
+	if this.updater.Error != nil {
 		op.Release()
 		return nil
 	}
-	if this.Updater.Error = this.mayChange(op); this.Updater.Error != nil {
+	if this.updater.Error = this.mayChange(op); this.updater.Error != nil {
 		op.Release()
 		return nil
 	}
 	this.format(op)
-	this.statement.insert(op)
+	this.statement.Insert(op)
 	return op
 }
 
@@ -443,13 +448,13 @@ func (this *Collection) mayChange(op *operator.Operator) (err error) {
 	}
 	op.IType = it.ID()
 	if listen, ok := it.(ITypeListener); ok {
-		listen.Listener(this.Updater, op)
+		listen.Listener(this.updater, op)
 	}
 	if op.OType == operator.TypesDrop || op.OType == operator.TypesResolve {
 		return nil
 	}
 	if op.OID == "" && it.Stacked(op.IID) {
-		op.OID = it.GetOID(this.Updater, op.IID)
+		op.OID = it.GetOID(this.updater, op.IID)
 	}
 	if op.OID != "" {
 		this.statement.Select(op.OID)
@@ -464,26 +469,23 @@ func (this *Collection) format(op *operator.Operator) {
 	data := dataset.Update{}
 	result, ok := op.Result.(dataset.Update)
 	if !ok {
-		this.Updater.Error = fmt.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
+		this.updater.Error = fmt.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
 		return
 	}
 	sch := this.Schema()
 	if sch == nil {
-		this.Updater.Error = fmt.Errorf("operator.set schema empty:%s", this.name)
+		this.updater.Error = fmt.Errorf("operator.set schema empty:%s", this.name)
 		return
 	}
 	//统一成 json 名,与 Document.Field 同口径(理由见 Document.Name):op.Result 既是发
 	//客户端的 payload,又经 dataset 进 dirty 落库;客户端那侧直通,落库那侧由 cosmo 的
 	//Update.Transform 在边界换成 DBName。
 	//
-	//🔴 含 "." 的多级路径以前是原样透传的:JSName 只认单段,拼不回去。结果是「shelves.3」
-	//这类 key 的根字段从不换名,调用方写错大小写也一路发到客户端,客户端按 json 名认字段、
-	//当场把它当成不存在。现在 JSName 自己会逐段走查(字段段换名、map 键与下标原样保留),
-	//这里不再需要分支。
+	//🔴 含 "." 的多级路径：JSName 自己会逐段走查(字段段换名、map 键与下标原样保留)。
 	for k, v := range result {
 		name, err := sch.JSName(k)
 		if err != nil {
-			this.Updater.Error = fmt.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
+			this.updater.Error = fmt.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
 			return
 		}
 		data[name] = v
@@ -493,47 +495,19 @@ func (this *Collection) format(op *operator.Operator) {
 
 // ===================== CollectionBulkWrite =====================
 
-// CollectionBulkWrite 实现 dataset.CollectionWriter，把 dataset 的持久化动作转发到
-// 共享 BulkWrite 与模型的 Setter。**Collection 与 Mount 共用这一个**。
+// newCollectionBulkWrite 构造 dataset.CollectionWriter 适配器。
+// hamster.NewCollectionBulkWrite 是共享实现（核心版句柄与扩展层共用），
+// 这里把扩展层的 CollectionModel.Setter（首参 *Updater）适配成闭包传入。
+// **Collection 与 Mount 共用这一个**。
 //
 // 为什么必须有这层适配、不能直接把 Updater.BulkWrite() 交给 dataset.Save：
 //   - 两者不是一套接口 —— CollectionWriter 的 Delete/Insert 不带 model 参数（由适配器
 //     绑定），还多一个 BulkWrite 没有的 Setter；
-//   - Handle 自己也实现不了 CollectionWriter —— Collection.Delete(id any) /
-//     Mount.Delete(id string) 与接口要求的 Delete(where ...any) 重名不同签，
-//     一个类型上放不下。
-type CollectionBulkWrite struct {
-	model   CollectionModel
-	updater *Updater
-	// bulk 指定往哪个 BulkWrite 写。nil 时用 Updater 那份**共享**实例（常规路径）；
-	// Mount.Submit 会传一份独立的进来，好让单表落库不捎带提交玩家数据。
-	bulk BulkWrite
-}
-
-// newCollectionBulkWrite 不传 bulk 就用 Updater 的共享实例。
-func newCollectionBulkWrite(u *Updater, model CollectionModel, bulk ...BulkWrite) *CollectionBulkWrite {
-	r := &CollectionBulkWrite{updater: u, model: model}
-	if len(bulk) > 0 {
-		r.bulk = bulk[0]
+//   - Handle 自己也实现不了 CollectionWriter —— Collection.Delete(id any) 与接口要求的
+//     Delete(where ...any) 重名不同签，一个类型上放不下。
+func newCollectionBulkWrite(u *Updater, model CollectionModel, bulk ...BulkWrite) *hamster.CollectionBulkWrite {
+	setter := func(bw BulkWrite, _id string, dirty dataset.Update, unset []string) error {
+		return model.Setter(u, bw, _id, dirty, unset)
 	}
-	return r
-}
-
-func (w *CollectionBulkWrite) write() BulkWrite {
-	if w.bulk != nil {
-		return w.bulk
-	}
-	return w.updater.BulkWrite()
-}
-
-func (w *CollectionBulkWrite) Delete(where ...any) {
-	w.write().Delete(w.model, where...)
-}
-
-func (w *CollectionBulkWrite) Insert(documents ...any) {
-	w.write().Insert(w.model, documents...)
-}
-
-func (w *CollectionBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
-	return w.model.Setter(w.updater, w.write(), _id, dirty, unset)
+	return hamster.NewCollectionBulkWrite(u.store, model, setter, bulk...)
 }

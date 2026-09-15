@@ -23,7 +23,7 @@ type fieldTestRelic struct {
 // Field 只用到 dataset(取 Schema) 与 Updater(出错时置 Error)，不需要完整的 Model 注册。
 func newFieldTestDocument() *Document {
 	doc := &Document{dataset: dataset.NewDoc(&fieldTestDoc{})}
-	doc.statement.Updater = &Updater{}
+	doc.updater = &Updater{}
 	return doc
 }
 
@@ -98,7 +98,7 @@ func TestDocumentFieldRejectsBadPath(t *testing.T) {
 // Field 把空字段名当成解析成功交给调用方，写入落到一个空 key 上。
 func TestDocumentFieldSchemaUnavailable(t *testing.T) {
 	doc := &Document{name: "unittest"}
-	doc.statement.Updater = &Updater{}
+	doc.updater = &Updater{}
 
 	if key, err := doc.Field("breaklv"); err == nil {
 		t.Fatalf("dataset 未初始化时 Field 应报错，实际返回 key=%q", key)
@@ -113,13 +113,13 @@ func TestDocumentFieldSchemaUnavailable(t *testing.T) {
 func TestDocumentWriteKeepsPendingError(t *testing.T) {
 	doc := newFieldTestDocument()
 	pending := ErrArgsIllegal(1, 1)
-	doc.Updater.Error = pending
+	doc.updater.Error = pending
 
 	if op := doc.Set("breaklv", 1); op != nil {
 		t.Error("Updater 已处于错误状态，Set 不应产出操作")
 	}
-	if doc.Updater.Error != pending {
-		t.Fatalf("挂起的错误被覆盖了: %v", doc.Updater.Error)
+	if doc.updater.Error != pending {
+		t.Fatalf("挂起的错误被覆盖了: %v", doc.updater.Error)
 	}
 }
 

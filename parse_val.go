@@ -18,7 +18,7 @@ func init() {
 }
 
 func (this *Values) Parse(op *operator.Operator) (err error) {
-	if err = overflow(this.Updater, this, op); err != nil {
+	if err = overflow(this.updater, this, op); err != nil {
 		return
 	}
 	if f, ok := hashParseHandle[op.OType]; ok {
@@ -46,7 +46,7 @@ func hashParseSub(this *Values, op *operator.Operator) error {
 	}
 	d := this.dataset.Val(op.IID)
 	r := d - op.Value
-	if d < op.Value && !this.Updater.CreditAllowed {
+	if d < op.Value && !this.updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	op.Result = map[int32]int64{op.IID: r}

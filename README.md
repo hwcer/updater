@@ -8,6 +8,43 @@
 
 游戏玩家数据管理框架。位于数据库与业务逻辑之间，负责内存缓存、脏数据追踪、溢出处理、批量持久化。支持四种数据模型，统一 Add/Sub/Get/Val/Set/Del 接口。
 
+本仓库现在是**两层结构**：
+
+- **hamster**（`updater/hamster`）：核心版 —— GET/SET/DEL + 脏标记 + 批量落库的文档/集合存储引擎，带主档 Document 与 Entity 主体。颊囊预载（内存缓存）→ 囤货入仓（批量落库）→ 记得囤了什么（脏标记）。不依赖任何道具概念，适合公会管理、邮件、兑换码等场景；
+- **updater**（根包）：其上的玩家道具扩展层 —— IType 路由、Add/Sub、溢出分解、Values/Virtual。
+
+拆分设计与取舍见 [HAMSTER_PLAN.md](HAMSTER_PLAN.md)。
+
+## 核心版 hamster 快速上手
+
+```go
+// 进程启动：注册模型（主档用 Document，TableOrder 最大先加载）
+hamster.RegisterDocument("guild", hamster.RAMTypeAlways, &GuildProfileModel{})      // 公会主档
+hamster.RegisterCollection("guild_member", hamster.RAMTypeMaybe, &GuildMemberModel{})
+
+// 一次公会请求
+s := hamster.New(guild)            // guild 实现 Id() string
+defer s.Release()
+s.Loading()                        // 主档先行，成员随后
+s.Reset()
+
+prof := s.Document("guild")        // 主档：改公告、加资金（字段级 Add，无溢出）
+prof.Set("notice", "今晚8点攻城战")
+prof.Add("funds", 100)
+
+members := s.Collection("guild_member")
+members.Select(oid)
+s.Data()                           // 按需拉取
+if mem := members.Document(oid); mem != nil {
+    mem.Set("role", 2)
+}
+members.Add(oid, "contribution", 50)
+
+changes, err := s.Submit()         // 共享 BulkWrite 一次原子入库
+```
+
+核心版产出的 operator `IType` 恒 0，默认不进通用更新通道（客户端按 IType 分发，0 即无主数据）；需要变更记录时装自己的接收器或读 `Submit()` 返回值。
+
 ## 生命周期
 
 ```
@@ -117,27 +154,40 @@ v.Add(2001, 1)  // 委托给其他模块处理，同时生成 Operator 返回前
 
 ```
 updater/
-├── updater.go          Updater 核心生命周期（Reset/Submit/Release/Destroy）
-├── define.go           IType 接口 + Config 全局配置 + Keys 工具类
-├── model.go            模型注册（Register）+ Parser 类型
-├── statement.go        语句基类（Select/insert/verify/submit）
-├── handle.go           Handle 接口定义
+├── updater.go          Updater 扩展层（IType 路由/Add/Sub/委托 hamster.Store）
+├── define.go           IType 接口 + Config + 核心版类型别名
+├── model.go            模型注册（Register 桥接 hamster）+ 道具路由表
+├── statement.go        扩展层 statement 构造（默认接收器 + handleResult 注入）
+├── handle.go           Handle 别名 + 道具句柄小接口
 ├── handle_val.go       Values 实现
 ├── handle_doc.go       Document 实现
 ├── handle_coll.go      Collection 实现
 ├── handle_virtual.go   Virtual 实现（委托模式 + 可选前端转发）
-├── parse_val.go        Values 操作解析（Add/Sub/Set/Del）
-├── parse_doc.go        Document 操作解析
+├── handle_mount.go     Mount 薄包装（委托 hamster.Collection）
+├── parse_val.go        Values 操作解析（含溢出）
+├── parse_doc.go        Document 操作解析（含溢出）
 ├── parse_coll.go       Collection 操作解析（含 New/叠加/不叠加）
 ├── funcs.go            溢出处理（overflow → Resolve）
 ├── errors.go           错误定义 + 灾难熔断机制
 ├── events.go           事件系统（Listener/Middleware）
-├── process.go          Process 注册表
+├── cache.go / middleware.go  全局缓存/中间件
+├── HAMSTER_PLAN.md     核心版拆分设计方案
+├── HANDLER_MOUNT_PLAN.md / UNSET_PLAN.md  历史设计文档
+├── hamster/            核心版（存储引擎，无道具概念）
+│   ├── store.go        Store 生命周期 + Mount
+│   ├── statement.go    语句基类（含 handleResult 钩子）
+│   ├── handle.go       Handle 接口
+│   ├── model.go        注册表（工厂函数 + TableOrder）
+│   ├── document.go     核心版 Document（主档承载者）
+│   ├── collection.go   核心版 Collection（Mount 泛化 + 字段级 Add/Sub）
+│   ├── bulkwrite.go    CollectionBulkWrite 适配器
+│   └── errors.go / events.go / cache.go / middleware.go / define.go
 ├── dataset/
 │   ├── document.go     Document 数据封装（Get/Set/Save/Clone）
 │   ├── collection.go   Collection 数据集（Insert/Update/Delete/BulkWrite）
 │   ├── dirty.go        脏数据追踪（Insert/Update/Delete 三态标记）
 │   ├── values.go       Values 数据封装（map[int32]int64）
+│   ├── cursor.go       快照分页游标
 │   ├── update.go       Update map 封装
 │   ├── define.go       Model/BulkWrite 接口定义
 │   └── utils.go        类型转换工具

@@ -7,6 +7,7 @@ import (
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/hamster"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -25,8 +26,9 @@ type DocumentModel interface {
 
 // Document 文档存储
 type Document struct {
-	statement
-	name string
+	updater   *Updater
+	statement hamster.Statement //具名字段（非嵌入），见 newStatement
+	name      string
 	// schema 首次解析成功后缓存:整个 handle 生命周期内文档类型固定(model.New 只产出一种类型),
 	// 而 Field/Name/Table/Select 每次调用都要查字段,不缓存就要反复走 schema.Parse(反射取类型 + 全局 sync.Map)
 	schema  *schema.Schema
@@ -38,6 +40,7 @@ func NewDocument(u *Updater, m *Model) Handle {
 	r := &Document{}
 	r.name = m.name
 	r.model = m.model.(DocumentModel)
+	r.updater = u
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -61,15 +64,15 @@ func (this *Document) Val(k any) (r int64) {
 }
 
 func (this *Document) Data() (err error) {
-	if this.Updater.Error != nil {
-		return this.Updater.Error
+	if this.updater.Error != nil {
+		return this.updater.Error
 	}
-	if len(this.keys) == 0 {
+	if len(this.statement.Keys()) == 0 {
 		return nil
 	}
-	keys := this.keys.ToString()
-	if err = this.model.Getter(this.Updater, this.dataset, keys); err == nil {
-		this.statement.date()
+	keys := this.statement.Keys().ToString()
+	if err = this.model.Getter(this.updater, this.dataset, keys); err == nil {
+		this.statement.Date()
 	}
 	return
 }
@@ -102,7 +105,7 @@ func (this *Document) Parser() Parser {
 	return ParserTypeDocument
 }
 
-// ===================== Handle 接口私有方法 =====================
+// ===================== Handle 接口生命周期方法 =====================
 
 func (this *Document) increase(id int32, v int64) {
 	this.fieldOperator(operator.TypesAdd, id, v, nil)
@@ -112,57 +115,58 @@ func (this *Document) decrease(id int32, v int64) {
 	this.fieldOperator(operator.TypesSub, id, v, nil)
 }
 
-func (this *Document) save() (err error) {
-	bw := this.Updater.BulkWrite()
+func (this *Document) Save() (err error) {
+	bw := this.updater.BulkWrite()
 	if bw == nil {
 		return ErrBulkWriteNotInit
 	}
 	dirty, unsets := this.dataset.Save()
 	if len(dirty) > 0 || len(unsets) > 0 {
-		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
+		if err = this.model.Setter(this.updater, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
-			logger.Alert("database save error,uid:%s,Document:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
+			logger.Alert("database save error,uid:%s,Document:%s\nOperation:%s\nerror:%s", this.updater.Id(), this.name, ds, err.Error())
 		}
 	}
 	return
 }
 
-func (this *Document) reset() {
-	this.statement.reset()
+func (this *Document) Reset() {
+	this.statement.Reset()
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
 	if reset, ok := this.model.(ModelReset); ok {
-		if reset.Reset(this.Updater, this.Updater.last) {
-			this.Updater.Error = this.reload()
+		if reset.Reset(this.updater, this.updater.Last()) {
+			this.updater.Error = this.Reload()
 		}
 	}
 }
 
-func (this *Document) reload() error {
+func (this *Document) Reload() error {
 	this.dataset = nil
 	this.schema = nil
-	this.statement.reload()
-	return this.loading()
+	this.statement.Reload()
+	return this.Loading()
 }
 
-func (this *Document) loading() (err error) {
+func (this *Document) Loading() (err error) {
 	if this.dataset == nil {
 		this.dataset = dataset.NewDoc(nil)
 	}
-	if this.statement.loading() {
-		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
-			this.statement.loader = true
+	if this.statement.Loading() {
+		this.updater.Error = this.model.Getter(this.updater, this.dataset, nil)
+		if err = this.updater.Error; err == nil {
+			this.statement.SetLoaded(true)
 		}
 	} else if this.dataset.IsNil() {
-		this.dataset.Reset(this.model.New(this.statement.Updater))
+		this.dataset.Reset(this.model.New(this.updater))
 	}
-	return this.Updater.Error
+	return this.updater.Error
 }
 
-func (this *Document) release() {
-	this.statement.release()
-	if this.statement.ram == RAMTypeNone {
+func (this *Document) Release() {
+	this.statement.Release()
+	if this.statement.RAM() == RAMTypeNone {
 		this.dataset = nil
 		this.schema = nil
 	} else {
@@ -170,34 +174,35 @@ func (this *Document) release() {
 	}
 }
 
-func (this *Document) destroy() (err error) {
-	return this.save()
+func (this *Document) Destroy() (err error) {
+	return this.Save()
 }
 
-func (this *Document) submit() (err error) {
-	if err = this.Updater.WriteAble(); err != nil {
+func (this *Document) Commit() (err error) {
+	if err = this.updater.WriteAble(); err != nil {
 		return
 	}
-	this.statement.submit()
-	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+	this.statement.Submit()
+	if err = this.Save(); err != nil && this.statement.RAM() != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
 		err = nil
 	}
 	return
 }
 
-func (this *Document) verify() (err error) {
-	if err = this.Updater.WriteAble(); err != nil {
+func (this *Document) Verify() (err error) {
+	if err = this.updater.WriteAble(); err != nil {
 		return
 	}
 	// 下标遍历(而非 range):Parse 中 overflow→Resolve 可能往本 handle 追加操作(与自己同模型),
-	// range 按初始长度迭代会漏掉,使其被 statement.verify() 搬进 cache 却未 Parse、最终不落库。见 handle_coll.go。
-	for i := 0; i < len(this.statement.operator); i++ {
-		if err = this.Parse(this.statement.operator[i]); err != nil {
+	// range 按初始长度迭代会漏掉,使其被 statement.Verify() 搬进 cache 却未 Parse、最终不落库。
+	// ⚠️ Ops() 每轮重取：append 扩容后旧切片头看不见新增。
+	for i := 0; i < len(this.statement.Ops()); i++ {
+		if err = this.Parse(this.statement.Ops()[i]); err != nil {
 			return
 		}
 	}
-	this.statement.verify()
+	this.statement.Verify()
 	return
 }
 
@@ -245,12 +250,12 @@ func (this *Document) Schema() *schema.Schema {
 		return this.schema
 	}
 	if this.dataset == nil {
-		this.Updater.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
+		this.updater.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
 		return nil
 	}
 	sch, err := this.dataset.Schema()
 	if err != nil {
-		this.Updater.Error = err
+		this.updater.Error = err
 		return nil
 	}
 	this.schema = sch
@@ -264,8 +269,8 @@ func (this *Document) sch() (*schema.Schema, error) {
 	if sch := this.Schema(); sch != nil {
 		return sch, nil
 	}
-	if this.Updater.Error != nil {
-		return nil, this.Updater.Error
+	if this.updater.Error != nil {
+		return nil, this.updater.Error
 	}
 	return nil, fmt.Errorf("document schema not ready,model:%s", this.name)
 }
@@ -293,7 +298,7 @@ func (this *Document) Field(k any) (key string, err error) {
 	case string:
 		key = v
 	default:
-		if key, err = this.model.Field(this.Updater, dataset.ParseInt32(k)); err != nil {
+		if key, err = this.model.Field(this.updater, dataset.ParseInt32(k)); err != nil {
 			return "", err
 		}
 	}
@@ -312,7 +317,7 @@ func (this *Document) Field(k any) (key string, err error) {
 }
 
 func (this *Document) Insert(op *operator.Operator, before ...bool) {
-	this.statement.insert(op, before...)
+	this.statement.Insert(op, before...)
 }
 
 // ===================== 类型特有私有方法 =====================
@@ -332,14 +337,14 @@ func (this *Document) val(k string) (r int64, ok bool) {
 func (this *Document) fieldOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
 	field, err := this.Field(k)
 	if err != nil {
-		this.Updater.Error = err
+		this.updater.Error = err
 		return nil
 	}
 	return this.operator(t, field, v, r)
 }
 
 func (this *Document) operator(t operator.Types, k string, v int64, r any) *operator.Operator {
-	if err := this.Updater.WriteAble(); err != nil {
+	if err := this.updater.WriteAble(); err != nil {
 		return nil
 	}
 	if t == operator.TypesDel {
@@ -356,18 +361,18 @@ func (this *Document) operator(t operator.Types, k string, v int64, r any) *oper
 	this.statement.Select(op.Field)
 	it := this.IType(0)
 	if it == nil {
-		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
+		this.updater.Error = fmt.Errorf("document operator key empty:%+v", op)
 		op.Release()
 		return nil
 	}
 	op.IType = it.ID()
 	if oc, ok := it.(ITypeOID); ok {
-		op.OID = oc.GetOID(this.Updater, op.IID)
+		op.OID = oc.GetOID(this.updater, op.IID)
 	}
 	if listen, ok := it.(ITypeListener); ok {
-		listen.Listener(this.Updater, op)
+		listen.Listener(this.updater, op)
 	}
 
-	this.statement.insert(op)
+	this.statement.Insert(op)
 	return op
 }

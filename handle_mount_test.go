@@ -13,7 +13,7 @@ import (
 
 type mountPlayer struct{ uid string }
 
-func (p *mountPlayer) Uid() string { return p.uid }
+func (p *mountPlayer) Id() string { return p.uid }
 
 type mountRow struct {
 	Id     string `json:"_id" bson:"_id"`
@@ -365,9 +365,8 @@ func TestMountRejectsRegisteredName(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel()
 
-	backup := modelsRank
-	modelsRank = append(append([]*Model{}, modelsRank...), &Model{name: m.TableName()})
-	defer func() { modelsRank = backup }()
+	modelsDict[0] = &Model{name: m.TableName()}
+	defer func() { delete(modelsDict, 0) }()
 
 	if _, err := u.Mount(m); err == nil {
 		t.Fatal("与全局模型重名的 Mount 应报错")
@@ -390,7 +389,7 @@ func TestMountDestroyClearsMounts(t *testing.T) {
 	if len(bw.updates) != 0 {
 		t.Fatal("没跑完的请求不该被下线流程顺手落库")
 	}
-	if u.mounts != nil {
+	if len(u.Mounts()) != 0 {
 		t.Fatal("Destroy 应清空挂载表")
 	}
 }

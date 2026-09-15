@@ -2,6 +2,7 @@ package updater
 
 import (
 	"github.com/hwcer/updater/dataset"
+	"github.com/hwcer/updater/hamster"
 	"github.com/hwcer/updater/operator"
 )
 
@@ -18,9 +19,10 @@ type VirtualModel interface {
 
 // Virtual 虚拟数据层,本身不存储数据，操作委托给其他模块
 type Virtual struct {
-	statement
-	name  string //model database name
-	model VirtualModel
+	updater   *Updater
+	statement hamster.Statement //具名字段（非嵌入），见 newStatement
+	name      string            //model database name
+	model     VirtualModel
 	// cache 本次请求内**已处理过**的键值，Val 优先读它。
 	//
 	// 🔴 少了它就是一个静默丢数据的坑：Virtual 的 operator 带的是**绝对值**(d±value)，
@@ -40,6 +42,7 @@ func NewVirtual(u *Updater, m *Model) Handle {
 	r := &Virtual{}
 	r.name = m.name
 	r.model = m.model.(VirtualModel)
+	r.updater = u
 	r.statement = *newStatement(u, m, r.Has)
 	return r
 }
@@ -47,7 +50,7 @@ func NewVirtual(u *Updater, m *Model) Handle {
 // ===================== Handle 接口公开方法 =====================
 
 func (this *Virtual) Get(k any) (r any) {
-	return this.model.Get(this.Updater, k)
+	return this.model.Get(this.updater, k)
 }
 
 // Val 取当前值。**本次请求已经改过的键读缓存**，没改过才回落到模型（内存）。
@@ -58,7 +61,7 @@ func (this *Virtual) Val(k any) (r int64) {
 			return v
 		}
 	}
-	return dataset.ParseInt64(this.model.Get(this.Updater, k))
+	return dataset.ParseInt64(this.model.Get(this.updater, k))
 }
 
 // record 记下本次请求处理后该键的最新值，供后续 Val 读取。
@@ -89,14 +92,14 @@ func (this *Virtual) IType(iid int32) IType {
 }
 
 func (this *Virtual) Select(keys ...any) {
-	this.model.Select(this.Updater, keys...)
+	this.model.Select(this.updater, keys...)
 }
 
 func (this *Virtual) Parser() Parser {
 	return ParserTypeVirtual
 }
 
-// ===================== Handle 接口私有方法 =====================
+// ===================== Handle 接口生命周期方法 =====================
 
 func (this *Virtual) increase(k int32, v int64) {
 	this.Add(k, v)
@@ -106,45 +109,45 @@ func (this *Virtual) decrease(k int32, v int64) {
 	this.Sub(k, v)
 }
 
-func (this *Virtual) save() (err error) {
+func (this *Virtual) Save() (err error) {
 	return
 }
 
-func (this *Virtual) reset() {
-	this.statement.reset()
+func (this *Virtual) Reset() {
+	this.statement.Reset()
 	this.cache = nil //防御:正常由 release 清,这里再兜一次,免得异常路径把中间态带进新请求
 	if reset, ok := this.model.(ModelReset); ok {
-		if reset.Reset(this.Updater, this.Updater.last) {
-			this.Updater.Error = this.reload()
+		if reset.Reset(this.updater, this.updater.Last()) {
+			this.updater.Error = this.Reload()
 		}
 	}
 }
 
-func (this *Virtual) reload() error {
+func (this *Virtual) Reload() error {
 	this.cache = nil //数据要重新加载,之前记的中间态一律作废
-	return this.model.Reload(this.Updater)
+	return this.model.Reload(this.updater)
 }
 
-func (this *Virtual) loading() error {
+func (this *Virtual) Loading() error {
 	return nil
 }
 
-func (this *Virtual) release() {
-	this.statement.release()
+func (this *Virtual) Release() {
+	this.statement.Release()
 	this.cache = nil //缓存只在单次请求内有效
 }
 
-func (this *Virtual) verify() (err error) {
-	this.statement.verify()
+func (this *Virtual) Verify() (err error) {
+	this.statement.Verify()
 	return
 }
 
-func (this *Virtual) submit() (err error) {
-	this.statement.submit()
+func (this *Virtual) Commit() (err error) {
+	this.statement.Submit()
 	return
 }
 
-func (this *Virtual) destroy() (err error) {
+func (this *Virtual) Destroy() (err error) {
 	return nil
 }
 
@@ -170,7 +173,7 @@ func (this *Virtual) Add(k any, v any) {
 	d := this.Val(k)
 	iid, key, ok := this.key(k)
 	if !ok {
-		_ = this.Updater.Errorf("Virtual Add Args Error,name:%s,key:%v", this.name, k)
+		_ = this.updater.Errorf("Virtual Add Args Error,name:%s,key:%v", this.name, k)
 		return
 	}
 
@@ -178,9 +181,9 @@ func (this *Virtual) Add(k any, v any) {
 	if op == nil {
 		return
 	}
-	this.model.Update(this.Updater, op)
+	this.model.Update(this.updater, op)
 	this.record(key, d+value)
-	this.statement.insert(op)
+	this.statement.Insert(op)
 }
 
 func (this *Virtual) Sub(k any, v any) {
@@ -191,36 +194,36 @@ func (this *Virtual) Sub(k any, v any) {
 	d := this.Val(k)
 	iid, key, ok := this.key(k)
 	if !ok {
-		_ = this.Updater.Errorf("Virtual Sub Args Error,name:%s,key:%v", this.name, k)
+		_ = this.updater.Errorf("Virtual Sub Args Error,name:%s,key:%v", this.name, k)
 		return
 	}
-	if d < value && !this.Updater.CreditAllowed {
-		this.Updater.Error = ErrItemNotEnough(iid, value, d)
+	if d < value && !this.updater.CreditAllowed {
+		this.updater.Error = ErrItemNotEnough(iid, value, d)
 		return
 	}
 	op := this.newOperator(operator.TypesSub, iid, key, value, map[string]any{key: d - value})
 	if op == nil {
 		return
 	}
-	this.model.Update(this.Updater, op)
+	this.model.Update(this.updater, op)
 	this.record(key, d-value)
-	this.statement.insert(op)
+	this.statement.Insert(op)
 }
 
 func (this *Virtual) Set(k any, v any) {
 	iid, key, ok := this.key(k)
 	if !ok {
-		_ = this.Updater.Errorf("Virtual Set Args Error,name:%s,key:%v", this.name, k)
+		_ = this.updater.Errorf("Virtual Set Args Error,name:%s,key:%v", this.name, k)
 		return
 	}
 	op := this.newOperator(operator.TypesSet, iid, key, 0, map[string]any{key: v})
-	this.model.Update(this.Updater, op)
+	this.model.Update(this.updater, op)
 	this.record(key, dataset.ParseInt64(v))
-	this.statement.insert(op)
+	this.statement.Insert(op)
 }
 
 func (this *Virtual) Has(k any) bool {
-	return this.model.Has(this.Updater, k)
+	return this.model.Has(this.updater, k)
 }
 
 // ===================== 类型特有私有方法 =====================

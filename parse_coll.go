@@ -21,7 +21,7 @@ func init() {
 }
 
 func (this *Collection) Parse(op *operator.Operator) (err error) {
-	if err = overflow(this.Updater, this, op); err != nil {
+	if err = overflow(this.updater, this, op); err != nil {
 		return
 	}
 	if f, ok := collectionParseHandle[op.OType]; ok {
@@ -70,14 +70,14 @@ func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 // New 必须是创建好的ITEM对象,仅外部直接创建新对象时调用
 func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
-		return coll.Updater.Errorf("operator[New] oid  cannot be empty:%+v", op)
+		return coll.updater.Errorf("operator[New] oid  cannot be empty:%+v", op)
 	}
 	if op.Result == nil {
-		return coll.Updater.Errorf("operator[New] Result empty:%+v", op)
+		return coll.updater.Errorf("operator[New] Result empty:%+v", op)
 	}
 	items, ok := op.Result.([]any)
 	if !ok {
-		return coll.Updater.Errorf("operator[New] Result type must be []any :%+v", op)
+		return coll.updater.Errorf("operator[New] Result type must be []any :%+v", op)
 	}
 	op.Result, _, err = collectionHandleInsert(coll, items...)
 	return
@@ -119,7 +119,7 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 	}
 	d := doc.GetInt64(coll.Field())
 	r := d - op.Value
-	if d < op.Value && !coll.Updater.CreditAllowed {
+	if d < op.Value && !coll.updater.CreditAllowed {
 		return ErrItemNotEnough(op.IID, op.Value, d)
 	}
 	if err = coll.dataset.Set(op.OID, op.Field, r); err == nil {
@@ -133,7 +133,7 @@ func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
 		return ErrObjectIdEmpty(op.IID)
 	}
-	if ok := coll.Has(op.OID); !ok && coll.model.Upsert(coll.Updater, op) {
+	if ok := coll.Has(op.OID); !ok && coll.model.Upsert(coll.updater, op) {
 		return collectionHandleNewItem(coll, op)
 	} else if !ok {
 		return ErrItemNotExist(op.OID)
@@ -161,7 +161,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 	cc := op.Clone(1)
 	defer cc.Release()
 	for i := int64(1); i <= op.Value; i++ {
-		if item, err = it.New(coll.Updater, cc); err != nil {
+		if item, err = it.New(coll.updater, cc); err != nil {
 			return
 		}
 		items = append(items, item)
@@ -176,7 +176,7 @@ func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error
 		return ErrITypeNotExist(op.IID)
 	}
 	var i any
-	i, err = it.New(coll.Updater, op)
+	i, err = it.New(coll.updater, op)
 	if err != nil {
 		return err
 	}
