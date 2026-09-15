@@ -11,17 +11,10 @@ import (
 // 一是保持既有代码 this.statement.xxx 的调用形态，二是避免把 Statement 的
 // 导出方法提升到句柄公开面上。
 //
-// 默认接收器在这里接进 updater.dirty：核心版 statement 的默认行为是插 store.dirty，
-// 扩展层的 operator 流水（下发客户端）走根包这份。
+// 不设接收器：statement 默认把已校验操作插进 store.dirty，
+// 与根包的变更流水是同一份（Updaters 内嵌 Store 后 u.dirty 即 store.dirty）。
 func newStatement(u *Updater, m *Model, exist func(any) bool) *hamster.Statement {
-	st := hamster.NewStatement(u.store, m.ram, exist)
-	st.Receiver(u.pushDirty)
-	return st
-}
-
-// pushDirty 默认接收器：把已校验操作追加进 Updater.dirty（u.Submit 返回给调用方）。
-func (u *Updater) pushDirty(_ *hamster.Store, ops []*operator.Operator) {
-	u.dirty = append(u.dirty, ops...)
+	return hamster.NewStatement(u.Store, m.ram, exist)
 }
 
 // itemResultFill handleResult 钩子：按 op.IType 查注册表填充 ITypeResult.Result。

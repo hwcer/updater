@@ -151,7 +151,7 @@ func (this *Collection) Reset() {
 	}
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.updater, this.updater.Last()) {
-			this.updater.setError(this.Reload())
+			this.updater.Error = this.Reload()
 		}
 	}
 }
@@ -167,7 +167,7 @@ func (this *Collection) Loading() error {
 		this.dataset = dataset.NewColl()
 	}
 	if this.statement.Loading() {
-		this.updater.setError(this.model.Getter(this.updater, this.dataset, nil))
+		this.updater.Error = this.model.Getter(this.updater, this.dataset, nil)
 		if this.updater.Error == nil {
 			this.statement.SetLoaded(true)
 		}
@@ -253,16 +253,16 @@ func (this *Collection) Set(id any, v ...any) *operator.Operator {
 	switch len(v) {
 	case 1:
 		if data = dataset.ParseUpdate(v[0]); data == nil {
-			this.updater.setError(ErrArgsIllegal(id, v))
+			this.updater.Error = ErrArgsIllegal(id, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
 			data = dataset.NewUpdate(field, v[1])
 		} else {
-			this.updater.setError(ErrArgsIllegal(id, v))
+			this.updater.Error = ErrArgsIllegal(id, v)
 		}
 	default:
-		this.updater.setError(ErrArgsIllegal(id, v))
+		this.updater.Error = ErrArgsIllegal(id, v)
 	}
 	if this.updater.Error != nil {
 		return nil
@@ -425,7 +425,7 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 		op.OID = d
 		var err error
 		if op.IID, err = Config.ParseId(this.updater, op.OID); err != nil {
-			this.updater.setError(err)
+			this.updater.Error = err
 		}
 	default:
 		op.IID = dataset.ParseInt32(id)
@@ -436,7 +436,7 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 		return nil
 	}
 	if err := this.mayChange(op); err != nil {
-		this.updater.setError(err)
+		this.updater.Error = err
 		op.Release()
 		return nil
 	}
@@ -473,12 +473,12 @@ func (this *Collection) format(op *operator.Operator) {
 	data := dataset.Update{}
 	result, ok := op.Result.(dataset.Update)
 	if !ok {
-		this.updater.setError(fmt.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result))
+		this.updater.Error = fmt.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
 		return
 	}
 	sch := this.Schema()
 	if sch == nil {
-		this.updater.setError(fmt.Errorf("operator.set schema empty:%s", this.name))
+		this.updater.Error = fmt.Errorf("operator.set schema empty:%s", this.name)
 		return
 	}
 	//统一成 json 名,与 Document.Field 同口径(理由见 Document.Name):op.Result 既是发
@@ -489,7 +489,7 @@ func (this *Collection) format(op *operator.Operator) {
 	for k, v := range result {
 		name, err := sch.JSName(k)
 		if err != nil {
-			this.updater.setError(fmt.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err))
+			this.updater.Error = fmt.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
 			return
 		}
 		data[name] = v
@@ -513,5 +513,5 @@ func newCollectionBulkWrite(u *Updater, model CollectionModel, bulk ...BulkWrite
 	setter := func(bw BulkWrite, _id string, dirty dataset.Update, unset []string) error {
 		return model.Setter(u, bw, _id, dirty, unset)
 	}
-	return hamster.NewCollectionBulkWrite(u.store, model, setter, bulk...)
+	return hamster.NewCollectionBulkWrite(u.Store, model, setter, bulk...)
 }

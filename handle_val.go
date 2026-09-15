@@ -118,7 +118,7 @@ func (this *Values) Reset() {
 	}
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.updater, this.updater.Last()) {
-			this.updater.setError(this.Reload())
+			this.updater.Error = this.Reload()
 		}
 	}
 }
@@ -134,7 +134,7 @@ func (this *Values) Loading() error {
 		this.dataset = dataset.NewValues()
 	}
 	if this.statement.Loading() {
-		this.updater.setError(this.model.Getter(this.updater, this.dataset, nil))
+		this.updater.Error = this.model.Getter(this.updater, this.dataset, nil)
 		if this.updater.Error == nil {
 			this.statement.SetLoaded(true)
 		}

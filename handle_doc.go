@@ -137,7 +137,7 @@ func (this *Document) Reset() {
 	}
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.updater, this.updater.Last()) {
-			this.updater.setError(this.Reload())
+			this.updater.Error = this.Reload()
 		}
 	}
 }
@@ -154,7 +154,7 @@ func (this *Document) Loading() (err error) {
 		this.dataset = dataset.NewDoc(nil)
 	}
 	if this.statement.Loading() {
-		this.updater.setError(this.model.Getter(this.updater, this.dataset, nil))
+		this.updater.Error = this.model.Getter(this.updater, this.dataset, nil)
 		if err = this.updater.Error; err == nil {
 			this.statement.SetLoaded(true)
 		}
@@ -250,12 +250,12 @@ func (this *Document) Schema() *schema.Schema {
 		return this.schema
 	}
 	if this.dataset == nil {
-		this.updater.setError(fmt.Errorf("document dataset not init,model:%s", this.name))
+		this.updater.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
 		return nil
 	}
 	sch, err := this.dataset.Schema()
 	if err != nil {
-		this.updater.setError(err)
+		this.updater.Error = err
 		return nil
 	}
 	this.schema = sch
@@ -337,7 +337,7 @@ func (this *Document) val(k string) (r int64, ok bool) {
 func (this *Document) fieldOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
 	field, err := this.Field(k)
 	if err != nil {
-		this.updater.setError(err)
+		this.updater.Error = err
 		return nil
 	}
 	return this.operator(t, field, v, r)
@@ -361,7 +361,7 @@ func (this *Document) operator(t operator.Types, k string, v int64, r any) *oper
 	this.statement.Select(op.Field)
 	it := this.IType(0)
 	if it == nil {
-		this.updater.setError(fmt.Errorf("document operator key empty:%+v", op))
+		this.updater.Error = fmt.Errorf("document operator key empty:%+v", op)
 		op.Release()
 		return nil
 	}
