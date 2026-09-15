@@ -471,7 +471,9 @@ func (s *Store) Mount(m MountModel, keys ...string) (*Collection, error) {
 		}
 		//ram 强制 RAMTypeMaybe：只影响 statement.Has 里 `Always && loader` 那条短路，
 		//绝不能命中——命中之后 Select 会跳过每一个 key，Data 永不执行、Get 全 nil 且不报错。
-		r = &Collection{name: name, model: m, dataset: dataset.NewColl()}
+		//mount=true：挂载形态，与主干 Mount 口径一致——不做跨天重置、无溢出检查、
+		//缺失文档直接报错（见 Collection 的 mount 门控）。
+		r = &Collection{name: name, model: m, dataset: dataset.NewColl(), mount: true}
 		r.statement = *NewStatement(s, RAMTypeMaybe, r.exist)
 		r.statement.Receiver(DiscardReceiver)
 		r.reset()

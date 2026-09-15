@@ -37,7 +37,8 @@ type Collection struct {
 	model   CollectionModel
 	remove  []string //待从内存移除的 _id，submit 时统一处理（落库之后再摘，别丢掉未保存的改动）
 	dataset *dataset.Collection
-	unmount bool //已标记卸载，Release 阶段才真正摘除（仅挂载形态使用）
+	unmount bool  //已标记卸载，Release 阶段才真正摘除（仅挂载形态使用）
+	mount   bool  //挂载形态：屏蔽可选模型接口（跨天重置/溢出等，主干 Mount 语义）
 }
 
 // Receiver 装载变更接收器（默认 DiscardReceiver）；nil 恢复默认。
@@ -408,13 +409,16 @@ func (this *Collection) bulkWriter(bulk BulkWrite) *CollectionBulkWrite {
 }
 
 // Reset 每次请求开始。模型实现 ModelReset 时做跨天/跨周重置（重置即重新加载）。
+// 挂载形态与主干 Mount 口径一致：不做跨天重置（生命周期由 Mount/Unmount 决定）。
 func (this *Collection) reset() {
 	this.statement.Reset()
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
 	}
-	if r, ok := this.model.(ModelReset); ok && r.Reset(this.statement.Store, this.statement.Store.Last()) {
-		this.statement.Store.Error = this.reload()
+	if !this.mount {
+		if r, ok := this.model.(ModelReset); ok && r.Reset(this.statement.Store, this.statement.Store.Last()) {
+			this.statement.Store.Error = this.reload()
+		}
 	}
 }
 
