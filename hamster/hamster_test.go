@@ -45,9 +45,9 @@ func (b *testBulk) Update(_ any, _ any, where ...any) {
 	}
 	b.updates = append(b.updates, "") //Values 整表一行的落库没有 where 子句
 }
-func (b *testBulk) Insert(_ any, _ ...any)             { b.inserts++ }
-func (b *testBulk) Delete(_ any, _ ...any)             { b.deletes++ }
-func (b *testBulk) String() string                     { return "" }
+func (b *testBulk) Insert(_ any, _ ...any) { b.inserts++ }
+func (b *testBulk) Delete(_ any, _ ...any) { b.deletes++ }
+func (b *testBulk) String() string         { return "" }
 
 // testCollModel 集合模型：内存行 + Getter/Setter 计数 + 错误注入
 type testCollModel struct {
@@ -106,9 +106,9 @@ func newTestDocModel() *testDocModel {
 	return &testDocModel{row: &testDoc{Notice: "hello"}}
 }
 
-func (m *testDocModel) TableName() string { return "hamster_test_doc" }
-func (m *testDocModel) TableOrder() int32 { return 9 } //主档：TableOrder 最前
-func (m *testDocModel) New(_ *hamster.Store) any         { return m.row }
+func (m *testDocModel) TableName() string        { return "hamster_test_doc" }
+func (m *testDocModel) TableOrder() int32        { return 9 } //主档：TableOrder 最前
+func (m *testDocModel) New(_ *hamster.Store) any { return m.row }
 func (m *testDocModel) Getter(_ *hamster.Store, data *dataset.Document, _ []string) error {
 	if m.err != nil {
 		return m.err
@@ -411,7 +411,7 @@ func newTestVirtualModel() *testVirtualModel {
 	return &testVirtualModel{store: map[string]int64{}, pending: map[string]int64{}}
 }
 
-func (m *testVirtualModel) TableName() string { return "hamster_test_virtual" }
+func (m *testVirtualModel) TableName() string                 { return "hamster_test_virtual" }
 func (m *testVirtualModel) Has(_ *hamster.Store, _ any) bool  { return true }
 func (m *testVirtualModel) Get(_ *hamster.Store, k any) any   { return m.store[k.(string)] }
 func (m *testVirtualModel) Select(_ *hamster.Store, _ ...any) {}

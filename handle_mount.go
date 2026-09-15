@@ -13,10 +13,10 @@ import (
 // 充值订单、临时战斗副本。共同点是要同批次原子写库 + 按需查库 + 可选内存驻留，
 // **不进 IType 路由、不自动生成给客户端的 operator**。
 //
-// 拆分后实现整体在 hamster.Collection（本 Mount 就是它的泛化蓝本），
-// 根包 Mount **内嵌** *hamster.Collection —— 全部方法提升，零委托胶水。
-// 内嵌纪律：只加方法（Count），不覆盖任何核心内部会自调的行为。设计取舍见
-// HANDLER_MOUNT_PLAN.md 与 HAMSTER_PLAN.md。
+// 核心实现是 hamster.Mount（独立封装，不内嵌 hamster.Collection —— 方法提升没有虚派发，
+// 内嵌复用反复踩"覆盖了却不生效"的坑，主干三稿教训）；根包 Mount **内嵌** *hamster.Mount
+// —— 全部方法提升，零委托胶水。内嵌纪律：只加方法，不覆盖任何核心内部会自调的行为。
+// 设计取舍见 HANDLER_MOUNT_PLAN.md 与 HAMSTER_PLAN.md。
 
 // MountModel 临时数据模型。
 //
@@ -44,6 +44,14 @@ func (a *mountAdapter) Setter(_ *hamster.Store, bw BulkWrite, _id string, dirty 
 	return a.m.Setter(a.u, bw, _id, dirty, unset)
 }
 func (a *mountAdapter) TableName() string { return a.m.TableName() }
+
+// GetValueJSName 数值字段名（核心 Mount.Field 的回落链会用到），与 collAdapter 同款转发
+func (a *mountAdapter) GetValueJSName() string {
+	if f, ok := a.m.(CollectionModelValueJSName); ok {
+		return f.GetValueJSName()
+	}
+	return ""
+}
 
 // Mount 挂载/取回一个临时数据集合，keys 非空时顺带把这几条**当场查出来**。
 //
@@ -93,11 +101,11 @@ func (u *Updater) Mount(model MountModel, keys ...string) (*Mount, error) {
 
 // mountOf 取挂载包装句柄：**同一底层集合恒返回同一 *Mount 指针**（幂等语义的组成部分，
 // 业务拿它做句柄比较/长命缓存）。包装缓存放在根包（核心保持干净）。
-func (u *Updater) mountOf(c *hamster.Collection) *Mount {
+func (u *Updater) mountOf(c *hamster.Mount) *Mount {
 	if v, ok := u.mountViews.Load(c); ok {
 		return v.(*Mount)
 	}
-	m := &Mount{Collection: c}
+	m := &Mount{Mount: c}
 	v, _ := u.mountViews.LoadOrStore(c, m)
 	return v.(*Mount)
 }
@@ -125,25 +133,13 @@ func (u *Updater) Unmount(model MountModel) {
 }
 
 // Mounts 挂载表（只读视图，键为挂载名）。Destroy 后为空。
-func (u *Updater) Mounts() map[string]*hamster.Collection {
+func (u *Updater) Mounts() map[string]*hamster.Mount {
 	return u.Store.Mounts()
 }
 
-// Mount 挂载集合句柄：**内嵌 hamster.Collection**，Get/Val/Data/Select/Set/Update/
-// Unset/Delete/Insert/Submit/Receive/Remove/Operators 等全部方法提升自核心版。
+// Mount 挂载集合句柄：**内嵌 hamster.Mount**（核心独立封装，不内嵌 Collection，
+// 语义见 hamster/mount.go）。Get/Val/Data/Select/Set/Update/Unset/Delete/Insert/
+// Submit/Receive/Remove/Operators/Count/Document/Range 等全部方法提升自核心版。
 type Mount struct {
-	*hamster.Collection
-}
-
-// Count 统计 iid 匹配的文档数，iid 传 0 统计全部。
-// ⚠️ **这是不完全统计**：挂载按 key 惰性加载，它数的是内存不是库。
-func (this *Mount) Count(iid int32) int64 {
-	var n int64
-	this.Range(func(id string, doc *dataset.Document) bool {
-		if iid == 0 || docIID(doc) == iid {
-			n++
-		}
-		return true
-	})
-	return n
+	*hamster.Mount
 }

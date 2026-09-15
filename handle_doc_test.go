@@ -23,8 +23,8 @@ type fieldTestRelic struct {
 
 type fieldTestDocModel struct{}
 
-func (m *fieldTestDocModel) TableName() string                        { return "doc_field_test" }
-func (m *fieldTestDocModel) New(*hamster.Store) any                   { return &fieldTestDoc{} }
+func (m *fieldTestDocModel) TableName() string      { return "doc_field_test" }
+func (m *fieldTestDocModel) New(*hamster.Store) any { return &fieldTestDoc{} }
 func (m *fieldTestDocModel) Getter(_ *hamster.Store, d *dataset.Document, _ []string) error {
 	d.Reset(&fieldTestDoc{})
 	return nil

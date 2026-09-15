@@ -27,7 +27,7 @@ type DocumentModel interface {
 // 其余模型的 Getter 以 Store.Id() 为键基础派生查询。
 type Document struct {
 	statement Statement
-	name string
+	name      string
 	// schema 首次解析成功后缓存:整个 handle 生命周期内文档类型固定(model.New 只产出一种类型),
 	// 而 Field/Name/Table/Select 每次调用都要查字段,不缓存就要反复走 schema.Parse(反射取类型 + 全局 sync.Map)
 	schema  *schema.Schema

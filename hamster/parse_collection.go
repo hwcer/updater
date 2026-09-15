@@ -34,10 +34,6 @@ func (this *Collection) parseSet(op *operator.Operator) error {
 	}
 	u := this.statement.Store
 	if !this.dataset.Has(op.OID) {
-		//挂载形态与主干 Mount 口径一致：缺文档直接报错（不咨询 Upsert/DocFactory）
-		if this.mount {
-			return ErrItemNotExist(op.OID)
-		}
 		if !this.model.Upsert(u, op) {
 			return ErrItemNotExist(op.OID)
 		}
@@ -80,13 +76,10 @@ func (this *Collection) parseDel(op *operator.Operator) error {
 	if doc == nil {
 		return ErrItemNotExist(op.OID)
 	}
-	//注册集合形态：删除数值随通知带给客户端（0 视作 1）—— 主干 collectionHandleDel 口径；
-	//挂载形态不戳（主干 Mount.parseDel 口径）
-	if !this.mount {
-		op.Value = doc.GetInt64(this.Field())
-		if op.Value == 0 {
-			op.Value = 1
-		}
+	//删除数值随通知带给客户端（0 视作 1）
+	op.Value = doc.GetInt64(this.Field())
+	if op.Value == 0 {
+		op.Value = 1
 	}
 	this.dataset.Delete(op.OID)
 	return nil
@@ -109,14 +102,12 @@ func (this *Collection) parseNew(op *operator.Operator) error {
 // 数值键（IID）非 0 且模型声明多文档（Stacked=false）时：按件经 DocFactory 生成，
 // 一件一条 New（装备类语义）；否则定点累加，超限截断（溢出控制），缺失文档可经
 // DocFactory 生成后累加。
-// 挂载形态与主干 Mount 口径一致：无溢出检查、无按件生成、缺失文档直接报错。
 func (this *Collection) parseAdd(op *operator.Operator) error {
 	if op.Value <= 0 {
 		return ErrArgsIllegal(op.OID, op.Value)
 	}
 	u := this.statement.Store
-	mount := this.mount
-	if op.IID != 0 && !mount {
+	if op.IID != 0 {
 		var stacked = true
 		if st, ok := this.model.(Stacker); ok {
 			stacked = st.Stacked(u, op.IID)
@@ -146,21 +137,16 @@ func (this *Collection) parseAdd(op *operator.Operator) error {
 	if op.OID == "" {
 		return ErrObjectIdEmpty(op.IID)
 	}
-	//数值上限（溢出控制，挂载形态不做）：分组键优先 IID，缺失文档视为持有 0
-	if !mount {
-		if err := overflowAdd(this.model, u, overflowKey(op), op, func() int64 {
-			if doc := this.dataset.Val(op.OID); doc != nil {
-				return doc.GetInt64(this.Field())
-			}
-			return 0
-		}); err != nil {
-			return err
+	//数值上限（溢出控制）：分组键优先 IID，缺失文档视为持有 0
+	if err := overflowAdd(this.model, u, overflowKey(op), op, func() int64 {
+		if doc := this.dataset.Val(op.OID); doc != nil {
+			return doc.GetInt64(this.Field())
 		}
+		return 0
+	}); err != nil {
+		return err
 	}
 	if !this.dataset.Has(op.OID) {
-		if mount {
-			return ErrItemNotExist(op.OID)
-		}
 		f, ok := this.model.(DocFactory)
 		if !ok {
 			return ErrItemNotExist(op.OID)

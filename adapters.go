@@ -71,7 +71,9 @@ func (a *valuesAdapter) Overflow(s *hamster.Store, key any, n int64) (map[int32]
 	return nil, nil
 }
 
-func (a *valuesAdapter) Reset(s *hamster.Store, last time.Time) bool { return legacyReset(a.m, s, last) }
+func (a *valuesAdapter) Reset(s *hamster.Store, last time.Time) bool {
+	return legacyReset(a.m, s, last)
+}
 
 // ---------------- Collection ----------------
 
@@ -178,4 +180,6 @@ func (a *virtualAdapter) Update(s *hamster.Store, op *operator.Operator) {
 	a.m.Update(updaterOf(s), op)
 }
 
-func (a *virtualAdapter) Reset(s *hamster.Store, last time.Time) bool { return legacyReset(a.m, s, last) }
+func (a *virtualAdapter) Reset(s *hamster.Store, last time.Time) bool {
+	return legacyReset(a.m, s, last)
+}

@@ -25,9 +25,9 @@ type VirtualModel interface {
 // 没有 IType 盖键（op.IType 恒 0）。
 type Virtual struct {
 	statement Statement
-	name  string //model database name
-	model VirtualModel
-	cache map[string]int64 //本次请求内已处理过的键值，Val 优先读它
+	name      string //model database name
+	model     VirtualModel
+	cache     map[string]int64 //本次请求内已处理过的键值，Val 优先读它
 }
 
 func newVirtual(s *Store, m *Model) Handle {

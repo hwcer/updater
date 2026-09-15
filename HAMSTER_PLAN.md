@@ -11,6 +11,14 @@
 > 唯一实现者集合；④核心包完整化：四种数据形状 + 字段级 Add/Sub 全部在核心。
 > 一至六节的切割线分析、扩展点论证与历史教训仍然有效。
 
+> **落地修订（hamster 分支实施时）**：`Mount` 不再"内嵌 `*hamster.Collection`"——
+> 核心提供**独立封装的 `hamster.Mount`**（mount.go，与 Collection 平行的纯净实现，
+> Collection 的 mount 门控已拆除，只剩注册集合形态）；`Store.Mount` 返回 `*hamster.Mount`，
+> 根包 `Mount` 改内嵌 `*hamster.Mount`。这正是本文反复引用的 Mount 三稿教训的最终落点：
+> 挂载真正需要的只有 Set/Unset/Del/New 四种操作，独立写清楚反而短。
+> 另：模型 `GetValueJSName()` 返回空串视作未声明（适配器恒实现该接口，不得截断
+> `Field()` 的回落链）—— 两条实现均以主干 handle_mount.go 语义为准。
+
 **一句话定位**：本仓库拆成两层 —— **hamster**（GET/SET/DEL + 脏标记 + 批量落库的文档/集合存储引擎，
 颊囊预载、囤货入仓：数据预载进内存、攒一批原子入库、脏标记记得囤了什么）与 **updater**（其上的玩家道具扩展层，
 IType 路由、Add/Sub、溢出分解都是扩展）。

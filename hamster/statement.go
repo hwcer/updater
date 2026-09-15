@@ -15,14 +15,14 @@ type stmHandleResult func(s *Store, op *operator.Operator)
 // 方法大写是因为扩展层(updater)的句柄要跨包调用它们；
 // 扩展层句柄把它作为**具名字段** statement 内嵌使用，核心版句柄则直接嵌入。
 type Statement struct {
-	ram     RAMType
-	keys    Keys                 //待拉取的数据库 key，Data 阶段消费后清空
-	cache   []*operator.Operator //已通过 verify 校验的操作，等待 submit
-	loader  bool                 //是否已完成初始数据加载
-	Store   *Store
-	operator []*operator.Operator //待处理的操作，verify 阶段消费
-	handleExist    stmHandleExist    //查询数据集中是否已存在指定 key
-	handleReceiver stmHandleReceiver //接收操作结果，默认插入 Store.dirty
+	ram            RAMType
+	keys           Keys                 //待拉取的数据库 key，Data 阶段消费后清空
+	cache          []*operator.Operator //已通过 verify 校验的操作，等待 submit
+	loader         bool                 //是否已完成初始数据加载
+	Store          *Store
+	operator       []*operator.Operator //待处理的操作，verify 阶段消费
+	handleExist    stmHandleExist       //查询数据集中是否已存在指定 key
+	handleReceiver stmHandleReceiver    //接收操作结果，默认插入 Store.dirty
 	// handleResult verify 搬运时填充 op.Result；nil 则跳过。
 	//
 	// 🔴 这是"机制必须回调扩展层"的唯一正式通道：扩展层在句柄构造时注入

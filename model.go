@@ -6,8 +6,8 @@ import (
 
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/updater/dataset"
-	"github.com/hwcer/updater/operator"
 	"github.com/hwcer/updater/hamster"
+	"github.com/hwcer/updater/operator"
 )
 
 // ---------------- 扩展层模型接口（业务实现，签名含 *Updater） ----------------

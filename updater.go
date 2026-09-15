@@ -25,7 +25,7 @@ type Updater struct {
 	Events     Events      //生命周期事件（扩展层签名 Listener(*Updater)，遮蔽提升的同名字段）
 	Middleware Middlewares //中间件（同上）
 
-	mountViews sync.Map //挂载包装缓存：*hamster.Collection → *Mount（保证句柄指针同一）
+	mountViews sync.Map //挂载包装缓存：*hamster.Mount → *Mount（保证句柄指针同一）
 }
 
 // Entity 数据属主（取代 Player/Uid 用词 —— 核心版不绑玩家域）。
@@ -94,7 +94,7 @@ func (u *Updater) Sub(iid int32, num any) {
 }
 
 // itemChange 顶层道具增减：路由到核心句柄，把 IID 换算成句柄的 key 形态
-//（Values 数值键直用；Document/Virtual 换算字段名；Collection 直传数值键，
+// （Values 数值键直用；Document/Virtual 换算字段名；Collection 直传数值键，
 // 由核心经模型的 OIDMaker/Stacker 完成 OID 换算、按件生成与溢出控制）。
 func (u *Updater) itemChange(t operator.Types, iid int32, num any) {
 	w := u.handleWithKey(iid)

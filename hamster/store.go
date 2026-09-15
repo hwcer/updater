@@ -5,19 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/hwcer/cosgo/schema"
-	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
-
-// MountModel 挂载/临时集合模型。
-//
-// 组合 schema.Tabler 是必需的：挂载名取自 TableName()，而 CollectionModel 本身不含它。
-// ⚠️ Getter 只会收到**非空**的 keys —— 挂载是按需加载的，从不做全量拉取。
-type MountModel interface {
-	CollectionModel
-	schema.Tabler
-}
 
 // Store 核心版存储引擎：颊囊预载（内存缓存）→ 囤货入仓（批量落库）→ 记得囤了什么（脏标记）。
 //
@@ -32,7 +21,7 @@ type Store struct {
 	entity    Entity               //数据属主
 	status    Status               //状态位：Init/Submit/Changed/Operated
 	handles   map[string]Handle    //已注册的数据 Handle
-	mounts    map[string]*Collection //临时挂载的数据集合，见 Mount
+	mounts    map[string]*Mount    //临时挂载的数据集合，见 Mount
 	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
 
 	emitHook func(s *Store, t EventType) //扩展层事件桥：内部 Emit 前先交给扩展层分发
@@ -459,7 +448,7 @@ func (s *Store) Virtual(name string) *Virtual {
 //
 // ⚠️ 不带 keys 时**不做任何预加载**。⚠️ 查库失败时返回 (句柄, err) —— 句柄已挂上可用，
 // 重试一次 Select + Data 即可；唯一会返回 nil 的是重名。
-func (s *Store) Mount(m MountModel, keys ...string) (*Collection, error) {
+func (s *Store) Mount(m MountModel, keys ...string) (*Mount, error) {
 	name := m.TableName()
 	r, exist := s.mounts[name]
 	if !exist {
@@ -467,15 +456,9 @@ func (s *Store) Mount(m MountModel, keys ...string) (*Collection, error) {
 			return nil, Errorf(0, "mount name conflicts with registered model:%v", name)
 		}
 		if s.mounts == nil {
-			s.mounts = make(map[string]*Collection)
+			s.mounts = make(map[string]*Mount)
 		}
-		//ram 强制 RAMTypeMaybe：只影响 statement.Has 里 `Always && loader` 那条短路，
-		//绝不能命中——命中之后 Select 会跳过每一个 key，Data 永不执行、Get 全 nil 且不报错。
-		//mount=true：挂载形态，与主干 Mount 口径一致——不做跨天重置、无溢出检查、
-		//缺失文档直接报错（见 Collection 的 mount 门控）。
-		r = &Collection{name: name, model: m, dataset: dataset.NewColl(), mount: true}
-		r.statement = *NewStatement(s, RAMTypeMaybe, r.exist)
-		r.statement.Receiver(DiscardReceiver)
+		r = newMount(s, m)
 		r.reset()
 		s.mounts[name] = r
 	}
@@ -490,12 +473,12 @@ func (s *Store) Mount(m MountModel, keys ...string) (*Collection, error) {
 }
 
 // Mounted 取回已挂载的临时集合，未挂载返回 nil。只取不挂，也不取数。
-func (s *Store) Mounted(m MountModel) *Collection {
+func (s *Store) Mounted(m MountModel) *Mount {
 	return s.mounts[m.TableName()]
 }
 
 // Mounts 挂载表（只读视图，键为挂载名）。Destroy 后为空。
-func (s *Store) Mounts() map[string]*Collection {
+func (s *Store) Mounts() map[string]*Mount {
 	return s.mounts
 }
 

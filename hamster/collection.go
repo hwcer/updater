@@ -23,22 +23,18 @@ type ValueJSName interface {
 	GetValueJSName() string
 }
 
-// Collection 文档集合存储（核心版纯净实现）。
-//
-// 蓝本是 handle_mount.go 的 Mount（"无 IType Collection"的全尺度原型）：
-// string 主键、无 ParseId/mayChange、operator 不设 IID、IType 恒 0。
-// 比 Mount 多两件事：字段级 Add/Sub（公会资金/成员贡献够用，无溢出检查），
-// 以及可经 RegisterCollection 进全局注册表（Mount 是它的临时形态）。
+// Collection 文档集合存储（注册集合形态，经 RegisterCollection 进全局注册表）：
+// string 主键或数值分组键（IID，经模型 Stacker/OIDMaker 换算），字段级 Add/Sub，
+// 内置数值上限（溢出控制，Limiter/Overflower）与缺失文档生成（DocFactory）、
+// 跨天重置（ModelReset）。挂载/临时集合用 hamster.Mount（独立封装，见 mount.go）。
 type Collection struct {
 	statement Statement
-	name string
+	name      string
 	// schema 首次取到后缓存。model 在构造之后不再变，其 schema 也就固定
 	schema  *schema.Schema
 	model   CollectionModel
 	remove  []string //待从内存移除的 _id，submit 时统一处理（落库之后再摘，别丢掉未保存的改动）
 	dataset *dataset.Collection
-	unmount bool  //已标记卸载，Release 阶段才真正摘除（仅挂载形态使用）
-	mount   bool  //挂载形态：屏蔽可选模型接口（跨天重置/溢出等，主干 Mount 语义）
 }
 
 // Receiver 装载变更接收器（默认 DiscardReceiver）；nil 恢复默认。
@@ -207,12 +203,16 @@ func (this *Collection) Schema() *schema.Schema {
 }
 
 // Field 解析数值字段名：传参优先，其次模型实现的 GetValueJSName()，最后 dataset.Fields.VAL。
+// 🔴 GetValueJSName 返回空串视作未声明（扩展层适配器恒实现该接口、缺省时返回 ""），
+// 不能让空串截断回落链，否则 Get/Int64 全按字段名 "" 查，值恒 0。
 func (this *Collection) Field(field ...string) string {
 	if len(field) > 0 {
 		return field[0]
 	}
 	if f, ok := this.model.(ValueJSName); ok {
-		return f.GetValueJSName()
+		if name := f.GetValueJSName(); name != "" {
+			return name
+		}
 	}
 	return dataset.Fields.VAL
 }
@@ -409,16 +409,13 @@ func (this *Collection) bulkWriter(bulk BulkWrite) *CollectionBulkWrite {
 }
 
 // Reset 每次请求开始。模型实现 ModelReset 时做跨天/跨周重置（重置即重新加载）。
-// 挂载形态与主干 Mount 口径一致：不做跨天重置（生命周期由 Mount/Unmount 决定）。
 func (this *Collection) reset() {
 	this.statement.Reset()
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
 	}
-	if !this.mount {
-		if r, ok := this.model.(ModelReset); ok && r.Reset(this.statement.Store, this.statement.Store.Last()) {
-			this.statement.Store.Error = this.reload()
-		}
+	if r, ok := this.model.(ModelReset); ok && r.Reset(this.statement.Store, this.statement.Store.Last()) {
+		this.statement.Store.Error = this.reload()
 	}
 }
 

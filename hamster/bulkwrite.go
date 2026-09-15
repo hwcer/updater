@@ -20,7 +20,7 @@ type CollectionBulkWrite struct {
 	setter func(bw BulkWrite, _id string, dirty dataset.Update, unset []string) error
 	// bulk 指定往哪个 BulkWrite 写。nil 时用 Store 那份**共享**实例（常规路径）；
 	// Collection.Submit（单表独立落库）会传一份独立的进来，不捎带提交整个 Store。
-	bulk BulkWrite
+	bulk  BulkWrite
 	store *Store
 }
 

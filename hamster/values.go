@@ -21,9 +21,9 @@ type ValuesModel interface {
 // 这边没有丢弃路径）、没有溢出检查。适合积分、计数、公会资金这类纯数值场景。
 type Values struct {
 	statement Statement
-	name    string
-	model   ValuesModel
-	dataset *dataset.Values
+	name      string
+	model     ValuesModel
+	dataset   *dataset.Values
 }
 
 func newValues(s *Store, m *Model) Handle {

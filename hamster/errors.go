@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	ErrServerDeniedService = Errorf(500, "Server denied service")                                                //灾难级故障启动，需要人工排查
+	ErrServerDeniedService = Errorf(500, "Server denied service")                                 //灾难级故障启动，需要人工排查
 	ErrBulkWriteNotInit    = Errorf(500, "BulkWrite not initialized: 数据落库会静默失效,启动时(连完数据库之后)必须设置") //Store.Loading 开服自检
 )
 
