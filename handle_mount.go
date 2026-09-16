@@ -370,11 +370,11 @@ func (this *Mount) Submit() error {
 		return nil
 	}
 	if this.Updater.manage.Config.BulkWrite == nil {
-		return ErrBulkWriteNotInit
+		return ErrBulkWriteNotInitialize
 	}
 	bulk := this.Updater.manage.Config.BulkWrite(this.Updater)
 	if bulk == nil {
-		return ErrBulkWriteNotInit
+		return ErrBulkWriteNotInitialize
 	}
 	if err := this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model, bulk)); err != nil {
 		return err
@@ -527,7 +527,7 @@ func (this *Mount) submit() (err error) {
 // save 把脏数据经 model.Setter 写进共享 bulkWrite（此时尚未提交）。
 func (this *Mount) save() error {
 	if this.Updater.BulkWrite() == nil {
-		return ErrBulkWriteNotInit
+		return ErrBulkWriteNotInitialize
 	}
 	return this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model))
 }

@@ -41,9 +41,9 @@ Loading → Reset → Business ops (Add/Sub/Set/Del) → Data (lazy DB fetch) �
 - `ManageConfig`（原包级 Config 匿名 struct）：`IMax/IType/ParseId/BulkWrite` 四函数字段，域内持有；`modelIMax/modelIType` 的 Config 回落经 `u.manage.Config`；
 - Handle 链的域入口是 `statement.Updater`（`statement.result`、四个 handle 的 `IMax/IType` 都经它反查域表）；
 - 🔴 **IType ID 仅域内有意义**：operator 上只有裸 ID，跨域流转（或发往客户端）时接收方必须先定位域再按 IType 分发；
+- 🔴 **Manage 只管"域"不管"实例"**：实例（Updater）的创建与生命周期（含玩家锁、实例表）归业务层（yyds/players）所有；`New(p)` 返回绑定到域的裸实例，`updater.New()` 是造域（包级 `Default` 就是它造的默认域，**没有**包级 `New(player)` 了）；
 - 域级事件/缓存（`RegisterGlobalEvent/RegisterGlobalCache/RegisterGlobalMiddleware`）只对该域实例生效，emit 顺序"域级 → 实例级"；
-- **实例管理**（自 yyds/players 沉淀）：`Load(p) (u, unlock, err)` 取或建 + 自动 Loading + 实体锁（同 uid 串行、跨 uid 并行；unlock 必须且只能调一次）；`Get(uid)` 只取不建；`Unload(uid)` 加锁 → Destroy → 摘除（Destroy 失败保留实例可重试）；`Range` 遍历（不加实体锁，停服场景用）；
-- **兼容层**：包级 `Register/New/Config/RegisterGlobalXxx/ITypes/Models/NewHandle` 一行委托 `Default`（包级 `var Config = Default.Config` 是 `*ManageConfig` 别名，字段赋值兼容）；进程级 `disaster` 熔断**留全局**（共享库时一个库挂了两个域都该拒服务）。
+- **兼容层**（default.go）：包级 `Register/Config/RegisterGlobalXxx/ITypes/Models/NewHandle` 一行委托 `Default`（包级 `var Config = Default.Config` 是 `*ManageConfig` 别名，字段赋值兼容）；进程级 `disaster` 熔断**留全局**（共享库时一个库挂了两个域都该拒服务）。
 
 ### Four Data Models (Parser Types)
 

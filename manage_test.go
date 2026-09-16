@@ -2,7 +2,6 @@ package updater
 
 import (
 	"testing"
-	"time"
 
 	"github.com/hwcer/updater/dataset"
 )
@@ -51,7 +50,7 @@ func (m *manageValuesModel) Setter(_ *Updater, bw BulkWrite, dirty dataset.Data,
 
 // newTestManage 造一个配置齐全的测试域：IType 恒路由到 9001，BulkWrite 走假实例
 func newTestManage(bw *mountBulk, model *manageValuesModel) *Manage {
-	mg := NewManage()
+	mg := New()
 	mg.Config.IType = func(int32) int32 { return 9001 }
 	if bw != nil {
 		mg.Config.BulkWrite = func(*Updater) BulkWrite { return bw }
@@ -128,86 +127,8 @@ func TestManageDomainEventsIsolation(t *testing.T) {
 	}
 }
 
-// Load 取或建 + 实体锁：未配置 BulkWrite 时报错且不留半实例；
-// 修复配置后同一 uid 重试成功；拿住锁时其他 Load 阻塞；Unload 后重建新实例。
-func TestManageLoadAndLock(t *testing.T) {
-	mg := NewManage()
-	mg.Config.IType = func(int32) int32 { return 9001 }
-	model := newManageValuesModel("load_table")
-	if err := mg.Register(ParserTypeValues, RAMTypeMaybe, model, testIType(9001)); err != nil {
-		t.Fatalf("Register:%v", err)
-	}
-
-	//BulkWrite 未配置：Loading 失败，返回 err，不留半实例
-	if _, unlock, err := mg.Load(&managePlayer{uid: "uid1"}); err == nil {
-		unlock()
-		t.Fatal("BulkWrite 未配置时 Load 应报错")
-	} else if unlock != nil {
-		t.Fatal("失败时 unlock 应为 nil")
-	}
-	if u := mg.Get("uid1"); u != nil {
-		t.Fatal("失败的 Load 不该留下可用实例")
-	}
-
-	//修复配置后重试：同一 uid 创建成功
-	bw := &mountBulk{}
-	mg.Config.BulkWrite = func(*Updater) BulkWrite { return bw }
-	u1, unlock1, err := mg.Load(&managePlayer{uid: "uid1"})
-	if err != nil {
-		t.Fatalf("Load:%v", err)
-	}
-	if !u1.Loader() {
-		t.Fatal("Load 应自动完成 Loading")
-	}
-	//Getter 已在 Loading 阶段跑过一次
-	if model.getter != 1 {
-		t.Fatalf("RAMTypeMaybe 的初始加载应触发一次 Getter,实际 %d", model.getter)
-	}
-
-	//拿住锁：其他 goroutine 的同 uid Load 必须阻塞
-	done := make(chan *Updater, 1)
-	go func() {
-		u2, unlock2, _ := mg.Load(&managePlayer{uid: "uid1"})
-		unlock2()
-		done <- u2
-	}()
-	select {
-	case <-done:
-		t.Fatal("锁被持有时同 uid 的 Load 不该返回")
-	case <-time.After(50 * time.Millisecond):
-	}
-	unlock1()
-	u2 := <-done
-	if u2 != u1 {
-		t.Fatal("第二次 Load 应返回同一实例")
-	}
-
-	//Unload 刷盘并摘除；再次 Load 得到全新实例
-	if err := mg.Unload("uid1"); err != nil {
-		t.Fatalf("Unload:%v", err)
-	}
-	if u := mg.Get("uid1"); u != nil {
-		t.Fatal("Unload 后 Get 应返回 nil")
-	}
-	if bw.submits == 0 {
-		t.Fatal("Unload 应触发 Destroy 刷盘")
-	}
-	u3, unlock3, err := mg.Load(&managePlayer{uid: "uid1"})
-	if err != nil {
-		t.Fatalf("重建 Load:%v", err)
-	}
-	defer unlock3()
-	if u3 == u1 {
-		t.Fatal("Unload 后再 Load 应是全新实例")
-	}
-
-	//未加载的 uid：Unload 幂等返回 nil
-	if err := mg.Unload("nobody"); err != nil {
-		t.Fatalf("未加载的 Unload 应返回 nil,实际 %v", err)
-	}
-}
-
-// 默认域兼容层：包级 Register + Config.IType + New 的旧形态仍走 Default 域跑通全周期。
+// 默认域兼容层：包级 Register + Config.IType 的旧注册形态仍走 Default 域，
+// 实例经 Default.New 创建，跑通全周期。
 func TestDefaultDomainCompat(t *testing.T) {
 	const iid = int32(4321)
 	model := newManageValuesModel("compat_default_table")
@@ -232,7 +153,7 @@ func TestDefaultDomainCompat(t *testing.T) {
 	Config.BulkWrite = func(*Updater) BulkWrite { return bw }
 	defer func() { Config.BulkWrite = bwBackup }()
 
-	u := New(&managePlayer{uid: "compat_uid"}) //包级 New → Default 域
+	u := Default.New(&managePlayer{uid: "compat_uid"}) //实例经 Default 域创建
 	if u.Manage() != Default {
 		t.Fatal("包级 New 产出的实例应属于 Default 域")
 	}

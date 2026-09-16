@@ -3,7 +3,6 @@ package updater
 import (
 	"fmt"
 	"sort"
-	"sync"
 
 	"github.com/hwcer/cosgo/schema"
 )
@@ -18,15 +17,7 @@ type ManageConfig struct {
 	BulkWrite func(u *Updater) BulkWrite                                //域内 BulkWrite 工厂
 }
 
-// entityBox 实体实例箱：实例 + 实体锁。
-// 同一实体的请求必须串行（Reset→业务→Submit→Release 在锁内完成），跨实体并行不受影响
-// —— 与 yyds/players 外置锁的同款纪律，沉淀至此由 Manage 统一提供。
-type entityBox struct {
-	mu sync.Mutex
-	u  *Updater
-}
-
-// Manage 数据域：一套注册表 + Config + 域级事件/缓存 + 实体实例管理器。
+// Manage 数据域：一套注册表 + Config + 域级事件/缓存。
 //
 // 原包级全局 modelsRank/modelsDict/itypesDict/Config/globalCache/globalEvents/
 // globalMiddlewares 全部收进本类型：一个进程可以并存多个域（玩家域、公会域…），
@@ -36,8 +27,11 @@ type entityBox struct {
 // 🔴 IType ID 仅域内有意义：operator 上只有裸 ID，跨域流转（或发往客户端）时
 // 接收方必须先定位域、再按 IType 分发；两个域用同一 ID 指向不同模型是合法且常见的。
 //
-// 兼容：包级 Register/Config/RegisterGlobalXxx/ITypes/Models/New 一行委托 Default 域，
-// 旧代码零改动；多域场景用 NewManage 另建，别往 Default 里塞非玩家模型。
+// ⚠️ 本类型只管"域"不管"实例"：实例（Updater）的创建与生命周期（含玩家锁、
+// 实例表）归业务层（yyds/players）所有，经 New(p) 取绑定到本域的裸实例即可。
+//
+// 兼容：包级 Register/Config/RegisterGlobalXxx/ITypes/Models 一行委托 Default 域；
+// Default 本身是包级 New() 造出的域。
 type Manage struct {
 	Config *ManageConfig //域配置：路由/上限/落库
 
@@ -48,18 +42,11 @@ type Manage struct {
 	cacheCreators map[string]CacheCreator        //域级缓存构造器：Loading 时为该域每个实例创建
 	events        map[EventType][]func(*Updater) //域级事件：对该域所有实例生效，永不取消（原 globalEvents）
 	middlewares   []Middleware                   //域级中间件：同上（原 globalMiddlewares）
-
-	entities sync.Map //实体实例表：uid → *entityBox（Load/Unload 管理）
 }
 
-// Default 默认数据域：包级 API 的委托目标。
-// 单域（只管玩家）用法零改动；新域请 NewManage。
-var Default = NewManage()
-
-// Config 兼容锚点：原包级配置，现为 Default 域配置（*ManageConfig）的别名。
-var Config = Default.Config
-
-func NewManage() *Manage {
+// New 创建一个数据域。包级 var Default 就是它造出来的默认域；
+// 多域场景（公会等）另建，别往 Default 里塞非玩家模型。
+func New() *Manage {
 	m := &Manage{
 		Config:     &ManageConfig{},
 		parser:     make(map[Parser]handleFunc, len(builtinHandles)),
@@ -153,119 +140,8 @@ func (m *Manage) Models(f func(int32, any) bool) {
 	}
 }
 
-// New 创建本域的裸实例（不进实体表）。生命周期（Loading/Reset/Submit/Release/Destroy）
-// 由调用方自管 —— 与包级 updater.New 旧用法等价；要实体表 + 实体锁 + 自动加载用 Load。
+// New 创建绑定到本域的裸实例。实例的生命周期（Loading/Reset/Submit/Release/Destroy，
+// 含玩家锁与实例表）由业务层自管 —— 单域场景用 Default.New(p)。
 func (m *Manage) New(p Player) *Updater {
 	return &Updater{manage: m, player: p, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}
 }
-
-// ===================== 实体实例管理（自 yyds/players 沉淀） =====================
-
-// Get 按实体ID取已加载的实例：只取不建、不加锁，未加载返回 nil。
-// 需要请求级串行保证时用 Load。
-func (m *Manage) Get(uid string) *Updater {
-	if v, ok := m.entities.Load(uid); ok {
-		return v.(*entityBox).u
-	}
-	return nil
-}
-
-// Load 取或建 + 实体锁：实例不存在时创建并 Loading（幂等；失败不留半实例），
-// 然后持有实体锁返回，unlock 释放。同 uid 的并发 Load 在此串行，跨 uid 并行。
-//
-// 标准请求周期全部在锁内完成：
-//
-//	u, unlock, err := manage.Load(player)
-//	if err != nil { return err }
-//	defer unlock()
-//	u.Reset()
-//	... 业务 ...
-//	_, err = u.Submit()
-//	u.Release()
-//
-// ⚠️ unlock 必须且只能调用一次（sync.Mutex 不可重入）；长命持有（跨多次请求的战斗副本
-// 之类）就多拿一会儿，每次请求各自 Reset/Release，锁跟着业务周期走。
-// ⚠️ Loading 失败时实例不入表，但空箱保留 —— 下一次 Load 在同一把锁上重试创建。
-func (m *Manage) Load(p Player) (u *Updater, unlock func(), err error) {
-	uid := p.Uid()
-	v, _ := m.entities.LoadOrStore(uid, &entityBox{})
-	box := v.(*entityBox)
-	box.mu.Lock()
-	if box.u != nil {
-		return box.u, box.mu.Unlock, nil
-	}
-	u = m.New(p)
-	if err = u.Loading(); err != nil {
-		box.mu.Unlock()
-		return nil, nil, err
-	}
-	box.u = u
-	return u, box.mu.Unlock, nil
-}
-
-// Unload 实体下线：加锁 → Destroy 刷盘 → 摘除。
-// Destroy 失败时保留实例（数据还在内存里），排除问题后重试 Unload；
-// 未加载的 uid 返回 nil。
-func (m *Manage) Unload(uid string) error {
-	v, ok := m.entities.Load(uid)
-	if !ok {
-		return nil
-	}
-	box := v.(*entityBox)
-	box.mu.Lock()
-	defer box.mu.Unlock()
-	if u := box.u; u != nil {
-		if err := u.Destroy(); err != nil {
-			return err
-		}
-		box.u = nil
-	}
-	m.entities.Delete(uid)
-	return nil
-}
-
-// Range 遍历域内全部实例（停服全量刷盘、运营补丁等场景），f 返回 false 停止。
-// ⚠️ 不加实体锁：读 box.u 不经互斥，调用方自行保证此时无并发请求（停服场景天然满足）。
-func (m *Manage) Range(f func(uid string, u *Updater) bool) {
-	m.entities.Range(func(k, v any) bool {
-		box := v.(*entityBox)
-		if box.u == nil {
-			return true
-		}
-		return f(k.(string), box.u)
-	})
-}
-
-// ===================== 兼容层（一行委托 Default 域，旧代码零改动） =====================
-
-// New 创建默认域的 Updater 实例
-func New(p Player) *Updater { return Default.New(p) }
-
-// Register 注册模型到默认域
-func Register(parser Parser, ram RAMType, model any, its ...IType) error {
-	return Default.Register(parser, ram, model, its...)
-}
-
-// NewHandle 覆盖默认域的句柄工厂
-func NewHandle(name Parser, f handleFunc) { Default.NewHandle(name, f) }
-
-// RegisterGlobalCache 注册默认域的缓存构造器
-func RegisterGlobalCache(name string, creator CacheCreator) {
-	Default.RegisterGlobalCache(name, creator)
-}
-
-// RegisterGlobalEvent 注册默认域的事件
-func RegisterGlobalEvent(t EventType, handle func(u *Updater)) {
-	Default.RegisterGlobalEvent(t, handle)
-}
-
-// RegisterGlobalMiddleware 注册默认域的中间件
-func RegisterGlobalMiddleware(handle Middleware) {
-	Default.RegisterGlobalMiddleware(handle)
-}
-
-// ITypes 遍历默认域的 IType 表
-func ITypes(f func(int32, IType) bool) { Default.ITypes(f) }
-
-// Models 遍历默认域的模型表
-func Models(f func(int32, any) bool) { Default.Models(f) }

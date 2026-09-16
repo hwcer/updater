@@ -35,9 +35,6 @@ type Updater struct {
 	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
 }
 
-// New 创建默认域的 Updater 实例（兼容入口，实现在 manage.go 兼容层）。
-// 多域场景用 Manage.New / Manage.Load。
-
 // Manage 返回所属数据域
 func (u *Updater) Manage() *Manage {
 	return u.manage
@@ -148,14 +145,14 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 		return
 	}
 	//🔴 开服自检：Config.BulkWrite 没配的话，**所有句柄的落库都会静默失效** ——
-	//save 报出的 ErrBulkWriteNotInit 会被 submit 吞成一行 Alert，玩家一路正常玩、
+	//save 报出的 ErrBulkWriteNotInitialize 会被 submit 吞成一行 Alert，玩家一路正常玩、
 	//一行数据都没落库，重启才发现。
 	//
 	//它相当于"数据库连接"级别的配置（本项目在 model.start() 连完 Mongo 之后设），
 	//与其让每个句柄在运行期各自发明一套更严的行为，不如在玩家数据第一次加载时就拦下来：
 	//这时还没产生任何数据改动，报错干净。
 	if u.manage.Config.BulkWrite == nil {
-		return ErrBulkWriteNotInit
+		return ErrBulkWriteNotInitialize
 	}
 	u.status.Set(StatusInit)
 

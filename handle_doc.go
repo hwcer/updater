@@ -115,7 +115,7 @@ func (this *Document) decrease(id int32, v int64) {
 func (this *Document) save() (err error) {
 	bw := this.Updater.BulkWrite()
 	if bw == nil {
-		return ErrBulkWriteNotInit
+		return ErrBulkWriteNotInitialize
 	}
 	dirty, unsets := this.dataset.Save()
 	if len(dirty) > 0 || len(unsets) > 0 {

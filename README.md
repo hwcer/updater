@@ -8,6 +8,10 @@
 
 游戏玩家数据管理框架。位于数据库与业务逻辑之间，负责内存缓存、脏数据追踪、溢出处理、批量持久化。支持四种数据模型，统一 Add/Sub/Get/Val/Set/Del 接口。
 
+## 数据域（Manage）
+
+模型注册表、IType 路由、Config、域级事件/缓存都挂在 **Manage** 上：一个进程可并存多个独立数据域（玩家域、公会域……），互不串扰。实例的创建与生命周期（含玩家锁、实例表）归业务层所有，`Manage.New(p)` 返回绑定到域的裸实例。
+
 ## 生命周期
 
 ```
@@ -15,8 +19,8 @@ Loading → Reset → 业务操作(Add/Sub/Set/Del/Get/Val) → Data(按需拉DB
 ```
 
 ```go
-u := updater.New(player)
-u.Loading(true)            // 加载全部数据
+u := updater.Default.New(player) // 单域用默认域；多域各自 mg.New(player)
+u.Loading()                // 加载全部数据
 
 u.Reset()                  // 每次请求开始
 u.Add(1001, 100)           // 加 100 金币（num 支持 int32/int64）
@@ -44,45 +48,27 @@ u.Destroy()                // 玩家下线，强制刷盘
 同一个 IType ID 可以在两个域各指不同模型，公会域可以有独立的每日数据甚至落库目标。
 
 ```go
-playerManage := updater.NewManage()
+playerManage := updater.New()
 playerManage.Config.IType = func(iid int32) int32 { ... }   // 玩家域的 iid 路由
 playerManage.Config.BulkWrite = func(u *updater.Updater) updater.BulkWrite { ... }
 playerManage.Register(updater.ParserTypeValues, updater.RAMTypeAlways, &ItemModel{}, itemIType)
 playerManage.Register(updater.ParserTypeDocument, updater.RAMTypeMaybe, &PlayerModel{}, playerIType)
 playerManage.Register(updater.ParserTypeCollection, updater.RAMTypeAlways, &BagModel{}, equipIType, gemIType)
 
-guildManage := updater.NewManage()                          // 公会域：一个公会就相当于一个玩家
+guildManage := updater.New()                                // 公会域：一个公会就相当于一个玩家
 guildManage.Config.BulkWrite = ...                          // 可指向不同的库
 guildManage.Register(updater.ParserTypeCollection, updater.RAMTypeMaybe, &GuildDailyModel{}, guildDailyIType)
 ```
 
-⚠️ 包级 `updater.Register / Config / New / RegisterGlobalCache / RegisterGlobalEvent /
-RegisterGlobalMiddleware / ITypes / Models` 是**默认域 `updater.Default`** 的兼容入口，
-单域（只管玩家）用法零改动。多域业务别往 Default 里塞非玩家模型。
+⚠️ 包级 `updater.Register / Config / RegisterGlobalCache / RegisterGlobalEvent /
+RegisterGlobalMiddleware / ITypes / Models / NewHandle` 是**默认域 `updater.Default`**
+的兼容入口，单域（只管玩家）用法零改动。多域业务别往 Default 里塞非玩家模型。
 
-## 实例管理（Get/Load/Unload）
+🔴 `updater.New()` 现在返回 `*Manage`（创建数据域）；实例经 `Default.New(player)`
+或 `mg.New(player)` 创建（原包级 `updater.New(player)` 的替代写法）。
 
-`Manage` 自带实体实例表与实体锁（同一实体的请求串行、跨实体并行）：
-
-```go
-u, unlock, err := playerManage.Load(player) // 取或建 + 自动 Loading + 加实体锁
-if err != nil { return err }
-defer unlock()                              // unlock 必须且只能调用一次
-
-u.Reset()                  // 每次请求开始
-u.Add(1001, 100)           // 加 100 金币（num 支持 int32/int64）
-u.Sub(1002, 5)             // 扣 5 钻石
-u.Val(1001)                // 获取金币数值
-u.Get(1001)                // 获取原始数据
-ops, err := u.Submit()     // 校验+落库，返回变更列表
-u.Release()                // 请求结束，清理临时状态
-
-playerManage.Unload(uid)   // 下线：加锁 → Destroy 刷盘 → 摘除
-playerManage.Range(func(uid string, u *updater.Updater) bool { ... }) // 停服全量刷盘
-```
-
-不需要实例表和锁时用 `playerManage.New(player)` 裸实例（等价旧 `updater.New`），
-生命周期自管。进程级 DB 熔断（disaster）仍是全局的：共享库时一个库挂了两域都该拒服务。
+🔴 IType ID 仅域内有意义：operator 上只有裸 ID，跨域流转（或发往客户端）时
+接收方必须先定位域、再按 IType 分发。
 
 ## 内存策略
 
@@ -156,7 +142,8 @@ v.Add(2001, 1)  // 委托给其他模块处理，同时生成 Operator 返回前
 ```
 updater/
 ├── updater.go          Updater 核心生命周期（Reset/Submit/Release/Destroy）
-├── manage.go           Manage 数据域（注册表/Config/域级事件缓存/实例管理 Get/Load/Unload）
+├── manage.go           Manage 数据域（注册表/Config/域级事件缓存）
+├── default.go          默认域 Default + 包级兼容入口
 ├── define.go           IType 接口 + Status/Keys 工具类
 ├── model.go            模型元数据（Model/verify）+ Parser 类型
 ├── statement.go        语句基类（Select/insert/verify/submit）

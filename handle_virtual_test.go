@@ -60,7 +60,7 @@ func newVirtualUpdater(t *testing.T, m *virtualModel) (*Updater, *Virtual) {
 	t.Cleanup(func() { Config.BulkWrite = old })
 
 	mod := &Model{ram: RAMTypeAlways, name: "virtual_test", model: m, parser: ParserTypeVirtual}
-	u := New(&mountPlayer{uid: "virtual_uid"})
+	u := Default.New(&mountPlayer{uid: "virtual_uid"})
 	v := &Virtual{name: mod.name, model: m}
 	v.statement = *newStatement(u, mod, v.Has)
 	return u, v

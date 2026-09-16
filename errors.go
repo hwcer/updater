@@ -11,16 +11,18 @@ import (
 )
 
 var (
-	ErrCodeArgsIllegal   int32 = 0
-	ErrCodeItemNotExist  int32 = 0
-	ErrCodeItemNotEnough int32 = 0
-	ErrCodeITypeNotExist int32 = 0
-	ErrCodeObjectIdEmpty int32 = 0
+	ErrCodeArgsIllegal   int32 = 9000
+	ErrCodeItemNotExist  int32 = 9001
+	ErrCodeItemNotEnough int32 = 9002
+	ErrCodeITypeNotExist int32 = 9003
+	ErrCodeObjectIdEmpty int32 = 9004
 )
 
 var (
-	ErrServerDeniedService = Errorf(500, "Server denied service")                                                //灾难级故障启动，需要人工排查
-	ErrBulkWriteNotInit    = Errorf(500, "updater.Config.BulkWrite not initialized: 数据落库会静默失效,启动时(连完数据库之后)必须设置") //Updater.Loading 开服自检
+	ErrServerDeniedService    = Errorf(500, "Server denied service")                                                //灾难级故障启动，需要人工排查
+	ErrBulkWriteNotInitialize = Errorf(500, "updater.Config.BulkWrite not initialized: 数据落库会静默失效,启动时(连完数据库之后)必须设置") //Updater.Loading 开服自检
+	ErrUnableUseIIDOperation  = Errorf(0, "unable to use iid operation")
+	ErrSubmitEndlessLoop      = Errorf(0, "submit endless loop") //出现死循环,检查事件和插件是否正确移除(返回false)
 )
 
 func Errorf(code int32, msg any, args ...any) error {
@@ -58,11 +60,6 @@ func ErrITypeNotExist(iid int32) error {
 func ErrObjectIdEmpty(args ...any) error {
 	return values.Errorf(ErrCodeObjectIdEmpty, "oid empty").WithArgs(args...)
 }
-
-var (
-	ErrUnableUseIIDOperation = Errorf(0, "unable to use iid operation")
-	ErrSubmitEndlessLoop     = Errorf(0, "submit endless loop") //出现死循环,检查事件和插件是否正确移除(返回false)
-)
 
 // disaster 数据库熔断保护
 var disaster = atomic.Int32{}

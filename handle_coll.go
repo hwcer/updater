@@ -136,7 +136,7 @@ func (this *Collection) decrease(id int32, v int64) {
 
 func (this *Collection) save() (err error) {
 	if this.Updater.BulkWrite() == nil {
-		return ErrBulkWriteNotInit
+		return ErrBulkWriteNotInitialize
 	}
 	return this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model))
 }
