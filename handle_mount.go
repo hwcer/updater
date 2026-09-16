@@ -15,7 +15,8 @@ import (
 // 充值订单、临时战斗副本。共同点是要同批次原子写库 + 按需查库 + 可选内存驻留，
 // **不进 IType 路由、不自动生成给客户端的 operator**。
 //
-// 入口是 Updater.Mount / Mounted / Unmount，句柄类型是 Mount。设计取舍见 HANDLER_MOUNT_PLAN.md。
+// 入口是 Updater.Mounts 字段（挂载表）上的 Load / Get / Remove —— 挂载方法不直接
+// 挂在 Updater 上，与 Cache/Events 同款做法；句柄类型是 Mount。设计取舍见 HANDLER_MOUNT_PLAN.md。
 
 // MountModel 临时数据模型。
 //
@@ -33,14 +34,23 @@ type MountModel interface {
 	schema.Tabler
 }
 
-// Mount 挂载/取回一个临时数据集合，keys 非空时顺带把这几条**当场查出来**。
+// Mounts 挂载表：临时挂载集合的注册处，每个 Updater 持有一个（Updater.Mounts 字段）。
 //
-// 幂等：同模型重复 Mount 直接返回已挂句柄 —— 长命场景（战斗副本）的每个 handler 开头
+// 与 Cache/Events 同款做法：集合形态的类型挂字段、方法挂在类型上，不直接挂在 Updater。
+// 零值可用（tables 惰性初始化）；业务入口是 Load（取或建+取数）/ Get（只取）/ Remove（卸载标记）三个方法。
+type Mounts struct {
+	updater *Updater          //回引用：挂载要经 Updater 驱动 statement 流水线
+	tables  map[string]*Mount //挂载名（model.TableName()）→ 句柄
+}
+
+// Load 挂载/取回一个临时数据集合（不存在则挂载），keys 非空时顺带把这几条**当场查出来**。
+//
+// 幂等：同模型重复 Load 直接返回已挂句柄 —— 长命场景（战斗副本）的每个 handler 开头
 // 都是这一行，首个请求创建、后续全是复用，业务不必自己记"挂没挂过"。
 //
-//	coll, err := u.Mount(&model.Battle{}, battleId) //挂载 + 取数，一行搞定
-//	coll, err := u.Mount(&model.Mail{}, ids...)     //多条一起
-//	coll, err := u.Mount(&model.Battle{})           //只挂载，稍后自己 Select + Data
+//	coll, err := u.Mounts.Load(&model.Battle{}, battleId) //挂载 + 取数，一行搞定
+//	coll, err := u.Mounts.Load(&model.Mail{}, ids...)     //多条一起
+//	coll, err := u.Mounts.Load(&model.Battle{})           //只挂载，稍后自己 Select + Data
 //
 // keys 是文档 _id（string）—— 临时集合不进 IType 路由，没有 iid 这个概念。
 //
@@ -57,21 +67,22 @@ type MountModel interface {
 // ⚠️ **挂载与取数是两码事**：查库失败时返回 (句柄, err) —— 句柄已经挂上且完全可用，
 // 只是这几条没读回来，重试一次 Select + Data 即可。唯一会返回 nil 的是重名，
 // 那时压根没挂上。
-func (u *Updater) Mount(model MountModel, keys ...string) (*Mount, error) {
+func (ms *Mounts) Load(model MountModel, keys ...string) (*Mount, error) {
+	u := ms.updater
 	name := model.TableName()
-	r, exist := u.mounts[name]
+	r, exist := ms.tables[name]
 	if !exist {
 		for _, m := range u.manage.modelsRank {
 			if m.name == name {
 				return nil, Errorf(0, "mount name conflicts with registered model:%v", name)
 			}
 		}
-		if u.mounts == nil {
-			u.mounts = make(map[string]*Mount)
+		if ms.tables == nil {
+			ms.tables = make(map[string]*Mount)
 		}
 		r = newMount(u, model)
 		r.reset()
-		u.mounts[name] = r
+		ms.tables[name] = r
 	}
 	r.unmount = false //改主意了:上一次标记的卸载作废
 	if len(keys) == 0 {
@@ -83,38 +94,39 @@ func (u *Updater) Mount(model MountModel, keys ...string) (*Mount, error) {
 	return r, r.Data()
 }
 
-// Mounted 取回已挂载的临时集合，未挂载返回 nil。
+// Get 取回已挂载的临时集合，未挂载返回 nil。
 //
-// 与 Mount 的区别：它**只取不挂**，也不取数——用来问"挂了没"。
+// 与 Load 的区别：它**只取不挂**，也不取数——用来问"挂了没"。
 // 三个入口统一收 MountModel，业务层不必关心挂载名是怎么来的。
-func (u *Updater) Mounted(model MountModel) *Mount {
-	return u.mounts[model.TableName()]
+func (ms *Mounts) Get(model MountModel) *Mount {
+	return ms.tables[model.TableName()]
 }
 
-// Unmount 标记卸载。**只打标记，真正摘除在 Release 阶段**（EventTypeRelease 之后）。
+// Remove 标记卸载（整张表）。**只打标记，真正摘除在 Release 阶段**（EventTypeRelease 之后）。
+// ⚠️ 与 (*Mount).Remove(id...) 不是一回事：那个是内存摘除单条文档，这个是卸载整张挂载表。
 //
 // 🔴 不在这里直接刷盘/摘除，是为了让短流程也走完整生命周期。短命场景的标准写法是
 //
-//	coll, err := u.Mount(&model.Mail{}, ids...)
-//	defer u.Unmount(&model.Mail{})
+//	coll, err := u.Mounts.Load(&model.Mail{}, ids...)
+//	defer u.Mounts.Remove(&model.Mail{})
 //
 // 而 defer 在 **handler 返回时**执行，框架的 Submit 排在那之后
 // （`Updater.Verify` 的注释里写着"handle 返回后框架才 Submit"）。当场摘除的话，
-// 这次改动就永远写不出去且一声不吭；退一步在 Unmount 里自己 save 也不对 ——
+// 这次改动就永远写不出去且一声不吭；退一步在 Remove 里自己 save 也不对 ——
 // 那是绕开 submit 另开一条旁路，与全局句柄的路径不一致，以后 submit 上加的任何东西
 // 短流程都吃不到。
 //
-// 打完标记后句柄照旧留在 mounts 里，正常参与 Data / verify / submit，
+// 打完标记后句柄照旧留在挂载表里，正常参与 Data / verify / submit，
 // 直到请求结束才被摘掉 —— 长短两档走的是同一条路。
 //
 // ⚠️ 标记可撤销：同一请求内再次 Mount 同一模型会清掉它（业务改主意了，句柄还给它）。
 //
 // ⚠️ 卸载粒度是**整张表**，不是"这一条"。同一模型上并发多个实例（一个玩家两场战斗）时，
-// 先结束的那场 Unmount 会把另一场的内存一起端掉 —— 数据不会丢（每次 Submit 都写穿了库），
-// 但对方后续 Get 会拿到 nil 直到重新 Select。口径：**只有最后一个实例结束时才 Unmount**；
+// 先结束的那场 Remove 会把另一场的内存一起端掉 —— 数据不会丢（每次 Submit 都写穿了库），
+// 但对方后续 Get 会拿到 nil 直到重新 Select。口径：**只有最后一个实例结束时才 Remove**；
 // 业务判断不了是不是最后一个，就别卸，留给玩家下线兜底（Destroy 会刷盘）。
-func (u *Updater) Unmount(model MountModel) {
-	if r, ok := u.mounts[model.TableName()]; ok {
+func (ms *Mounts) Remove(model MountModel) {
+	if r, ok := ms.tables[model.TableName()]; ok {
 		r.unmount = true
 	}
 }
@@ -122,7 +134,7 @@ func (u *Updater) Unmount(model MountModel) {
 // Mount 临时挂载集合：与玩家数据同批次原子写库。
 //
 // 给"Updater 之外、但要跟着玩家数据一起成败"的数据用：邮件领取标记、兑换码占用、
-// 充值订单、临时战斗副本。挂载名取模型的 TableName()，见 Updater.Mount。
+// 充值订单、临时战斗副本。挂载名取模型的 TableName()，见 Mounts.Load。
 //
 // 🔴 **它走的是与 Collection 相同的那条流水线**：改动先变成 operator 入队，
 // verify 阶段消费（写进内存并记脏），submit 阶段经 model.Setter 落进共享 bulkWrite。
@@ -165,7 +177,7 @@ type Mount struct {
 	// 这个接口，而全局配置对 iid=0 通常返回 0。想让某张挂载表走通用通道，
 	// 模型必须**显式覆盖** IType 返回该表自己的类型，光加一行接口断言不起作用。
 	itype   int32
-	unmount bool //已标记卸载，Release 阶段才真正摘除，见 Updater.Unmount
+	unmount bool //已标记卸载（Mounts.Remove），Release 阶段才真正摘除
 }
 
 // mountDiscard 不下发客户端时用的接收器：把 operator 从"默认进 Updater.dirty"那条路上摘下来。
@@ -351,7 +363,7 @@ func (this *Mount) Remove(id ...string) {
 //	玩家数据 完全不受影响，该回滚照样回滚
 //
 // ⚠️ **失败时内存已经是新值、库还是旧的**（verify 在落库之前）。别当没事发生：
-// 要么重试，要么 Unmount 整张表（Release 时摘除，下次请求重新从库加载）。
+// 要么重试，要么 Mounts.Remove 整张表（Release 时摘除，下次请求重新从库加载）。
 //
 // ⚠️ 全局的 StatusOperated **不会**被清除：它是所有 handle 共用的一个标志，
 // 为了"我这张表校验过了"去清它，会让其它 handle 的待校验操作被整体跳过、
@@ -436,8 +448,8 @@ func (this *Mount) Val(key any) (r int64) {
 // ⚠️ 只有 Updater.Data()/Submit() 会驱动它，而 Updater.data() 开头有
 // `if !status.Has(StatusChanged) { return }` 的闸门 —— 该位由 Select 置起。
 func (this *Mount) Data() (err error) {
-	if err = this.Updater.Error; err != nil {
-		return
+	if this.Updater.Error != nil {
+		return this.Updater.Error
 	}
 	if len(this.keys) == 0 {
 		return nil
@@ -534,7 +546,7 @@ func (this *Mount) save() error {
 
 // reset 每次请求开始。
 //
-// ⚠️ 不走 ModelReset：那是全局句柄的跨天重置，挂载的生命周期由 Mount/Unmount 决定。
+// ⚠️ 不走 ModelReset：那是全局句柄的跨天重置，挂载的生命周期由 Mounts.Load/Remove 决定。
 func (this *Mount) reset() {
 	if this.dataset == nil {
 		this.dataset = dataset.NewColl()
@@ -556,7 +568,7 @@ func (this *Mount) reload() error {
 // release 每次请求结束。
 //
 // ⚠️ 只清 dirty 与待拉取标记，**保留内存数据** —— 长命挂载的跨请求驻留靠这条。
-// 想连内存一起丢是 Unmount 的事，两者别混。
+// 想连内存一起丢是 Mounts.Remove 的事，两者别混。
 func (this *Mount) release() {
 	this.statement.release()
 	this.remove = nil
@@ -595,19 +607,19 @@ func (this *Mount) format(op *operator.Operator) {
 	}
 	result, ok := op.Result.(dataset.Update)
 	if !ok {
-		this.Updater.Error = fmt.Errorf("mount[%s] operator result must be dataset.Update:%v", this.name, op.Result)
+		this.Updater.Errorf("mount[%s] operator result must be dataset.Update:%v", this.name, op.Result)
 		return
 	}
 	sch := this.Schema()
 	if sch == nil {
-		this.Updater.Error = fmt.Errorf("mount[%s] schema empty", this.name)
+		this.Updater.Errorf("mount[%s] schema empty", this.name)
 		return
 	}
 	data := dataset.Update{}
 	for k, v := range result {
 		name, err := sch.JSName(k)
 		if err != nil {
-			this.Updater.Error = fmt.Errorf("mount[%s] field error,field:%s,error:%v", this.name, k, err)
+			this.Updater.Errorf("mount[%s] field error,field:%s,error:%v", this.name, k, err)
 			return
 		}
 		data[name] = v

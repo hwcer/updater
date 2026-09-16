@@ -10,7 +10,18 @@
 
 ## 数据域（Manage）
 
-模型注册表、IType 路由、Config、域级事件/缓存都挂在 **Manage** 上：一个进程可并存多个独立数据域（玩家域、公会域……），互不串扰。实例的创建与生命周期（含玩家锁、实例表）归业务层所有，`Manage.New(p)` 返回绑定到域的裸实例。
+模型注册表、IType 路由、Config、域级事件/缓存都挂在 **Manage** 上：一个进程可并存多个独立数据域（玩家域、公会域……），互不串扰。实例的创建与生命周期（含玩家锁、实例表）归业务层所有，`Manage.New(e)` 返回绑定到域的裸实例。
+
+## Entity 数据属主
+
+业务层在自己的身份对象上实现 `Entity` 接口，把框架挂上去：
+
+```go
+func (p *Player) Id() string { return p.Uid } // 玩家
+func (g *Guild) Id() string { return g.Gid }  // 公会 —— 一个公会就相当于一个玩家
+```
+
+一个 Entity 对应一个 Updater 实例，其下有自己的道具、每日数据、文档集合；模型回调（Getter/Setter）里经 `u.Entity()` 拿到它拼落库条件（如 `where uid = e.Id()`）。
 
 ## 生命周期
 

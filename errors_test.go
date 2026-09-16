@@ -13,15 +13,12 @@ import (
 // 而文案随时会改。现在参数一律只进 Args,文案退化成固定标识。
 //
 // 判据落在 Args 的**值**上,不能只断言 len==3：这些 helper 收的是变参,一旦谁把
-// WithArgs(args...) 写成 WithArgs(args) 就嵌套成 [[1001 5 2]],客户端取不到道具ID,
+// Clone(args...) 写成 Clone(args) 就嵌套成 [[1001 5 2]],客户端取不到道具ID,
 // 而错误本身照样有 Args、照样非空,不看值就发现不了。
 func TestErrItemNotEnough_Args(t *testing.T) {
-	err := ErrItemNotEnough(1001, 5, 2)
+	//返回类型即 *values.Message（编译期保证），客户端拿到的就是 Code/Data/Args 结构
+	msg := ErrItemNotEnough(1001, 5, 2)
 
-	msg, ok := err.(*values.Message)
-	if !ok {
-		t.Fatalf("应为 *values.Message,实得 %T", err)
-	}
 	//文案是固定标识,不再带参数 —— 参数一律走 Args
 	if msg.Error() != "Item Not Enough" {
 		t.Fatalf("Error() = %q, want %q —— 参数不该出现在文案里", msg.Error(), "Item Not Enough")
@@ -46,10 +43,7 @@ func TestErrItemNotEnough_Args(t *testing.T) {
 
 // TestErrItemNotExist_Args 单实参 helper 也走 Args,文案里不留占位符。
 func TestErrItemNotExist_Args(t *testing.T) {
-	msg, ok := ErrItemNotExist("oid-123").(*values.Message)
-	if !ok {
-		t.Fatal("应为 *values.Message")
-	}
+	msg := ErrItemNotExist("oid-123")
 	if len(msg.Args) != 1 || msg.Args[0] != "oid-123" {
 		t.Fatalf("Args = %v, want [oid-123]", msg.Args)
 	}

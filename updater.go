@@ -1,38 +1,46 @@
 package updater
 
 import (
-	"fmt"
 	"reflect"
 	"slices"
 	"time"
 
+	"github.com/hwcer/cosgo/values"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
 
-type Player interface {
-	Uid() string
+// Entity 数据属主：Updater 所管理数据的身份主体。
+//
+// 玩家、公会、临时副本……凡"拥有自己一份独立数据空间"的东西都是一个 Entity：
+// 一个 Entity 对应一个 Updater 实例，其下有自己的道具、每日数据、文档集合。
+// 多域场景（Manage）下，公会域里的 Entity 就是一个公会 —— 一个公会就相当于一个玩家。
+//
+// 业务层在自己的身份对象上实现本接口把框架挂上去；模型回调（Getter/Setter）里
+// 也经 u.Entity() 拿到它拼落库条件（如 where uid = e.Id()）。
+type Entity interface {
+	Id() string
 }
 
-// Updater 玩家数据更新器，管理所有 Handle 的生命周期和持久化
-// 每个玩家持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
+// Updater 数据属主的数据更新器，管理所有 Handle 的生命周期和持久化
+// 每个 Entity 持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
 type Updater struct {
-	manage    *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
 	now       time.Time            //当前请求时间
 	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
 	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
-	player    Player               //业务层角色对象
+	entity    Entity               //数据属主（业务层实现，见 Entity）
 	status    Status               //状态位：Init/Submit/Changed/Operated
+	manage    *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
 	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
-	mounts    map[string]*Mount    //临时挂载的数据集合，见 Mount
 	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
 
-	Cache         Cache       //自定义缓存数据
-	Error         error       //请求过程中的错误
-	Events        Events      //生命周期事件
-	Middleware    Middlewares //中间件，所有事件类型都会触发
-	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
+	Cache         Cache           //自定义缓存数据
+	Error         *values.Message //请求过程中的错误（业务码+参数，可直接作为回包错误下发），一律经 Errorf 写入
+	Events        Events          //生命周期事件
+	Mounts        Mounts          //临时挂载的数据集合（挂载表，入口见 Mounts.Load）
+	Middleware    Middlewares     //中间件，所有事件类型都会触发
+	CreditAllowed bool            //本次请求是否允许扣量为负（一次性标记）
 }
 
 // Manage 返回所属数据域
@@ -51,8 +59,9 @@ func (u *Updater) BulkWrite() BulkWrite {
 	return u.bulkWrite
 }
 
-func (u *Updater) Uid() string {
-	return u.player.Uid()
+// Id 数据属主标识：玩家 uid / 公会 gid / 副本 id
+func (u *Updater) Id() string {
+	return u.entity.Id()
 }
 
 func (u *Updater) Now() time.Time {
@@ -65,18 +74,18 @@ func (u *Updater) Unix() int64 {
 func (u *Updater) Milli() int64 {
 	return u.now.UnixMilli()
 }
-func (u *Updater) Player() Player {
-	return u.player
+func (u *Updater) Entity() Entity {
+	return u.entity
 }
 
-func (u *Updater) Errorf(format any, args ...any) error {
-	switch v := format.(type) {
-	case string:
-		u.Error = fmt.Errorf(v, args...)
-	case error:
-		u.Error = v
-	default:
-		u.Error = fmt.Errorf("%v", v)
+// Errorf 设置错误状态并返回该错误，方便调用方直接抛给上层。**错误状态写入的唯一入口。**
+// 直接委托 values.Errorf：*values.Message 原样收存（写时复制，Code/Args 保留）；
+// 普通 error/字符串以文案形式收进 Data（错误码归 values 默认码）。
+// nil 入参（无格式串无参数）为赋值语义的"清空"：values.Errorf 会把 nil 格式化成
+// "<nil>" 文案产出非 nil Message，这里拦下来，保持旧 `u.Error = err`（err 为 nil）的行为。
+func (u *Updater) Errorf(format any, args ...any) *values.Message {
+	if format != nil {
+		u.Error = values.Errorf(0, format, args...)
 	}
 	return u.Error
 }
@@ -231,11 +240,11 @@ func (u *Updater) Release() {
 	for _, h := range slices.Backward(hs) {
 		h.release()
 	}
-	//临时句柄的卸载收在这里:Unmount 只打标记,句柄留到请求走完整条生命周期
+	//临时句柄的卸载收在这里:Mounts.Remove 只打标记,句柄留到请求走完整条生命周期
 	//(Data/verify/submit 一样不落)才摘除,短流程与长流程走同一条路。
-	for k, h := range u.mounts {
+	for k, h := range u.Mounts.tables {
 		if h.unmount {
-			delete(u.mounts, k)
+			delete(u.Mounts.tables, k)
 		}
 	}
 }
@@ -333,8 +342,8 @@ func (u *Updater) converge() (err error) {
 }
 
 func (u *Updater) data(hs []Handle) (err error) {
-	if err = u.Error; err != nil {
-		return
+	if u.Error != nil {
+		return u.Error
 	}
 	if !u.status.Has(StatusChanged) {
 		return
@@ -350,8 +359,8 @@ func (u *Updater) data(hs []Handle) (err error) {
 }
 
 func (u *Updater) verify(hs []Handle) (err error) {
-	if err = u.Error; err != nil {
-		return
+	if u.Error != nil {
+		return u.Error
 	}
 	if !u.status.Has(StatusOperated) {
 		return
@@ -391,15 +400,6 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	u.Emit(EventTypeSuccess)
 	r = u.dirty
 	u.dirty = nil
-	return
-}
-
-// IType 通过iid获取IType
-// 始终按所属域 ManageConfig.IType 查询,不受模型 ModelIType 覆盖影响,需要模型口径时用 Handle.IType
-func (u *Updater) IType(iid int32) (it IType) {
-	if id := u.manage.Config.IType(iid); id != 0 {
-		it = u.manage.itypesDict[id]
-	}
 	return
 }
 
@@ -467,13 +467,13 @@ func (u *Updater) handleWithIType(id int32) Handle {
 // 具体到实现：临时句柄追加在尾部，而 Submit/verify/Release 是**倒序**遍历
 // —— 也就是说它们实际最先跑。别在这个次序上建立任何依赖。
 func (u *Updater) Handles() (r []Handle) {
-	r = make([]Handle, 0, len(u.manage.modelsRank)+len(u.mounts))
+	r = make([]Handle, 0, len(u.manage.modelsRank)+len(u.Mounts.tables))
 	for _, model := range u.manage.modelsRank {
 		if h := u.handles[model.name]; h != nil {
 			r = append(r, h)
 		}
 	}
-	for _, h := range u.mounts {
+	for _, h := range u.Mounts.tables {
 		r = append(r, h)
 	}
 	return
@@ -494,12 +494,12 @@ func (u *Updater) Destroy() (err error) {
 		}
 		u.bulkWrite = nil
 	}
-	u.player = nil
+	u.entity = nil
 	for _, op := range u.dirty {
 		op.Release()
 	}
 	u.handles = nil
-	u.mounts = nil
+	u.Mounts.tables = nil
 	u.dirty = nil
 	return
 }

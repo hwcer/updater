@@ -2,15 +2,16 @@ package updater
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/hwcer/cosgo/schema"
 )
 
-// ManageConfig 数据域配置：路由（IType/ParseId）、上限（IMax）与落库（BulkWrite）。
+// Options 数据域配置：路由（IType/ParseId）、上限（IMax）与落库（BulkWrite）。
 // 原为包级全局 Config，实例化后每个 Manage 持有一份；包级 var Config 是 Default 域
-// 配置的别名（*ManageConfig），updater.Config.IType = f 照旧编译生效。
-type ManageConfig struct {
+// 配置的别名（*Options），updater.Config.IType = f 照旧编译生效。
+type Options struct {
 	IMax      func(iid int32) int64                                     //通过道具iid查找上限
 	IType     func(iid int32) int32                                     //通过道具iid查找IType ID
 	ParseId   func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
@@ -28,12 +29,15 @@ type ManageConfig struct {
 // 接收方必须先定位域、再按 IType 分发；两个域用同一 ID 指向不同模型是合法且常见的。
 //
 // ⚠️ 本类型只管"域"不管"实例"：实例（Updater）的创建与生命周期（含玩家锁、
-// 实例表）归业务层（yyds/players）所有，经 New(p) 取绑定到本域的裸实例即可。
+// 实例表）归业务层（yyds/players）所有，经 New(e) 取绑定到本域的裸实例即可。
+//
+// 🔴 注册面（Register/NewHandle/RegisterGlobalXxx）只在启动期调用：无锁保护，
+// 必须先注册完再创建实例，运行期追加注册是数据竞争。
 //
 // 兼容：包级 Register/Config/RegisterGlobalXxx/ITypes/Models 一行委托 Default 域；
 // Default 本身是包级 New() 造出的域。
 type Manage struct {
-	Config *ManageConfig //域配置：路由/上限/落库
+	Config *Options //域配置：路由/上限/落库
 
 	parser        map[Parser]handleFunc          //句柄工厂表：构造时拷贝内置四项，NewHandle 可覆盖
 	modelsRank    []*Model                       //已注册模型，TableOrder 降序，驱动 Loading/Handles 遍历顺序
@@ -48,15 +52,14 @@ type Manage struct {
 // 多域场景（公会等）另建，别往 Default 里塞非玩家模型。
 func New() *Manage {
 	m := &Manage{
-		Config:     &ManageConfig{},
-		parser:     make(map[Parser]handleFunc, len(builtinHandles)),
-		modelsDict: make(map[int32]*Model),
-		itypesDict: make(map[int32]IType),
-		events:     map[EventType][]func(*Updater){},
+		Config:        &Options{},
+		modelsDict:    make(map[int32]*Model),
+		itypesDict:    make(map[int32]IType),
+		cacheCreators: make(map[string]CacheCreator),
+		events:        map[EventType][]func(*Updater){},
 	}
-	for k, v := range builtinHandles {
-		m.parser[k] = v
-	}
+	m.parser = make(map[Parser]handleFunc, len(builtinHandles))
+	maps.Copy(m.parser, builtinHandles)
 	return m
 }
 
@@ -106,9 +109,6 @@ func (m *Manage) NewHandle(name Parser, f handleFunc) {
 
 // RegisterGlobalCache 注册域级缓存：Loading 时为该域每个实例创建（原"全局缓存"语义收窄到域）
 func (m *Manage) RegisterGlobalCache(name string, creator CacheCreator) {
-	if m.cacheCreators == nil {
-		m.cacheCreators = make(map[string]CacheCreator)
-	}
 	m.cacheCreators[name] = creator
 }
 
@@ -131,6 +131,36 @@ func (m *Manage) ITypes(f func(int32, IType) bool) {
 	}
 }
 
+// IMax 单个道具持有上限:模型实现 ModelIMax 接口时优先,否则回落本域 Options.IMax(未配置返回 0)。
+// model 传 nil 即纯域配置口径。只依赖本域注册表,与 Updater 实例状态无关,故挂在 Manage 上。
+func (m *Manage) IMax(model any, iid int32) int64 {
+	if v, ok := model.(ModelIMax); ok {
+		return v.IMax(iid)
+	}
+	if m != nil && m.Config != nil && m.Config.IMax != nil {
+		return m.Config.IMax(iid)
+	}
+	return 0
+}
+
+// IType 查询道具类型:模型实现 ModelIType 接口时优先,否则回落本域 Options.IType;
+// iid==0 时由模型返回默认 IType,域配置兜底通常返回 nil。
+// ⚠️ 路由口径与模型口径是两回事:Updater 始终按 Options.IType 把 iid 路由到 Handle,
+// 模型返回的 itype 必须仍归属模型自身,只能用于同一模型内多个 itype 的细分。
+// model 传 nil 即纯域配置路由口径。
+func (m *Manage) IType(model any, iid int32) (it IType) {
+	var id int32
+	if v, ok := model.(ModelIType); ok {
+		id = v.IType(iid)
+	} else if m != nil && m.Config != nil && m.Config.IType != nil {
+		id = m.Config.IType(iid)
+	}
+	if id == 0 || m == nil {
+		return nil
+	}
+	return m.itypesDict[id]
+}
+
 // Models 遍历本域的模型表
 func (m *Manage) Models(f func(int32, any) bool) {
 	for k, v := range m.modelsDict {
@@ -141,7 +171,9 @@ func (m *Manage) Models(f func(int32, any) bool) {
 }
 
 // New 创建绑定到本域的裸实例。实例的生命周期（Loading/Reset/Submit/Release/Destroy，
-// 含玩家锁与实例表）由业务层自管 —— 单域场景用 Default.New(p)。
-func (m *Manage) New(p Player) *Updater {
-	return &Updater{manage: m, player: p, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}
+// 含玩家锁与实例表）由业务层自管 —— 单域场景用 Default.New(e)。
+func (m *Manage) New(e Entity) *Updater {
+	u := &Updater{manage: m, entity: e, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}
+	u.Mounts.updater = u //挂载表回引用，见 Mounts.Mount
+	return u
 }

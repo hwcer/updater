@@ -81,11 +81,11 @@ func (this *Document) Count(iid int32) int64 {
 }
 
 func (this *Document) IMax(iid int32) int64 {
-	return modelIMax(this.Updater, this.model, iid)
+	return this.Updater.manage.IMax(this.model, iid)
 }
 
 func (this *Document) IType(iid int32) IType {
-	return modelIType(this.Updater, this.model, iid)
+	return this.Updater.manage.IType(this.model, iid)
 }
 
 func (this *Document) Select(keys ...any) {
@@ -121,7 +121,7 @@ func (this *Document) save() (err error) {
 	if len(dirty) > 0 || len(unsets) > 0 {
 		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
-			logger.Alert("database save error,uid:%s,Document:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
+			logger.Alert("database save error,uid:%s,Document:%s\nOperation:%s\nerror:%s", this.Updater.Id(), this.name, ds, err.Error())
 		}
 	}
 	return
@@ -134,7 +134,7 @@ func (this *Document) reset() {
 	}
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.Updater, this.Updater.last) {
-			this.Updater.Error = this.reload()
+			this.Updater.Errorf(this.reload())
 		}
 	}
 }
@@ -151,13 +151,18 @@ func (this *Document) loading() (err error) {
 		this.dataset = dataset.NewDoc(nil)
 	}
 	if this.statement.loading() {
-		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
+		this.Updater.Errorf(this.model.Getter(this.Updater, this.dataset, nil))
+		if this.Updater.Error == nil {
 			this.statement.loader = true
 		}
 	} else if this.dataset.IsNil() {
 		this.dataset.Reset(this.model.New(this.statement.Updater))
 	}
-	return this.Updater.Error
+	//🔴 Error 是具体指针类型：nil 装进 error 接口就是非 nil（typed-nil），判空后显式 return
+	if this.Updater.Error != nil {
+		return this.Updater.Error
+	}
+	return nil
 }
 
 func (this *Document) release() {
@@ -245,12 +250,12 @@ func (this *Document) Schema() *schema.Schema {
 		return this.schema
 	}
 	if this.dataset == nil {
-		this.Updater.Error = fmt.Errorf("document dataset not init,model:%s", this.name)
+		this.Updater.Errorf("document dataset not init,model:%s", this.name)
 		return nil
 	}
 	sch, err := this.dataset.Schema()
 	if err != nil {
-		this.Updater.Error = err
+		this.Updater.Errorf(err)
 		return nil
 	}
 	this.schema = sch
@@ -332,7 +337,7 @@ func (this *Document) val(k string) (r int64, ok bool) {
 func (this *Document) fieldOperator(t operator.Types, k any, v int64, r any) *operator.Operator {
 	field, err := this.Field(k)
 	if err != nil {
-		this.Updater.Error = err
+		this.Updater.Errorf(err)
 		return nil
 	}
 	return this.operator(t, field, v, r)
@@ -356,7 +361,7 @@ func (this *Document) operator(t operator.Types, k string, v int64, r any) *oper
 	this.statement.Select(op.Field)
 	it := this.IType(0)
 	if it == nil {
-		this.Updater.Error = fmt.Errorf("document operator key empty:%+v", op)
+		this.Updater.Errorf("document operator key empty:%+v", op)
 		op.Release()
 		return nil
 	}

@@ -61,11 +61,11 @@ func (this *Values) Count(iid int32) int64 {
 }
 
 func (this *Values) IMax(iid int32) int64 {
-	return modelIMax(this.Updater, this.model, iid)
+	return this.Updater.manage.IMax(this.model, iid)
 }
 
 func (this *Values) IType(iid int32) IType {
-	return modelIType(this.Updater, this.model, iid)
+	return this.Updater.manage.IType(this.model, iid)
 }
 
 // Select 指定需要从数据库更新的字段
@@ -102,7 +102,7 @@ func (this *Values) save() (err error) {
 	if len(dirty) > 0 || len(unsets) > 0 {
 		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
-			logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.Updater.Uid(), this.name, ds, err.Error())
+			logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.Updater.Id(), this.name, ds, err.Error())
 		}
 	}
 	return
@@ -115,7 +115,7 @@ func (this *Values) reset() {
 	}
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.Updater, this.Updater.last) {
-			this.Updater.Error = this.reload()
+			this.Updater.Errorf(this.reload())
 		}
 	}
 }
@@ -131,11 +131,16 @@ func (this *Values) loading() error {
 		this.dataset = dataset.NewValues()
 	}
 	if this.statement.loading() {
-		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
+		this.Updater.Errorf(this.model.Getter(this.Updater, this.dataset, nil))
+		if this.Updater.Error == nil {
 			this.statement.loader = true
 		}
 	}
-	return this.Updater.Error
+	//🔴 Error 是具体指针类型：nil 装进 error 接口就是非 nil（typed-nil），判空后显式 return
+	if this.Updater.Error != nil {
+		return this.Updater.Error
+	}
+	return nil
 }
 
 func (this *Values) release() {

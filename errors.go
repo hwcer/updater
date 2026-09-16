@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	ErrCodeArgsIllegal   int32 = 9000
-	ErrCodeItemNotExist  int32 = 9001
-	ErrCodeItemNotEnough int32 = 9002
-	ErrCodeITypeNotExist int32 = 9003
-	ErrCodeObjectIdEmpty int32 = 9004
+	//由业务层设置
+	ErrCodeArgsIllegal   int32 = 9999
+	ErrCodeItemNotExist  int32 = 9999
+	ErrCodeItemNotEnough int32 = 9999
+	ErrCodeITypeNotExist int32 = 9999
+	ErrCodeObjectIdEmpty int32 = 9999
 )
 
 var (
@@ -25,7 +26,8 @@ var (
 	ErrSubmitEndlessLoop      = Errorf(0, "submit endless loop") //出现死循环,检查事件和插件是否正确移除(返回false)
 )
 
-func Errorf(code int32, msg any, args ...any) error {
+// Errorf 构造一个 Message 错误（业务码+文案+参数），返回值可直接赋给 Error 字段
+func Errorf(code int32, msg any, args ...any) *values.Message {
 	return values.Errorf(code, msg, args...)
 }
 
@@ -34,31 +36,31 @@ func Errorf(code int32, msg any, args ...any) error {
 // 代价是服务端日志里 err.Error() 只剩这句固定文案,排查时要看 Args。
 
 // ErrArgsIllegal 参数非法。Args 即传入的那组参数,顺序由调用点决定。
-func ErrArgsIllegal(args ...any) error {
-	return values.Errorf(ErrCodeArgsIllegal, "args illegal").WithArgs(args...)
+func ErrArgsIllegal(args ...any) *values.Message {
+	return values.Errorf(ErrCodeArgsIllegal, "args illegal").Clone(args...)
 }
 
 // ErrItemNotExist 道具不存在。Args 为 [道具ID或OID]。
-func ErrItemNotExist(id any) error {
-	return values.Errorf(ErrCodeItemNotExist, "Item Not Exist").WithArgs(id)
+func ErrItemNotExist(id any) *values.Message {
+	return values.Errorf(ErrCodeItemNotExist, "Item Not Exist").Clone(id)
 }
 
 // ErrItemNotEnough 道具不足。
 //
 // 🔴 Args 顺序固定为 [道具ID, 需要数量, 当前持有] —— 客户端靠它提示「缺哪个道具、还差多少」。
 // 改顺序等于改协议,五个调用点(parse_val/parse_doc/parse_coll×2/handle_virtual)必须同时改。
-func ErrItemNotEnough(args ...any) error {
-	return values.Errorf(ErrCodeItemNotEnough, "Item Not Enough").WithArgs(args...)
+func ErrItemNotEnough(args ...any) *values.Message {
+	return values.Errorf(ErrCodeItemNotEnough, "Item Not Enough").Clone(args...)
 }
 
 // ErrITypeNotExist IType 不存在。Args 为 [道具ID]。
-func ErrITypeNotExist(iid int32) error {
-	return values.Errorf(ErrCodeITypeNotExist, "IType Not Exist").WithArgs(iid)
+func ErrITypeNotExist(iid int32) *values.Message {
+	return values.Errorf(ErrCodeITypeNotExist, "IType Not Exist").Clone(iid)
 }
 
 // ErrObjectIdEmpty OID 为空。Args 即传入的那组参数,通常首位是道具ID。
-func ErrObjectIdEmpty(args ...any) error {
-	return values.Errorf(ErrCodeObjectIdEmpty, "oid empty").WithArgs(args...)
+func ErrObjectIdEmpty(args ...any) *values.Message {
+	return values.Errorf(ErrCodeObjectIdEmpty, "oid empty").Clone(args...)
 }
 
 // disaster 数据库熔断保护

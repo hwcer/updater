@@ -142,7 +142,3 @@ func (stmt *statement) Select(key any) {
 	stmt.keys.Select(key)
 	stmt.Updater.status.Set(StatusChanged)
 }
-
-func (stmt *statement) Errorf(format any, args ...any) error {
-	return stmt.Updater.Errorf(format, args...)
-}

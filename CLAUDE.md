@@ -34,16 +34,25 @@ Loading → Reset → Business ops (Add/Sub/Set/Del) → Data (lazy DB fetch) �
 - `Submit` runs a convergence loop: `data → verify → submit` repeating until no more changes (capped at 100 iterations to prevent infinite loops)
 - `Release` clears per-request state; `Destroy` flushes everything to DB on player logout
 
+### 错误状态（Updater.Error）
+
+`Updater.Error` 的类型是 **`*values.Message`**（Code/Data/Args 三元组，实现 `error` 接口）——错误不止有文案，业务码与参数（Args）可直接随回包下发客户端，不必解字符串。
+
+- 写入统一走 `Errorf(...)`（**唯一入口**，返回该错误便于直接抛给上层）：直接委托 `values.Errorf`——传 `*values.Message` 时写时复制收存（Code/Args 保留），传普通 error/字符串则以文案形式收进 Data（错误码归 values 默认码）；
+- 五个语义化 helper（`ErrArgsIllegal/ErrItemNotExist/ErrItemNotEnough/ErrITypeNotExist/ErrObjectIdEmpty`）直接返回 `*values.Message`，文案固定、参数只进 Args；
+- 🔴 `Error` 是具体指针类型，**不得把 `u.Error` 赋给 `error` 变量再判 nil**——nil 指针装进接口就是非 nil（typed-nil），判空一律直接写 `if u.Error != nil`；
+- `ErrCode*` 码表由业务层启动时设置（9999 为占位），必须在任何错误发生前赋值。
+
 ### Manage 数据域（实例级注册表）
 
 原包级全局 `modelsRank/modelsDict/itypesDict/Config/globalCache/globalEvents/globalMiddlewares` 全部收进 `Manage`（manage.go）：**一个进程可并存多个独立数据域**（玩家域、公会域……），各域独立注册模型与 IType 路由空间。一个公会就相当于一个玩家 —— 公会域可以有自己的每日数据、IType 编号、BulkWrite 落库目标。
 
-- `ManageConfig`（原包级 Config 匿名 struct）：`IMax/IType/ParseId/BulkWrite` 四函数字段，域内持有；`modelIMax/modelIType` 的 Config 回落经 `u.manage.Config`；
+- `Options`（原包级 Config 匿名 struct）：`IMax/IType/ParseId/BulkWrite` 四函数字段，域内持有；`modelIMax/modelIType` 的 Config 回落经 `u.manage.Config`；
 - Handle 链的域入口是 `statement.Updater`（`statement.result`、四个 handle 的 `IMax/IType` 都经它反查域表）；
 - 🔴 **IType ID 仅域内有意义**：operator 上只有裸 ID，跨域流转（或发往客户端）时接收方必须先定位域再按 IType 分发；
-- 🔴 **Manage 只管"域"不管"实例"**：实例（Updater）的创建与生命周期（含玩家锁、实例表）归业务层（yyds/players）所有；`New(p)` 返回绑定到域的裸实例，`updater.New()` 是造域（包级 `Default` 就是它造的默认域，**没有**包级 `New(player)` 了）；
+- 🔴 **Manage 只管"域"不管"实例"**：实例（Updater）的创建与生命周期（含玩家锁、实例表）归业务层（yyds/players）所有；`New(e)` 返回绑定到域的裸实例，`updater.New()` 是造域（包级 `Default` 就是它造的默认域，**没有**包级 `New(player)` 了）；
 - 域级事件/缓存（`RegisterGlobalEvent/RegisterGlobalCache/RegisterGlobalMiddleware`）只对该域实例生效，emit 顺序"域级 → 实例级"；
-- **兼容层**（default.go）：包级 `Register/Config/RegisterGlobalXxx/ITypes/Models/NewHandle` 一行委托 `Default`（包级 `var Config = Default.Config` 是 `*ManageConfig` 别名，字段赋值兼容）；进程级 `disaster` 熔断**留全局**（共享库时一个库挂了两个域都该拒服务）。
+- **兼容层**（default.go）：包级 `Register/Config/RegisterGlobalXxx/ITypes/Models/NewHandle` 一行委托 `Default`（包级 `var Config = Default.Config` 是 `*Options` 别名，字段赋值兼容）；进程级 `disaster` 熔断**留全局**（共享库时一个库挂了两个域都该拒服务）。
 
 ### Four Data Models (Parser Types)
 
@@ -68,8 +77,8 @@ Each model type has a matching trio: `handle_*.go` (Handle implementation), `par
 给"Updater 之外、但要与玩家数据**同批次原子写库**"的数据用：邮件领取标记、兑换码占用、充值订单、临时战斗副本。全部实现在 `handle_mount.go`，设计取舍见 `HANDLER_MOUNT_PLAN.md`。
 
 ```go
-coll, err := u.Mount(&model.Mail{}, ids...)   // 挂载 + 当场查库(= Select + Data)，幂等
-defer u.Unmount(&model.Mail{})                // 标记卸载，真正摘除在 Release 阶段
+coll, err := u.Mounts.Load(&model.Mail{}, ids...)    // 挂载 + 当场查库(= Select + Data)，幂等
+defer u.Mounts.Remove(&model.Mail{})              // 标记卸载，真正摘除在 Release 阶段
 coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存，submit 进 bulkWrite
 ```
 
@@ -89,7 +98,7 @@ coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存
 其它要点：
 
 - `Receive(id, data)` 把已经在手上的文档直接塞进内存，跳过查库 —— **挂载同时是这次会话里的一份缓存**（充值的下单 → 核销横跨多次请求就是典型）。`Collection` 也有一对：`Remove` 清掉 / `Receive` 塞进去，都不碰数据库；
-- **两档生命周期**（框架零自动清理）：短命 `defer Unmount`；长命（充值、战斗副本）不 Unmount，留给玩家下线兜底。🔴 **三个"释放"不是一回事**：逐请求 `release()` 只清 dirty **保留内存**／`Unmount` 只打标记、Release 阶段才摘除／`destroy()` 是下线刷盘；
+- **两档生命周期**（框架零自动清理）：短命 `defer Mounts.Remove`；长命（充值、战斗副本）不 Remove，留给玩家下线兜底。🔴 **三个"释放"不是一回事**：逐请求 `release()` 只清 dirty **保留内存**／`Mounts.Remove` 只打标记、Release 阶段才摘除／`destroy()` 是下线刷盘；
 - 🔴 `Select` 必须置 `StatusChanged`（`Updater.data()` 开头有闸门），漏了的症状是"Select 了、Data 了、Get 拿到 nil、还不报错"；
 - 🔴 `ram` 取 `RAMTypeMaybe`：`release` 保留内存数据，且 `statement.has` 里 `Always && loader` 那条短路**不能命中**（命中后 Select 会跳过每一个 key）。
 
@@ -108,7 +117,7 @@ coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存
 
 类型访问器: `Values()`, `Document()`, `Collection()`, `Virtual()` — 通过 name 或 IType ID 获取具体 Handle 实例。
 
-临时挂载: `Mount(MountModel)`, `Unmount(MountModel)`, `Mounted(MountModel)` — 见「临时挂载集合」。
+临时挂载: `Mounts` 字段上的 `Load`(取或建+取数) / `Get`(只取) / `Remove`(卸载标记) — 挂载方法不直接挂在 Updater（与 Cache/Events 同款），见「临时挂载集合」。
 
 ### 方法排列约定
 

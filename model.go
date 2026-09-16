@@ -29,43 +29,19 @@ type TableOrder interface {
 	TableOrder() int32
 }
 
-// ModelIMax 可选接口,模型未实现时回落到所属域 ManageConfig.IMax
+// ModelIMax 可选接口,模型未实现时回落到所属域 Options.IMax
+// 识别入口:Updater.IMax
 type ModelIMax interface {
 	IMax(iid int32) int64 //单个道具可拥有的最大数量,默认无限
 }
 
-// ModelIType 可选接口,模型未实现时回落到所属域 ManageConfig.IType
-// 约束:Updater 始终按 ManageConfig.IType 把 iid 路由到 Handle,所以模型返回的 itype 必须仍归属模型自身,
-// 它只能用于同一模型内多个 itype 的细分,不能与 ManageConfig.IType 给出不同的模型归属;
+// ModelIType 可选接口,模型未实现时回落到所属域 Options.IType
+// 约束:Updater 始终按 Options.IType 把 iid 路由到 Handle,所以模型返回的 itype 必须仍归属模型自身,
+// 它只能用于同一模型内多个 itype 的细分,不能与 Options.IType 给出不同的模型归属;
 // 两者归属不一致时 Values 会静默丢弃操作,Collection 返回 ErrITypeNotExist
+// 识别入口:Updater.IType
 type ModelIType interface {
 	IType(iid int32) int32 //内部查询道具的类型
-}
-
-// modelIMax 单个道具持有上限,模型实现 ModelIMax 时优先,否则使用所属域 Config
-func modelIMax(u *Updater, model any, iid int32) int64 {
-	if v, ok := model.(ModelIMax); ok {
-		return v.IMax(iid)
-	}
-	if u != nil && u.manage != nil && u.manage.Config.IMax != nil {
-		return u.manage.Config.IMax(iid)
-	}
-	return 0
-}
-
-// modelIType 查询道具类型,模型实现 ModelIType 时优先,否则使用所属域 Config
-// iid==0 时由模型返回默认 IType,Config 兜底通常返回 0(nil)
-func modelIType(u *Updater, model any, iid int32) IType {
-	var it int32
-	if v, ok := model.(ModelIType); ok {
-		it = v.IType(iid)
-	} else if u != nil && u.manage != nil && u.manage.Config.IType != nil {
-		it = u.manage.Config.IType(iid)
-	}
-	if it == 0 || u == nil || u.manage == nil {
-		return nil
-	}
-	return u.manage.itypesDict[it]
 }
 
 // ModelReset 返回true时 重新调用 model.Getter

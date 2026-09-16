@@ -102,11 +102,11 @@ func docIID(doc *dataset.Document) int32 {
 }
 
 func (this *Collection) IMax(iid int32) int64 {
-	return modelIMax(this.Updater, this.model, iid)
+	return this.Updater.manage.IMax(this.model, iid)
 }
 
 func (this *Collection) IType(iid int32) IType {
-	return modelIType(this.Updater, this.model, iid)
+	return this.Updater.manage.IType(this.model, iid)
 }
 
 func (this *Collection) Select(keys ...any) {
@@ -148,7 +148,7 @@ func (this *Collection) reset() {
 	}
 	if reset, ok := this.model.(ModelReset); ok {
 		if reset.Reset(this.Updater, this.Updater.last) {
-			this.Updater.Error = this.reload()
+			_ = this.Updater.Errorf(this.reload())
 		}
 	}
 }
@@ -164,11 +164,16 @@ func (this *Collection) loading() error {
 		this.dataset = dataset.NewColl()
 	}
 	if this.statement.loading() {
-		if this.Updater.Error = this.model.Getter(this.Updater, this.dataset, nil); this.Updater.Error == nil {
+		_ = this.Updater.Errorf(this.model.Getter(this.Updater, this.dataset, nil))
+		if this.Updater.Error == nil {
 			this.statement.loader = true
 		}
 	}
-	return this.Updater.Error
+	//🔴 Error 是具体指针类型：nil 装进 error 接口就是非 nil（typed-nil），判空后显式 return
+	if this.Updater.Error != nil {
+		return this.Updater.Error
+	}
+	return nil
 }
 
 func (this *Collection) release() {
@@ -418,7 +423,9 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 	switch d := id.(type) {
 	case string:
 		op.OID = d
-		op.IID, this.Updater.Error = this.Updater.manage.Config.ParseId(this.Updater, op.OID)
+		iid, err := this.Updater.manage.Config.ParseId(this.Updater, op.OID)
+		op.IID = iid
+		_ = this.Updater.Errorf(err)
 	default:
 		op.IID = dataset.ParseInt32(id)
 	}
@@ -427,7 +434,8 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 		op.Release()
 		return nil
 	}
-	if this.Updater.Error = this.mayChange(op); this.Updater.Error != nil {
+	_ = this.Updater.Errorf(this.mayChange(op))
+	if this.Updater.Error != nil {
 		op.Release()
 		return nil
 	}
@@ -464,12 +472,12 @@ func (this *Collection) format(op *operator.Operator) {
 	data := dataset.Update{}
 	result, ok := op.Result.(dataset.Update)
 	if !ok {
-		this.Updater.Error = fmt.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
+		this.Updater.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
 		return
 	}
 	sch := this.Schema()
 	if sch == nil {
-		this.Updater.Error = fmt.Errorf("operator.set schema empty:%s", this.name)
+		this.Updater.Errorf("operator.set schema empty:%s", this.name)
 		return
 	}
 	//统一成 json 名,与 Document.Field 同口径(理由见 Document.Name):op.Result 既是发
@@ -483,7 +491,7 @@ func (this *Collection) format(op *operator.Operator) {
 	for k, v := range result {
 		name, err := sch.JSName(k)
 		if err != nil {
-			this.Updater.Error = fmt.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
+			this.Updater.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
 			return
 		}
 		data[name] = v

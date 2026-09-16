@@ -13,7 +13,7 @@ import (
 
 type mountPlayer struct{ uid string }
 
-func (p *mountPlayer) Uid() string { return p.uid }
+func (p *mountPlayer) Id() string { return p.uid }
 
 type mountRow struct {
 	Id     string `json:"_id" bson:"_id"`
@@ -102,7 +102,7 @@ func newMountUpdater(t *testing.T) (*Updater, *mountBulk) {
 func TestMountSelectTriggersGetter(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, err := u.Mount(m)
+	coll, err := u.Mounts.Load(m)
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -130,7 +130,7 @@ func TestMountWithKeysLoadsImmediately(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1", "row2")
 
-	coll, err := u.Mount(m, "row1", "row2")
+	coll, err := u.Mounts.Load(m, "row1", "row2")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -142,7 +142,7 @@ func TestMountWithKeysLoadsImmediately(t *testing.T) {
 	}
 
 	//长命场景:后续请求反复这么调,已在内存的 key 不重复查库
-	again, err := u.Mount(m, "row1")
+	again, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount 幂等:%v", err)
 	}
@@ -156,7 +156,7 @@ func TestMountWithKeysLoadsImmediately(t *testing.T) {
 	//没带 key 就不该碰数据库
 	u2, _ := newMountUpdater(t)
 	m2 := newMountModel("row1")
-	if _, err = u2.Mount(m2); err != nil {
+	if _, err = u2.Mounts.Load(m2); err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
 	if m2.getter != 0 {
@@ -170,14 +170,14 @@ func TestMountGetterErrorKeepsMount(t *testing.T) {
 	m := newMountModel("row1")
 	m.err = errors.New("db down")
 
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err == nil {
 		t.Fatal("Getter 报错时 Mount 应把错误返回出来")
 	}
 	if coll == nil {
 		t.Fatal("查库失败不该连句柄一起吞掉:挂载本身是成功的")
 	}
-	if u.Mounted(m) != coll {
+	if u.Mounts.Get(m) != coll {
 		t.Fatal("句柄应当已经挂上")
 	}
 
@@ -200,7 +200,7 @@ func TestMountValAndCount(t *testing.T) {
 	m.rows["row2"].IID, m.rows["row2"].Val = 102, 3
 	m.rows["row3"].IID, m.rows["row3"].Val = 101, 5
 
-	coll, err := u.Mount(m, "row1", "row2") //故意不拉 row3
+	coll, err := u.Mounts.Load(m, "row1", "row2") //故意不拉 row3
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -232,7 +232,7 @@ func TestMountValAndCount(t *testing.T) {
 func TestMountSubmitSharesBulkWrite(t *testing.T) {
 	u, bw := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, _ := u.Mount(m)
+	coll, _ := u.Mounts.Load(m)
 	coll.Select("row1")
 	if err := u.Data(); err != nil {
 		t.Fatalf("Data:%v", err)
@@ -260,7 +260,7 @@ func TestMountSubmitSharesBulkWrite(t *testing.T) {
 func TestMountSubmitAbortsOnError(t *testing.T) {
 	u, bw := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, _ := u.Mount(m)
+	coll, _ := u.Mounts.Load(m)
 	coll.Select("row1")
 	_ = u.Data()
 	_ = coll.Update("row1", dataset.Update{"status": int32(2)})
@@ -274,24 +274,24 @@ func TestMountSubmitAbortsOnError(t *testing.T) {
 	}
 }
 
-// 🔴 defer u.Unmount(...) 在 **handler 返回时**执行，框架 Submit 排在那之后。
-// Unmount 当场摘除的话这次改动就永远写不出去 —— 所以它只打标记，摘除留到 Release，
+// 🔴 defer u.Mounts.Remove(...) 在 **handler 返回时**执行，框架 Submit 排在那之后。
+// Mounts.Remove 当场摘除的话这次改动就永远写不出去 —— 所以它只打标记，摘除留到 Release，
 // 短流程照样走完 Data/verify/submit 全套。
-func TestMountUnmountDefersToRelease(t *testing.T) {
+func TestMountRemoveDefersToRelease(t *testing.T) {
 	u, bw := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
 	_ = coll.Update("row1", dataset.Update{"status": int32(3)})
 
-	u.Unmount(m) //模拟 handler 里的 defer:此刻框架还没 Submit
-	if u.Mounted(m) != coll {
-		t.Fatal("Unmount 只该打标记,句柄要留到请求走完")
+	u.Mounts.Remove(m) //模拟 handler 里的 defer:此刻框架还没 Submit
+	if u.Mounts.Get(m) != coll {
+		t.Fatal("Remove 只该打标记,句柄要留到请求走完")
 	}
 	if len(bw.updates) != 0 {
-		t.Fatal("Unmount 不该自己开旁路刷盘,落库统一走 submit")
+		t.Fatal("Remove 不该自己开旁路刷盘,落库统一走 submit")
 	}
 
 	if _, err = u.Submit(); err != nil {
@@ -302,19 +302,19 @@ func TestMountUnmountDefersToRelease(t *testing.T) {
 	}
 
 	u.Release()
-	if u.Mounted(m) != nil {
+	if u.Mounts.Get(m) != nil {
 		t.Fatal("Release 之后才真正摘除")
 	}
 }
 
 // 标记可撤销：同一请求内改主意再 Mount，句柄还给它。
-func TestMountRemountCancelsUnmount(t *testing.T) {
+func TestMountReloopCancelsRemove(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, _ := u.Mount(m, "row1")
+	coll, _ := u.Mounts.Load(m, "row1")
 
-	u.Unmount(m)
-	again, err := u.Mount(m)
+	u.Mounts.Remove(m)
+	again, err := u.Mounts.Load(m)
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -323,7 +323,7 @@ func TestMountRemountCancelsUnmount(t *testing.T) {
 	}
 
 	u.Release()
-	if u.Mounted(m) != coll {
+	if u.Mounts.Get(m) != coll {
 		t.Fatal("重新 Mount 应撤销卸载标记")
 	}
 }
@@ -332,7 +332,7 @@ func TestMountRemountCancelsUnmount(t *testing.T) {
 func TestMountSurvivesRequestBoundary(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, _ := u.Mount(m)
+	coll, _ := u.Mounts.Load(m)
 	coll.Select("row1")
 	if err := u.Data(); err != nil {
 		t.Fatalf("Data:%v", err)
@@ -348,7 +348,7 @@ func TestMountSurvivesRequestBoundary(t *testing.T) {
 	if coll.Get("row1") == nil {
 		t.Fatal("长命句柄跨请求丢了内存:release 不该清 dataset")
 	}
-	again, err := u.Mount(m)
+	again, err := u.Mounts.Load(m)
 	if err != nil {
 		t.Fatalf("Mount 幂等取回失败:%v", err)
 	}
@@ -372,7 +372,7 @@ func TestMountRejectsRegisteredName(t *testing.T) {
 	}
 	defer func() { Default.modelsRank = backup }()
 
-	if _, err := u.Mount(m); err == nil {
+	if _, err := u.Mounts.Load(m); err == nil {
 		t.Fatal("与全局模型重名的 Mount 应报错")
 	}
 }
@@ -384,7 +384,7 @@ func TestMountRejectsRegisteredName(t *testing.T) {
 func TestMountDestroyClearsMounts(t *testing.T) {
 	u, bw := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, _ := u.Mount(m, "row1")
+	coll, _ := u.Mounts.Load(m, "row1")
 	coll.Update("row1", dataset.Update{"status": int32(4)}) //只入队,没 Submit
 
 	if err := u.Destroy(); err != nil {
@@ -393,7 +393,7 @@ func TestMountDestroyClearsMounts(t *testing.T) {
 	if len(bw.updates) != 0 {
 		t.Fatal("没跑完的请求不该被下线流程顺手落库")
 	}
-	if u.mounts != nil {
+	if u.Mounts.tables != nil {
 		t.Fatal("Destroy 应清空挂载表")
 	}
 }
@@ -403,7 +403,7 @@ func TestMountUpdateGoesThroughOperator(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
 	m.rows["row1"].Val = 1
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -434,7 +434,7 @@ func TestMountForwardByModelIType(t *testing.T) {
 	//没声明:不下发
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, _ := u.Mount(m, "row1")
+	coll, _ := u.Mounts.Load(m, "row1")
 	coll.Update("row1", dataset.Update{"status": int32(1)})
 
 	if len(coll.Operators()) != 0 {
@@ -464,7 +464,7 @@ func TestMountForwardByModelIType(t *testing.T) {
 	//声明了:走通用更新
 	u2, _ := newMountUpdater(t)
 	m2 := &mountITypeModel{mountModel: *newMountModel("row1")}
-	coll2, _ := u2.Mount(m2, "row1")
+	coll2, _ := u2.Mounts.Load(m2, "row1")
 	coll2.Update("row1", dataset.Update{"status": int32(1)})
 	ops2, err := u2.Submit()
 	if err != nil {
@@ -488,7 +488,7 @@ func TestMountForwardByModelIType(t *testing.T) {
 func TestMountInsertGoesThroughOperator(t *testing.T) {
 	u, bw := newMountUpdater(t)
 	m := newMountModel() //库里空的
-	coll, _ := u.Mount(m)
+	coll, _ := u.Mounts.Load(m)
 
 	if op := coll.Insert(&mountRow{Id: "row9", Val: 3}); op == nil {
 		t.Fatalf("Insert 应产出 operator:%v", u.Error)
@@ -512,7 +512,7 @@ func TestMountInsertGoesThroughOperator(t *testing.T) {
 func TestMountReceiveSkipsGetter(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel() //库里空的:证明数据确实来自 Receive 而不是查库
-	coll, err := u.Mount(m)
+	coll, err := u.Mounts.Load(m)
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -552,7 +552,7 @@ func TestMountReceiveSkipsGetter(t *testing.T) {
 func TestMountSelectStillWorksAfterReload(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -598,7 +598,7 @@ const mountTestITypeId int32 = 990001
 func TestMountRemoveAppliedOnSubmit(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -617,7 +617,7 @@ func TestMountRemoveAppliedOnSubmit(t *testing.T) {
 // Insert 的 _id 从对象上取：取不到直接报错，不会静默插进一条没有主键的记录。
 func TestMountInsertRequiresObjectId(t *testing.T) {
 	u, _ := newMountUpdater(t)
-	coll, _ := u.Mount(newMountModel())
+	coll, _ := u.Mounts.Load(newMountModel())
 
 	if op := coll.Insert(&mountRow{Val: 3}); op != nil { //没有 Id
 		t.Fatal("对象没有 _id 时 Insert 应当报错")
@@ -631,7 +631,7 @@ func TestMountInsertRequiresObjectId(t *testing.T) {
 // 对面按道具变更渲染，留 0 会显示成"+0"）；取不到按 1。
 func TestMountInsertOperatorValue(t *testing.T) {
 	u, _ := newMountUpdater(t)
-	coll, _ := u.Mount(newMountModel())
+	coll, _ := u.Mounts.Load(newMountModel())
 
 	op := coll.Insert(&mountRow{Id: "row9", Val: 7})
 	if op == nil {
@@ -677,7 +677,7 @@ func TestMountSubmitUsesIsolatedBulkWrite(t *testing.T) {
 	}
 
 	m := newMountModel("row1")
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -716,7 +716,7 @@ func TestMountSubmitUsesIsolatedBulkWrite(t *testing.T) {
 func TestMountSubmitKeepsMemoryOnRollback(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel("row1")
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}
@@ -750,7 +750,7 @@ func TestMountSubmitNoopWhenClean(t *testing.T) {
 	}
 	u.Reset()
 	m := newMountModel("row1")
-	coll, err := u.Mount(m, "row1")
+	coll, err := u.Mounts.Load(m, "row1")
 	if err != nil {
 		t.Fatalf("Mount:%v", err)
 	}

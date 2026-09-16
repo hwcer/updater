@@ -15,7 +15,7 @@ func (i testIType) ID() int32 { return int32(i) }
 
 type managePlayer struct{ uid string }
 
-func (p *managePlayer) Uid() string { return p.uid }
+func (p *managePlayer) Id() string { return p.uid }
 
 // manageValuesModel 假的数值模型：库在内存 map，记录 Getter/Setter 次数。
 // 两个域刻意用**同一张表名**、注册**同一个 IType ID** —— 隔离的前提恰恰是这些都能撞。

@@ -4,7 +4,7 @@ package updater
 // 单域（只管玩家）用法零改动；新域请 New。
 var Default = New()
 
-// Config 兼容锚点：原包级配置，现为 Default 域配置（*ManageConfig）的别名。
+// Config 兼容锚点：原包级配置，现为 Default 域配置（*Options）的别名。
 var Config = Default.Config
 
 // ===================== 兼容层（一行委托 Default 域，旧代码零改动） =====================
