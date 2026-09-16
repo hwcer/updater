@@ -4,13 +4,6 @@ import (
 	"github.com/hwcer/updater/operator"
 )
 
-var Config = struct {
-	IMax      func(iid int32) int64                                     //通过道具iid查找上限
-	IType     func(iid int32) int32                                     //通过道具iid查找IType ID
-	ParseId   func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
-	BulkWrite func(u *Updater) BulkWrite                                //全局 BulkWrite 工厂
-}{}
-
 // Status 状态位标记
 type Status uint8
 

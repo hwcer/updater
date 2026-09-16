@@ -80,12 +80,12 @@ func (this *Virtual) Count(iid int32) int64 {
 }
 
 func (this *Virtual) IMax(iid int32) int64 {
-	return modelIMax(this.model, iid)
+	return modelIMax(this.Updater, this.model, iid)
 }
 
 // IType iid>0 时按 iid 查找，iid==0 时返回模型默认 IType
 func (this *Virtual) IType(iid int32) IType {
-	return modelIType(this.model, iid)
+	return modelIType(this.Updater, this.model, iid)
 }
 
 func (this *Virtual) Select(keys ...any) {

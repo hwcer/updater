@@ -40,11 +40,49 @@ u.Destroy()                // 玩家下线，强制刷盘
 
 ## 注册模型
 
+注册表是**数据域（Manage）实例级**的：玩家、公会各自 `NewManage` 一个，互不串扰 ——
+同一个 IType ID 可以在两个域各指不同模型，公会域可以有独立的每日数据甚至落库目标。
+
 ```go
-updater.Register(updater.ParserTypeValues, updater.RAMTypeAlways, &ItemModel{}, itemIType)
-updater.Register(updater.ParserTypeDocument, updater.RAMTypeMaybe, &PlayerModel{}, playerIType)
-updater.Register(updater.ParserTypeCollection, updater.RAMTypeAlways, &BagModel{}, equipIType, gemIType)
+playerManage := updater.NewManage()
+playerManage.Config.IType = func(iid int32) int32 { ... }   // 玩家域的 iid 路由
+playerManage.Config.BulkWrite = func(u *updater.Updater) updater.BulkWrite { ... }
+playerManage.Register(updater.ParserTypeValues, updater.RAMTypeAlways, &ItemModel{}, itemIType)
+playerManage.Register(updater.ParserTypeDocument, updater.RAMTypeMaybe, &PlayerModel{}, playerIType)
+playerManage.Register(updater.ParserTypeCollection, updater.RAMTypeAlways, &BagModel{}, equipIType, gemIType)
+
+guildManage := updater.NewManage()                          // 公会域：一个公会就相当于一个玩家
+guildManage.Config.BulkWrite = ...                          // 可指向不同的库
+guildManage.Register(updater.ParserTypeCollection, updater.RAMTypeMaybe, &GuildDailyModel{}, guildDailyIType)
 ```
+
+⚠️ 包级 `updater.Register / Config / New / RegisterGlobalCache / RegisterGlobalEvent /
+RegisterGlobalMiddleware / ITypes / Models` 是**默认域 `updater.Default`** 的兼容入口，
+单域（只管玩家）用法零改动。多域业务别往 Default 里塞非玩家模型。
+
+## 实例管理（Get/Load/Unload）
+
+`Manage` 自带实体实例表与实体锁（同一实体的请求串行、跨实体并行）：
+
+```go
+u, unlock, err := playerManage.Load(player) // 取或建 + 自动 Loading + 加实体锁
+if err != nil { return err }
+defer unlock()                              // unlock 必须且只能调用一次
+
+u.Reset()                  // 每次请求开始
+u.Add(1001, 100)           // 加 100 金币（num 支持 int32/int64）
+u.Sub(1002, 5)             // 扣 5 钻石
+u.Val(1001)                // 获取金币数值
+u.Get(1001)                // 获取原始数据
+ops, err := u.Submit()     // 校验+落库，返回变更列表
+u.Release()                // 请求结束，清理临时状态
+
+playerManage.Unload(uid)   // 下线：加锁 → Destroy 刷盘 → 摘除
+playerManage.Range(func(uid string, u *updater.Updater) bool { ... }) // 停服全量刷盘
+```
+
+不需要实例表和锁时用 `playerManage.New(player)` 裸实例（等价旧 `updater.New`），
+生命周期自管。进程级 DB 熔断（disaster）仍是全局的：共享库时一个库挂了两域都该拒服务。
 
 ## 内存策略
 
@@ -118,8 +156,9 @@ v.Add(2001, 1)  // 委托给其他模块处理，同时生成 Operator 返回前
 ```
 updater/
 ├── updater.go          Updater 核心生命周期（Reset/Submit/Release/Destroy）
-├── define.go           IType 接口 + Config 全局配置 + Keys 工具类
-├── model.go            模型注册（Register）+ Parser 类型
+├── manage.go           Manage 数据域（注册表/Config/域级事件缓存/实例管理 Get/Load/Unload）
+├── define.go           IType 接口 + Status/Keys 工具类
+├── model.go            模型元数据（Model/verify）+ Parser 类型
 ├── statement.go        语句基类（Select/insert/verify/submit）
 ├── handle.go           Handle 接口定义
 ├── handle_val.go       Values 实现

@@ -34,6 +34,17 @@ Loading → Reset → Business ops (Add/Sub/Set/Del) → Data (lazy DB fetch) �
 - `Submit` runs a convergence loop: `data → verify → submit` repeating until no more changes (capped at 100 iterations to prevent infinite loops)
 - `Release` clears per-request state; `Destroy` flushes everything to DB on player logout
 
+### Manage 数据域（实例级注册表）
+
+原包级全局 `modelsRank/modelsDict/itypesDict/Config/globalCache/globalEvents/globalMiddlewares` 全部收进 `Manage`（manage.go）：**一个进程可并存多个独立数据域**（玩家域、公会域……），各域独立注册模型与 IType 路由空间。一个公会就相当于一个玩家 —— 公会域可以有自己的每日数据、IType 编号、BulkWrite 落库目标。
+
+- `ManageConfig`（原包级 Config 匿名 struct）：`IMax/IType/ParseId/BulkWrite` 四函数字段，域内持有；`modelIMax/modelIType` 的 Config 回落经 `u.manage.Config`；
+- Handle 链的域入口是 `statement.Updater`（`statement.result`、四个 handle 的 `IMax/IType` 都经它反查域表）；
+- 🔴 **IType ID 仅域内有意义**：operator 上只有裸 ID，跨域流转（或发往客户端）时接收方必须先定位域再按 IType 分发；
+- 域级事件/缓存（`RegisterGlobalEvent/RegisterGlobalCache/RegisterGlobalMiddleware`）只对该域实例生效，emit 顺序"域级 → 实例级"；
+- **实例管理**（自 yyds/players 沉淀）：`Load(p) (u, unlock, err)` 取或建 + 自动 Loading + 实体锁（同 uid 串行、跨 uid 并行；unlock 必须且只能调一次）；`Get(uid)` 只取不建；`Unload(uid)` 加锁 → Destroy → 摘除（Destroy 失败保留实例可重试）；`Range` 遍历（不加实体锁，停服场景用）；
+- **兼容层**：包级 `Register/New/Config/RegisterGlobalXxx/ITypes/Models/NewHandle` 一行委托 `Default`（包级 `var Config = Default.Config` 是 `*ManageConfig` 别名，字段赋值兼容）；进程级 `disaster` 熔断**留全局**（共享库时一个库挂了两个域都该拒服务）。
+
 ### Four Data Models (Parser Types)
 
 Each model type has a matching trio: `handle_*.go` (Handle implementation), `parse_*.go` (operator dispatch table), and a `dataset/*` backing store. Virtual is the exception — it has no parse file and no backing store; it delegates all operations to other modules.
@@ -45,7 +56,7 @@ Each model type has a matching trio: `handle_*.go` (Handle implementation), `par
 | `ParserTypeCollection` | `Collection` | `string` (OID) | `dataset.Collection` (map of Documents) | `collectionModel` |
 | `ParserTypeVirtual` | `Virtual` | `any` | delegates to another module | `virtualModel` |
 
-临时挂载集合（`Mount`）不另设 Parser —— 它不在全局注册表里，`Parser()` 那个返回值也没有任何消费者，报 `ParserTypeCollection` 即可，见下节。
+临时挂载集合（`Mount`）不另设 Parser —— 它不在所属域的注册表里，`Parser()` 那个返回值也没有任何消费者，报 `ParserTypeCollection` 即可，见下节。
 
 > `Collection`（全局注册句柄）也有一对**内存增删**：`Remove(oid...)` 从内存清掉、
 > `Receive(oid, data)` 把已经在手上的文档塞进去。两个都**不碰数据库**，

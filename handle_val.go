@@ -61,11 +61,11 @@ func (this *Values) Count(iid int32) int64 {
 }
 
 func (this *Values) IMax(iid int32) int64 {
-	return modelIMax(this.model, iid)
+	return modelIMax(this.Updater, this.model, iid)
 }
 
 func (this *Values) IType(iid int32) IType {
-	return modelIType(this.model, iid)
+	return modelIType(this.Updater, this.model, iid)
 }
 
 // Select 指定需要从数据库更新的字段

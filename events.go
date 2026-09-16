@@ -15,14 +15,6 @@ const (
 // Listener 事件监听器，返回 true 继续监听，false 从列表中移除
 type Listener func(u *Updater) (next bool)
 
-// 全局事件，持续触发，不会取消
-var globalEvents = map[EventType][]func(u *Updater){}
-
-// RegisterGlobalEvent 注册全局事件，必须在初始化时调用
-func RegisterGlobalEvent(t EventType, handle func(u *Updater)) {
-	globalEvents[t] = append(globalEvents[t], handle)
-}
-
 // Events 生命周期事件
 type Events map[EventType][]Listener
 
@@ -34,8 +26,11 @@ func (e Events) emit(u *Updater, t EventType) {
 	if u.Error != nil && t != EventTypeRelease {
 		return
 	}
-	for _, h := range globalEvents[t] {
-		h(u)
+	//域级事件（原包级全局事件）：对该域所有实例生效，永不取消
+	if u.manage != nil {
+		for _, h := range u.manage.events[t] {
+			h(u)
+		}
 	}
 	events := e[t]
 	if len(events) > 0 {

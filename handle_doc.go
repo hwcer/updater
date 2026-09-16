@@ -81,11 +81,11 @@ func (this *Document) Count(iid int32) int64 {
 }
 
 func (this *Document) IMax(iid int32) int64 {
-	return modelIMax(this.model, iid)
+	return modelIMax(this.Updater, this.model, iid)
 }
 
 func (this *Document) IType(iid int32) IType {
-	return modelIType(this.model, iid)
+	return modelIType(this.Updater, this.model, iid)
 }
 
 func (this *Document) Select(keys ...any) {

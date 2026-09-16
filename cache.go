@@ -4,17 +4,6 @@ import "github.com/hwcer/cosgo/values"
 
 type CacheCreator func(*Updater) any
 
-// 全局中间件，所有 Updater 实例共享，每次 emit 都触发，永不移除
-var globalCache map[string]CacheCreator
-
-// RegisterGlobalCache 注册全局缓存，必须在初始化时调用
-func RegisterGlobalCache(name string, creator CacheCreator) {
-	if globalCache == nil {
-		globalCache = make(map[string]CacheCreator)
-	}
-	globalCache[name] = creator
-}
-
 // Cache 自定义缓存
 type Cache map[string]any
 

@@ -102,11 +102,11 @@ func docIID(doc *dataset.Document) int32 {
 }
 
 func (this *Collection) IMax(iid int32) int64 {
-	return modelIMax(this.model, iid)
+	return modelIMax(this.Updater, this.model, iid)
 }
 
 func (this *Collection) IType(iid int32) IType {
-	return modelIType(this.model, iid)
+	return modelIType(this.Updater, this.model, iid)
 }
 
 func (this *Collection) Select(keys ...any) {
@@ -418,7 +418,7 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 	switch d := id.(type) {
 	case string:
 		op.OID = d
-		op.IID, this.Updater.Error = Config.ParseId(this.Updater, op.OID)
+		op.IID, this.Updater.Error = this.Updater.manage.Config.ParseId(this.Updater, op.OID)
 	default:
 		op.IID = dataset.ParseInt32(id)
 	}

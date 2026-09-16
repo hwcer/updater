@@ -18,6 +18,7 @@ type Player interface {
 // Updater 玩家数据更新器，管理所有 Handle 的生命周期和持久化
 // 每个玩家持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
 type Updater struct {
+	manage    *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
 	now       time.Time            //当前请求时间
 	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
 	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
@@ -34,8 +35,12 @@ type Updater struct {
 	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
 }
 
-func New(p Player) *Updater {
-	return &Updater{player: p, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}
+// New 创建默认域的 Updater 实例（兼容入口，实现在 manage.go 兼容层）。
+// 多域场景用 Manage.New / Manage.Load。
+
+// Manage 返回所属数据域
+func (u *Updater) Manage() *Manage {
+	return u.manage
 }
 
 func (u *Updater) On(t EventType, handle Listener) {
@@ -43,8 +48,8 @@ func (u *Updater) On(t EventType, handle Listener) {
 }
 
 func (u *Updater) BulkWrite() BulkWrite {
-	if u.bulkWrite == nil && Config.BulkWrite != nil {
-		u.bulkWrite = Config.BulkWrite(u)
+	if u.bulkWrite == nil && u.manage.Config.BulkWrite != nil {
+		u.bulkWrite = u.manage.Config.BulkWrite(u)
 	}
 	return u.bulkWrite
 }
@@ -149,7 +154,7 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 	//它相当于"数据库连接"级别的配置（本项目在 model.start() 连完 Mongo 之后设），
 	//与其让每个句柄在运行期各自发明一套更严的行为，不如在玩家数据第一次加载时就拦下来：
 	//这时还没产生任何数据改动，报错干净。
-	if Config.BulkWrite == nil {
+	if u.manage.Config.BulkWrite == nil {
 		return ErrBulkWriteNotInit
 	}
 	u.status.Set(StatusInit)
@@ -157,11 +162,11 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
 	}
-	for _, model := range modelsRank {
+	for _, model := range u.manage.modelsRank {
 		name := model.name
 		handle := u.handles[name]
 		if handle == nil {
-			handle = handles[model.parser](u, model)
+			handle = u.manage.parser[model.parser](u, model)
 			u.handles[name] = handle
 		}
 		if err = handle.loading(); err != nil {
@@ -181,7 +186,7 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 		f()
 	}
 
-	for k, v := range globalCache {
+	for k, v := range u.manage.cacheCreators {
 		_ = u.Cache.LoadOrCreate(u, k, v)
 	}
 	u.Emit(EventTypeInit)
@@ -393,10 +398,10 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 }
 
 // IType 通过iid获取IType
-// 始终按全局 Config.IType 查询,不受模型 ModelIType 覆盖影响,需要模型口径时用 Handle.IType
+// 始终按所属域 ManageConfig.IType 查询,不受模型 ModelIType 覆盖影响,需要模型口径时用 Handle.IType
 func (u *Updater) IType(iid int32) (it IType) {
-	if id := Config.IType(iid); id != 0 {
-		it = itypesDict[id]
+	if id := u.manage.Config.IType(iid); id != 0 {
+		it = u.manage.itypesDict[id]
 	}
 	return
 }
@@ -404,7 +409,7 @@ func (u *Updater) IType(iid int32) (it IType) {
 // ParseId 通过OID 或者IID 获取iid
 func (u *Updater) ParseId(key any) (iid int32, err error) {
 	if v, ok := key.(string); ok {
-		iid, err = Config.ParseId(u, v)
+		iid, err = u.manage.Config.ParseId(u, v)
 	} else {
 		iid = dataset.ParseInt32(key)
 	}
@@ -420,8 +425,8 @@ func (u *Updater) handleWithKey(k any) Handle {
 		logger.Alert("%v", err)
 		return nil
 	}
-	itk := Config.IType(iid)
-	model, ok := modelsDict[itk]
+	itk := u.manage.Config.IType(iid)
+	model, ok := u.manage.modelsDict[itk]
 	if !ok {
 		logger.Debug("Updater.handle not exists,iid:%v IType:%v", k, itk)
 		return nil
@@ -448,7 +453,7 @@ func (u *Updater) handleWithAny(name any) Handle {
 }
 
 func (u *Updater) handleWithIType(id int32) Handle {
-	mod := modelsDict[id]
+	mod := u.manage.modelsDict[id]
 	if mod == nil {
 		return nil
 	}
@@ -465,8 +470,8 @@ func (u *Updater) handleWithIType(id int32) Handle {
 // 具体到实现：临时句柄追加在尾部，而 Submit/verify/Release 是**倒序**遍历
 // —— 也就是说它们实际最先跑。别在这个次序上建立任何依赖。
 func (u *Updater) Handles() (r []Handle) {
-	r = make([]Handle, 0, len(modelsRank)+len(u.mounts))
-	for _, model := range modelsRank {
+	r = make([]Handle, 0, len(u.manage.modelsRank)+len(u.mounts))
+	for _, model := range u.manage.modelsRank {
 		if h := u.handles[model.name]; h != nil {
 			r = append(r, h)
 		}

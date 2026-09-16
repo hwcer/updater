@@ -90,7 +90,7 @@ func (stmt *statement) verify() {
 }
 
 func (stmt *statement) result(opt *operator.Operator) {
-	it := itypesDict[opt.IType]
+	it := stmt.Updater.manage.itypesDict[opt.IType]
 	if it == nil {
 		return
 	}

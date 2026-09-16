@@ -5,14 +5,6 @@ type Middleware interface {
 	Emit(u *Updater, t EventType) (next bool)
 }
 
-// 全局中间件，所有 Updater 实例共享，每次 emit 都触发，永不移除
-var globalMiddlewares []Middleware
-
-// RegisterGlobalMiddleware 注册全局中间件，必须在初始化时调用
-func RegisterGlobalMiddleware(handle Middleware) {
-	globalMiddlewares = append(globalMiddlewares, handle)
-}
-
 // Middlewares 中间件管理器
 type Middlewares map[string]Middleware
 
@@ -58,8 +50,11 @@ func (m Middlewares) LoadOrCreate(u *Updater, name string, creator func(*Updater
 }
 
 func (m Middlewares) emit(u *Updater, t EventType) {
-	for _, p := range globalMiddlewares {
-		p.Emit(u, t)
+	//域级中间件（原包级全局中间件）：对该域所有实例生效，永不移除
+	if u.manage != nil {
+		for _, p := range u.manage.middlewares {
+			p.Emit(u, t)
+		}
 	}
 	for k, p := range m {
 		if !p.Emit(u, t) {

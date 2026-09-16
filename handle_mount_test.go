@@ -365,9 +365,12 @@ func TestMountRejectsRegisteredName(t *testing.T) {
 	u, _ := newMountUpdater(t)
 	m := newMountModel()
 
-	backup := modelsRank
-	modelsRank = append(append([]*Model{}, modelsRank...), &Model{name: m.TableName()})
-	defer func() { modelsRank = backup }()
+	//真实注册一个同名正式模型（不带 IType，不碰路由表；测试结束恢复注册表）
+	backup := Default.modelsRank
+	if err := Register(ParserTypeCollection, RAMTypeAlways, newMountModel()); err != nil {
+		t.Fatalf("Register:%v", err)
+	}
+	defer func() { Default.modelsRank = backup }()
 
 	if _, err := u.Mount(m); err == nil {
 		t.Fatal("与全局模型重名的 Mount 应报错")

@@ -61,7 +61,7 @@ func (u *Updater) Mount(model MountModel, keys ...string) (*Mount, error) {
 	name := model.TableName()
 	r, exist := u.mounts[name]
 	if !exist {
-		for _, m := range modelsRank {
+		for _, m := range u.manage.modelsRank {
 			if m.name == name {
 				return nil, Errorf(0, "mount name conflicts with registered model:%v", name)
 			}
@@ -369,10 +369,10 @@ func (this *Mount) Submit() error {
 	if len(this.dataset.Dirty()) == 0 {
 		return nil
 	}
-	if Config.BulkWrite == nil {
+	if this.Updater.manage.Config.BulkWrite == nil {
 		return ErrBulkWriteNotInit
 	}
-	bulk := Config.BulkWrite(this.Updater)
+	bulk := this.Updater.manage.Config.BulkWrite(this.Updater)
 	if bulk == nil {
 		return ErrBulkWriteNotInit
 	}
