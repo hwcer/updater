@@ -53,28 +53,20 @@ func (this *Virtual) Get(k any) (r any) {
 // Val 取当前值（已提交语义）：直读模型，不反映本请求尚未生效的写。
 // 与其他 handle（Doc/Collection/Values）的写后读节奏一致：数据集的更新统一发生在
 // converge 的 parse 期。需要含未提交写的读（回包要「打点后的值」、余额钳制等）
-// 显式改用 ValWithCache。
+// 显式改用 Peek。
 func (this *Virtual) Val(k any) (r int64) {
 	return dataset.ParseInt64(this.model.Get(this.Updater, k))
 }
 
-// ValWithCache 取当前值，cache 优先、模型回落——含本请求尚未生效的写（即旧 Val 行为）。
-// 供特殊场景显式选择；写路径（Add/Sub）的链式合成与余额校验同用 peek。
-func (this *Virtual) ValWithCache(k any) (r int64) {
+// Peek 取当前值，cache 优先、模型回落——含本请求尚未生效的写（即旧 Val 行为）。
+// 写路径（Add/Sub）的链式合成与余额校验内部同用本方法。
+func (this *Virtual) Peek(k any) (r int64) {
 	if _, key, ok := this.key(k); ok {
 		if v, exist := this.cache[key]; exist {
 			return v
 		}
 	}
 	return dataset.ParseInt64(this.model.Get(this.Updater, k))
-}
-
-// peek 私有读：已解析 key 的 ValWithCache，仅供写路径做链式合成与余额校验。
-func (this *Virtual) peek(key string) int64 {
-	if v, exist := this.cache[key]; exist {
-		return v
-	}
-	return dataset.ParseInt64(this.model.Get(this.Updater, key))
 }
 
 // record 记下本次请求处理后该键的最新值，供后续 Val 读取。
@@ -188,9 +180,9 @@ func (this *Virtual) Add(k any, v any) {
 		_ = this.Updater.Errorf("Virtual Add Args Error,name:%s,key:%v", this.name, k)
 		return
 	}
-	// 写路径内部读（peek）：委托出去的写 verify 才生效，链式合成（同请求多次 Add 同一键）
+	// 写路径内部读（Peek）：委托出去的写 verify 才生效，链式合成（同请求多次 Add 同一键）
 	// 必须读到含未提交写的累计值，绝对值才不会互相覆盖
-	d := this.peek(key)
+	d := this.Peek(key)
 	op := this.newOperator(operator.TypesAdd, iid, key, value, map[string]any{key: d + value})
 	if op == nil {
 		return
@@ -211,7 +203,7 @@ func (this *Virtual) Sub(k any, v any) {
 		return
 	}
 	// 余额校验同样读含未提交写的值：同请求先加后扣不误报，连扣两次能扣成负数的口子不开
-	d := this.peek(key)
+	d := this.Peek(key)
 	if d < value && !this.Updater.CreditAllowed {
 		this.Updater.Error = ErrItemNotEnough(iid, value, d)
 		return

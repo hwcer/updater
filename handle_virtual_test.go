@@ -128,8 +128,8 @@ func TestVirtualCacheClearedOnRelease(t *testing.T) {
 	_, v := newVirtualUpdater(t, m)
 
 	v.Add(int32(12001), 6)
-	if got := v.ValWithCache(int32(12001)); got != 6 {
-		t.Fatalf("同请求内 ValWithCache 应读到中间态 6,实际 %d", got)
+	if got := v.Peek(int32(12001)); got != 6 {
+		t.Fatalf("同请求内 Peek 应读到中间态 6,实际 %d", got)
 	}
 	m.flush()
 	v.release()
@@ -141,22 +141,22 @@ func TestVirtualCacheClearedOnRelease(t *testing.T) {
 	}
 }
 
-// 🔴 Val 与 ValWithCache 的语义分界（2026-09-17 对齐）：
+// 🔴 Val 与 Peek 的语义分界（2026-09-17 对齐）：
 // Val 公开默认读 = 已提交值（直读模型），与其他 handle 的写后读节奏一致；
-// ValWithCache 才含本请求未生效的写。默认读静默分叉是坑：业务照 Doc/Collection 的直觉
+// Peek 才含本请求未生效的写。默认读静默分叉是坑：业务照 Doc/Collection 的直觉
 // 在 Emit 后用 Val 读计数，拿到的是旧值且无任何报错。
-func TestVirtualValCommittedVsCache(t *testing.T) {
+func TestVirtualValCommittedVsPeek(t *testing.T) {
 	m := newVirtualModel()
 	m.store["goods.12001"] = 3
 	_, v := newVirtualUpdater(t, m)
 
 	v.Add(int32(12001), 6)
-	// 未 parse 前：Val 读已提交值 3，ValWithCache 读含未提交写的 9
+	// 未 parse 前：Val 读已提交值 3，Peek 读含未提交写的 9
 	if got := v.Val(int32(12001)); got != 3 {
 		t.Fatalf("Val 应读已提交值 3,实际 %d", got)
 	}
-	if got := v.ValWithCache(int32(12001)); got != 9 {
-		t.Fatalf("ValWithCache 应读含未提交写的 9,实际 %d", got)
+	if got := v.Peek(int32(12001)); got != 9 {
+		t.Fatalf("Peek 应读含未提交写的 9,实际 %d", got)
 	}
 	m.flush()
 	// parse 之后两者收敛
