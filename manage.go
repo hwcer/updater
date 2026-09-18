@@ -8,14 +8,20 @@ import (
 	"github.com/hwcer/cosgo/schema"
 )
 
-// Options 数据域配置：路由（IType/ParseId）、上限（IMax）与落库（BulkWrite）。
+// defaultNewMax 不可叠加道具单次批量创建的默认上限。
+// 正常业务一次至多创建几十件装备,999 已远超合理峰值;再大基本都是程序错误或恶意请求,
+// 逐个 it.New 会在无上限时原地挂起直至 OOM。
+const defaultNewMax int64 = 999
+
+// Options 数据域配置：路由（IType/ParseId）、上限（IMax/NewMax）与落库（BulkWrite）。
 // 原为包级全局 Config，实例化后每个 Manage 持有一份；包级 var Config 是 Default 域
 // 配置的别名（*Options），updater.Config.IType = f 照旧编译生效。
 type Options struct {
 	IMax      func(iid int32) int64                                     //通过道具iid查找上限
 	IType     func(iid int32) int32                                     //通过道具iid查找IType ID
-	ParseId   func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID
-	BulkWrite func(u *Updater) BulkWrite                                //域内 BulkWrite 工厂
+	ParseId   func(adapter *Updater, oid string) (iid int32, err error) //解析OID获得IID; New() 安装默认实现(defaultParseId),未配置时字符串键报错而不是 panic
+	NewMax    int64                                                     //单次操作批量创建不可叠加道具(TypesNew)的数量上限;可叠加道具不受限;<=0 视为 defaultNewMax
+	BulkWrite func(u *Updater) BulkWrite                                //域内 BulkWrite 工厂;实现需支持失败后重复 Submit 直到成功(cosmo.BulkWrite 即此语义:失败保留 models,成功才清空)
 }
 
 // Manage 数据域：一套注册表 + Config + 域级事件/缓存。
@@ -48,11 +54,23 @@ type Manage struct {
 	middlewares   []Middleware                   //域级中间件：同上（原 globalMiddlewares）
 }
 
+// defaultParseId ParseId 未配置时的默认实现:显式报错而不是运行期 nil 调用 panic。
+// 字符串 OID 的两个消费点都经它兜底 —— Updater.ParseId(handleWithKey 路由,告警后忽略操作)
+// 与 Collection.operator(把 Updater.Error 置脏,请求失败)。
+func defaultParseId(_ *Updater, oid string) (int32, error) {
+	return 0, ErrParseIdNotInitialize
+}
+
+// defaultIType IType 未配置时的默认实现:返回 0(未知类型)。
+// handleWithKey 路由不到模型,操作被忽略 —— 与 IType 查不到模型的既有路径同口径,
+// 而不是运行期 nil 调用 panic。业务必须通过 Options.IType 显式配置路由。
+func defaultIType(int32) int32 { return 0 }
+
 // New 创建一个数据域。包级 var Default 就是它造出来的默认域；
 // 多域场景（公会等）另建，别往 Default 里塞非玩家模型。
 func New() *Manage {
 	m := &Manage{
-		Config:        &Options{},
+		Config:        &Options{ParseId: defaultParseId, IType: defaultIType, NewMax: defaultNewMax},
 		modelsDict:    make(map[int32]*Model),
 		itypesDict:    make(map[int32]IType),
 		cacheCreators: make(map[string]CacheCreator),

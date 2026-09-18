@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/hwcer/updater/dataset"
@@ -172,4 +173,35 @@ func TestDefaultDomainCompat(t *testing.T) {
 		t.Fatal("兼容路径应触发落库")
 	}
 	u.Release()
+}
+
+// 🔴 Options.ParseId 未配置时,字符串键必须得到明确的"未配置"错误,而不是 nil-func panic。
+// 默认实现在 New() 里安装(defaultParseId);字符串 OID 的两个消费点都经它兜底:
+// Updater.ParseId(handleWithKey 路由,告警后忽略操作)与 Collection.operator(置 Updater.Error)。
+// 老实现在这里直接崩:updater.go 的 handleWithKey 对裸域第一次 u.Select("oid") 就 panic。
+func TestParseIdDefaultErrorsInsteadOfPanic(t *testing.T) {
+	mg := New() //不配置任何 Options
+	if mg.Config.ParseId == nil {
+		t.Fatal("New() 应当为 Options.ParseId 安装默认实现,否则运行期字符串键会直接 panic")
+	}
+	u := mg.New(&managePlayer{uid: "uid_parseid"})
+
+	//直接解析:返回未初始化错误,iid 归零
+	iid, err := u.ParseId("some-oid")
+	if !errors.Is(err, ErrParseIdNotInitialize) {
+		t.Fatalf("未配置 ParseId 时应返回 ErrParseIdNotInitialize,实际 %v", err)
+	}
+	if iid != 0 {
+		t.Fatalf("解析失败时 iid 应为 0,实际 %d", iid)
+	}
+
+	//字符串键的完整路由:报错 + 告警 + 忽略操作,不 panic
+	u.Reset()
+	u.Select("some-oid")
+
+	//配置了 ParseId 的域行为不变:默认实现被覆盖
+	mg.Config.ParseId = func(*Updater, string) (int32, error) { return 123, nil }
+	if iid, err = u.ParseId("some-oid"); err != nil || iid != 123 {
+		t.Fatalf("业务覆盖 ParseId 后应生效,实际 iid=%d err=%v", iid, err)
+	}
 }

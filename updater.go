@@ -33,7 +33,7 @@ type Updater struct {
 	status    Status               //状态位：Init/Submit/Changed/Operated
 	manage    *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
 	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
-	bulkWrite BulkWrite            //共享 BulkWrite 实例，Submit 末尾一次原子提交
+	bulkWrite BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Destroy 重试),写库成功才清空
 
 	Cache         Cache           //自定义缓存数据
 	Error         *values.Message //请求过程中的错误（业务码+参数，可直接作为回包错误下发），一律经 Errorf 写入
@@ -90,7 +90,8 @@ func (u *Updater) Errorf(format any, args ...any) *values.Message {
 	return u.Error
 }
 
-// Save 保存所有缓存数并自动关闭异步模式
+// Save 将所有句柄当前的脏数据刷入共享 BulkWrite 队列(只入队,不提交;
+// 提交时机见 Submit / Destroy / 下次请求 Reset 对遗留队列的重试语义)
 func (u *Updater) Save() (err error) {
 	for _, w := range u.Handles() {
 		if err = w.save(); err != nil {
@@ -137,8 +138,20 @@ func (u *Updater) Testing(on bool) error {
 //
 // 调用方必须持有玩家锁（与其它 Updater 方法一致）。只重置已加载的数据集，不动 status。
 //
+// 🔴 重载前先清欠账：遗留的 bulkWrite 队列套在旧内存状态上,能成功提交说明数据库可写,
+// 不先落库的话重载读到的数据会被队列里陈旧的 $set 再次覆盖。提交失败则直接返回 ——
+// 数据库不可写时重载(Getter)必然同样失败,保留内存与队列原状。
+//
 // ⚠ 对**在线**玩家只重载服务端内存，客户端手上那份仍是旧的，通常还需要让客户端重新拉取。
 func (u *Updater) Reload() error {
+	if u.bulkWrite != nil {
+		if err := u.bulkWrite.Submit(); err != nil {
+			onSubmitResult(err)
+			return err
+		}
+		onSubmitResult(nil)
+		u.bulkWrite = nil
+	}
 	for _, w := range u.Handles() {
 		if err := w.reload(); err != nil {
 			return err
@@ -211,6 +224,19 @@ func (u *Updater) Reset(t ...time.Time) {
 		_ = u.Errorf("获取系统时间失败")
 	}
 	u.status.Set(StatusSubmit) // 确保 Submit 收敛循环至少执行一次
+
+	//🔴 上次请求遗留的未落库队列先重试:数据库恢复后在**跨天重载(ModelReset)之前**清欠账,
+	//否则重载读到的旧值会被队列里陈旧的 $set 覆盖(载荷是绝对值语义,重载后内存已换基)。
+	//仍失败只累计计数,达到 BulkWriteMaxFails 触发灾难保护,不阻断本次请求
+	if u.bulkWrite != nil {
+		if err := u.bulkWrite.Submit(); err != nil {
+			onSubmitResult(err)
+		} else {
+			onSubmitResult(nil)
+			u.bulkWrite = nil
+		}
+	}
+
 	for _, w := range u.Handles() {
 		w.reset()
 	}
@@ -233,7 +259,8 @@ func (u *Updater) Release() {
 	}
 	u.dirty = nil
 	u.status &= StatusInit | StatusTesting | StatusDevelop
-	u.bulkWrite = nil
+	//🔴 u.bulkWrite 不在这里清理:提交失败的队列要跨请求保留,
+	//由下次请求的 Reset / Submit / Destroy 重试,写库成功才清空
 	u.Error = nil
 	u.CreditAllowed = false
 	hs := u.Handles()
@@ -377,6 +404,13 @@ func (u *Updater) verify(hs []Handle) (err error) {
 
 // Submit 收敛循环执行 data→verify→submit 直到无新操作产生，最多100轮防止死循环
 // 返回本次请求所有操作的 Operator 列表，用于同步给前端
+//
+// 🔴 bulkWrite 提交失败时实例**保留**(连同已入队操作,载荷是绝对值语义可安全重发),
+// 由下次请求的 Reset / Submit / Destroy 重试,写库成功才清理;Release 不再丢弃
+//
+// ⚠ 中途失败的分叉口径:任一句柄 h.submit() 返回错误(仅 RAMTypeNone 的 save 失败会上抛,
+// 其余句柄自吞为告警继续)即中止本轮 Submit —— 后续句柄不再落库,内存不回滚,属最终一致语义。
+// 先前句柄已入队共享 bulkWrite 的操作不受影响:队列保留待重试,不会丢。
 func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	if err = u.WriteAble(); err != nil {
 		return nil, err
@@ -392,9 +426,13 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	}
 	if u.bulkWrite != nil {
 		if u.status.Has(StatusTesting) {
-			u.bulkWrite = nil
+			u.bulkWrite = nil //测试模式只改内存不写库,直接丢弃
 		} else if err = u.bulkWrite.Submit(); err != nil {
-			return
+			onSubmitResult(err)
+			return //失败保留队列,等待重试
+		} else {
+			onSubmitResult(nil)
+			u.bulkWrite = nil //写库成功才清理
 		}
 	}
 	u.Emit(EventTypeSuccess)
@@ -420,6 +458,12 @@ func (u *Updater) handleWithKey(k any) Handle {
 	iid, err := u.ParseId(k)
 	if err != nil {
 		logger.Alert("%v", err)
+		return nil
+	}
+	//🔴 New() 已装 defaultIType,这里是手工构造 &Options{} 绕过默认值的兜底:
+	//缺配置属启动期错误,告警后忽略操作,不能让运行期直接 panic
+	if u.manage.Config.IType == nil {
+		logger.Alert("updater.Options.IType not initialized: 无法路由iid:%v, 操作被忽略", k)
 		return nil
 	}
 	itk := u.manage.Config.IType(iid)
@@ -479,7 +523,8 @@ func (u *Updater) Handles() (r []Handle) {
 	return
 }
 
-// Destroy 销毁用户实例,强制将缓存数据改变写入数据库,返回错误时无法写入数据库,应该排除问题后后再次尝试销毁
+// Destroy 销毁用户实例,强制将缓存数据改变写入数据库
+// 提交失败时队列保留、实体不拆,排除问题后再次调用 Destroy 即可重试同一批(写库成功才清理)
 // 仅缓存模式下需要且必要执行
 func (u *Updater) Destroy() (err error) {
 	hs := u.Handles()
@@ -489,10 +534,16 @@ func (u *Updater) Destroy() (err error) {
 		}
 	}
 	if u.bulkWrite != nil {
-		if !u.status.Has(StatusTesting) {
-			err = u.bulkWrite.Submit()
+		if u.status.Has(StatusTesting) {
+			u.bulkWrite = nil
+		} else if err = u.bulkWrite.Submit(); err != nil {
+			onSubmitResult(err)
+			//失败保留队列并提前返回:实体不提前拆,重试 Destroy 才有完整上下文
+			return
+		} else {
+			onSubmitResult(nil)
+			u.bulkWrite = nil
 		}
-		u.bulkWrite = nil
 	}
 	u.entity = nil
 	for _, op := range u.dirty {

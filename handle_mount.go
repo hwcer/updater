@@ -397,8 +397,10 @@ func (this *Mount) Submit() error {
 		return nil
 	}
 	if err := bulk.Submit(); err != nil {
+		onSubmitResult(err) //与共享队列同口径:连续失败累计触发灾难保护
 		return err
 	}
+	onSubmitResult(nil)
 	//落库了才摘，与 submit() 同一条规矩(见 Remove)
 	if len(this.remove) > 0 {
 		this.dataset.Remove(this.remove...)

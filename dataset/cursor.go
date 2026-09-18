@@ -66,8 +66,25 @@ type cursorMonitor struct {
 }
 
 func (m *cursorMonitor) Insert(doc *Document) {
+	if m.cursor.closed() {
+		return //游标已关闭不再复活快照,否则关闭后的插入会凭空长出新分页数据
+	}
 	m.cursor.items = append(m.cursor.items, doc)
 }
 
 func (m *cursorMonitor) Delete(doc *Document) {
+	m.cursor.remove(doc)
+}
+
+// remove 把已删除的文档从快照中摘除,避免分页翻出库里已不存在的数据
+func (c *Cursor) remove(doc *Document) {
+	if c.closed() {
+		return
+	}
+	for i, d := range c.items {
+		if d == doc {
+			c.items = append(c.items[:i], c.items[i+1:]...)
+			return
+		}
+	}
 }

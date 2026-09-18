@@ -53,6 +53,9 @@ func (val *Values) All() Data {
 }
 
 func (val *Values) Set(k int32, v int64) {
+	if val.unset != nil {
+		delete(val.unset, k) //同 key 先 Unset 后 Set:最终语义是 Set,清掉 unset 标记,避免 Save 同时产出 $set+$unset
+	}
 	if val.dirty == nil {
 		val.dirty = Data{}
 	}

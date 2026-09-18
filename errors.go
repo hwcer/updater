@@ -17,11 +17,13 @@ var (
 	ErrCodeItemNotEnough int32 = 9999
 	ErrCodeITypeNotExist int32 = 9999
 	ErrCodeObjectIdEmpty int32 = 9999
+	ErrCodeNewMaxExceed  int32 = 9999
 )
 
 var (
 	ErrServerDeniedService    = Errorf(500, "Server denied service")                                                //灾难级故障启动，需要人工排查
 	ErrBulkWriteNotInitialize = Errorf(500, "updater.Config.BulkWrite not initialized: 数据落库会静默失效,启动时(连完数据库之后)必须设置") //Updater.Loading 开服自检
+	ErrParseIdNotInitialize   = Errorf(500, "updater.Options.ParseId not initialized: 无法解析OID,启动时必须设置")              //defaultParseId 的返回错误
 	ErrUnableUseIIDOperation  = Errorf(0, "unable to use iid operation")
 	ErrSubmitEndlessLoop      = Errorf(0, "submit endless loop") //出现死循环,检查事件和插件是否正确移除(返回false)
 )
@@ -63,11 +65,44 @@ func ErrObjectIdEmpty(args ...any) *values.Message {
 	return values.Errorf(ErrCodeObjectIdEmpty, "oid empty").Clone(args...)
 }
 
+// ErrNewMaxExceed 批量创建不可叠加道具的数量超过 Options.NewMax 上限。
+// Args 顺序固定为 [道具ID, 申请数量, 上限]。
+func ErrNewMaxExceed(args ...any) *values.Message {
+	return values.Errorf(ErrCodeNewMaxExceed, "new max exceeded").Clone(args...)
+}
+
 // disaster 数据库熔断保护
 var disaster = atomic.Int32{}
 
 // monitoring 标记是否已经有监控协程在运行
 var monitoring = atomic.Bool{}
+
+// bulkWriteFails bulkWrite 连续提交失败计数(进程级):任何一次提交成功即清零
+var bulkWriteFails = atomic.Int32{}
+
+// BulkWriteMaxFails bulkWrite 连续提交失败容忍次数,达到后开启灾难保护
+// (disaster 置位,Reset 拒绝后续请求),避免数据库真故障期间无限积累无法落库的数据。
+// 恢复由 initiateDatabaseMonitoring 驱动 —— 业务应配置 DatabaseMonitoring 提供健康探测;
+// 未配置时默认实现恒真,灾难位会在下个轮询(约1秒)自动解除。<=0 表示不启用。
+var BulkWriteMaxFails int32 = 100
+
+// onSubmitResult 记录一次 bulkWrite 提交结果:成功清零失败计数;
+// 连续失败达到 BulkWriteMaxFails 时开启灾难保护并启动数据库监控(恢复后自动解除)
+func onSubmitResult(err error) {
+	if err == nil {
+		bulkWriteFails.Store(0)
+		return
+	}
+	if BulkWriteMaxFails <= 0 {
+		return
+	}
+	if n := bulkWriteFails.Add(1); n >= BulkWriteMaxFails {
+		if disaster.CompareAndSwap(0, 1) {
+			logger.Alert("bulkWrite 连续提交失败 %v 次,开启灾难保护,拒绝服务直到数据库恢复", n)
+		}
+		initiateDatabaseMonitoring()
+	}
+}
 
 type SaveErrorType int32
 

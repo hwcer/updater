@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/hwcer/updater/operator"
 )
@@ -34,7 +35,11 @@ func hashParseAdd(this *Values, op *operator.Operator) (err error) {
 	if op.Value <= 0 {
 		return ErrArgsIllegal(op.IID, op.Value)
 	}
-	r := this.dataset.Val(op.IID) + op.Value
+	d := this.dataset.Val(op.IID)
+	if d > math.MaxInt64-op.Value {
+		return ErrArgsIllegal(op.IID, op.Value) //溢出包装成负数会静默腐蚀余额,直接拒绝
+	}
+	r := d + op.Value
 	op.Result = map[int32]int64{op.IID: r}
 	this.dataset.Set(op.IID, r)
 	return

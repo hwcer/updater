@@ -226,6 +226,12 @@ func (this *Document) Unset(k any) *operator.Operator {
 	return this.fieldOperator(operator.TypesUnset, k, 0, nil)
 }
 
+// Has 恒返回 false —— 这是刻意的,勿"修复"。
+//
+// Document 是字段级 Select:statement.has 依赖这个 false 判定"未加载",
+// 让每次请求的 Data 阶段重新拉取字段(RAMTypeMaybe 下保证读到新值)。
+// 若据实返回会改变 Select 去重语义 —— 已加载字段不再刷新,静默读陈旧数据。
+// 判断字段是否有值用 Val / Get。
 func (this *Document) Has(k any) bool {
 	return false
 }

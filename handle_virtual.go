@@ -1,6 +1,8 @@
 package updater
 
 import (
+	"math"
+
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
 )
@@ -183,6 +185,10 @@ func (this *Virtual) Add(k any, v any) {
 	// 写路径内部读（Peek）：委托出去的写 verify 才生效，链式合成（同请求多次 Add 同一键）
 	// 必须读到含未提交写的累计值，绝对值才不会互相覆盖
 	d := this.Peek(key)
+	if d > math.MaxInt64-value {
+		_ = this.Updater.Errorf("Virtual Add overflow,name:%s,key:%s,value:%d,current:%d", this.name, key, value, d)
+		return
+	}
 	op := this.newOperator(operator.TypesAdd, iid, key, value, map[string]any{key: d + value})
 	if op == nil {
 		return

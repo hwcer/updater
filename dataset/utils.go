@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"math"
 	"strings"
 )
 
@@ -11,6 +12,10 @@ func TryParseInt64(i any) (v int64, ok bool) {
 	case int:
 		v = int64(d)
 	case uint:
+		if uint64(d) > math.MaxInt64 {
+			ok = false
+			return
+		}
 		v = int64(d)
 	case int8:
 		v = int64(d)
@@ -27,6 +32,10 @@ func TryParseInt64(i any) (v int64, ok bool) {
 	case int64:
 		v = d
 	case uint64:
+		if d > math.MaxInt64 {
+			ok = false
+			return
+		}
 		v = int64(d)
 	case float32:
 		v = int64(d)

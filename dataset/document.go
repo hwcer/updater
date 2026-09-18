@@ -86,6 +86,9 @@ func (doc *Document) Set(k string, v any) {
 	if !doc.Has(k) {
 		return
 	}
+	if doc.unset != nil {
+		delete(doc.unset, k) //同字段先 Unset 后 Set:最终语义是 Set,清掉 unset 标记,避免 Save 同时产出 $set+$unset
+	}
 	if doc.dirty == nil {
 		doc.dirty = Update{}
 	}

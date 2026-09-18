@@ -2,6 +2,7 @@ package updater
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
@@ -99,6 +100,9 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 	}
 	doc := coll.dataset.Val(op.OID)
 	v := doc.GetInt64(coll.Field())
+	if v > math.MaxInt64-op.Value {
+		return ErrArgsIllegal(op.IID, op.Value) //溢出包装成负数会静默腐蚀持有量,直接拒绝
+	}
 	r := op.Value + v
 	if err = coll.dataset.Set(op.OID, op.Field, r); err == nil {
 		op.Result = map[string]any{op.Field: r}
@@ -149,6 +153,16 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 	it := coll.ITypeCollection(op.IID)
 	if it == nil {
 		return ErrITypeNotExist(op.IID)
+	}
+	//🔴 批量创建数量上限:不可叠加道具一件一个文档,此处按 op.Value 逐个 it.New,
+	//无上限时 Add(装备iid, 1e9) 会原地挂起直至 OOM。可叠加道具走 collectionHandleAdd
+	//单文档累加,不受此限。<=0 视为默认值,兼容手工构造的 Options。
+	max := coll.Updater.manage.Config.NewMax
+	if max <= 0 {
+		max = defaultNewMax
+	}
+	if op.Value < 0 || op.Value > max {
+		return ErrNewMaxExceed(op.IID, op.Value, max)
 	}
 	if op.Value == 0 {
 		op.Value = 1
