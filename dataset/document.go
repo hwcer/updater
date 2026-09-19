@@ -148,22 +148,32 @@ func (doc *Document) Update(data Update) {
 	}
 }
 
-func (doc *Document) Save() (dirty Update, unsets []string) {
+func (doc *Document) Save() (dirty Update, unsets []string, err error) {
 	if len(doc.dirty) > 0 {
 		dirty = Update{}
+		var failed Update
 		for k, v := range doc.dirty {
-			if r, err := doc.setter(k, v); err != nil {
-				logger.Alert("Document Save error,key:%v,Error:%v", k, err)
-			} else {
-				switch vv := r.(type) {
-				case Update:
-					dirty.Merge(vv)
-				default:
-					dirty[k] = r
+			r, kerr := doc.setter(k, v)
+			if kerr != nil {
+				logger.Alert("Document Save error,key:%v,Error:%v", k, kerr)
+				if failed == nil {
+					failed = Update{}
 				}
+				failed[k] = v
+				if err == nil {
+					err = fmt.Errorf("document save key %v: %w", k, kerr)
+				}
+				continue
+			}
+			switch vv := r.(type) {
+			case Update:
+				dirty.Merge(vv)
+			default:
+				dirty[k] = r
 			}
 		}
-		doc.dirty = nil
+		//成功键已消费,失败键回填脏标记等待下次同步(旧实现直接清空,失败键的改动会永久丢失)
+		doc.dirty = failed
 	}
 	if len(doc.unset) > 0 {
 		unsets = make([]string, 0, len(doc.unset))
@@ -181,7 +191,7 @@ func (doc *Document) Release() {
 
 // restore 持久化失败时恢复脏标记,使下次Save能重新生成更新载荷
 // dirty/unset为Save刚返回的载荷(已含业务转换结果),直接回填幂等
-func (doc *Document) restore(dirty Update, unsets []string) {
+func (doc *Document) Restore(dirty Update, unsets []string) {
 	if len(dirty) > 0 {
 		if doc.dirty == nil {
 			doc.dirty = Update{}

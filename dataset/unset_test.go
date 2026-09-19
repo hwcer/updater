@@ -75,7 +75,7 @@ func TestUnsetWholeFieldAndSaveList(t *testing.T) {
 	}
 
 	doc.Unset("goods.10001")
-	_, unsets := doc.Save()
+	_, unsets, _ := doc.Save()
 	if len(unsets) != 2 {
 		t.Fatalf("落库 unset 列表应有 2 项，实际 %v", unsets)
 	}

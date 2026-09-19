@@ -92,10 +92,11 @@ func (d Dataset) GetAndDel(k string) (doc *Document) {
 }
 
 type Collection struct {
-	dirty    Dirty    //临时数据
-	cursor   *Cursor  //游标
-	dataset  Dataset  //数据集
-	monitors Monitors //监控数据的insert 和 delete
+	dirty      Dirty    //临时数据
+	cursor     *Cursor  //游标
+	dataset    Dataset  //数据集
+	monitors   Monitors //监控数据的insert 和 delete
+	saveFailed bool     //上次Save存在落库失败遗留:脏条目是下次同步的重试数据源,Release不得清空
 }
 
 func (coll *Collection) Len() int {
@@ -217,11 +218,12 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 				processed = append(processed, k)
 				continue
 			}
-			dirty, unsets := doc.Save()
+			dirty, unsets, _ := doc.Save() //载荷生成失败的键已在 Save 内部回填 doc 脏标记,下次重试
 			if len(dirty) > 0 || len(unsets) > 0 {
 				if err = w.Setter(k, dirty, unsets); err != nil {
 					//doc.Save已消费doc级脏标记,恢复之,下次Save重新生成载荷
-					doc.restore(dirty, unsets)
+					doc.Restore(dirty, unsets)
+					coll.saveFailed = true
 					break
 				}
 			}
@@ -230,6 +232,9 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 	}
 	for _, k := range processed {
 		delete(coll.dirty, k)
+	}
+	if err == nil {
+		coll.saveFailed = false //本轮全部落库成功,解除Release保留
 	}
 	return
 }
@@ -254,6 +259,11 @@ func (coll *Collection) Cursor(key string) *Cursor {
 }
 
 func (coll *Collection) Release() {
+	if coll.saveFailed {
+		//存在落库失败遗留:恢复过的doc级脏标记与未处理条目是"失败等待下次同步"的重试数据源,
+		//清空等于把失败条目的改动永久丢弃
+		return
+	}
 	if coll.dirty == nil {
 		return
 	}
@@ -305,6 +315,7 @@ func (coll *Collection) Count(match func(doc *Document) bool) (r int64) {
 func (coll *Collection) Reset(rows ...any) {
 	coll.dataset = make(Dataset, len(rows))
 	coll.dirty = nil
+	coll.saveFailed = false
 	for _, i := range rows {
 		_ = coll.create(i)
 	}

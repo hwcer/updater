@@ -34,7 +34,7 @@ func TestDocumentSetClearsUnset(t *testing.T) {
 
 	doc.Unset("breaklv")
 	doc.Set("breaklv", int32(9))
-	dirty, unsets := doc.Save()
+	dirty, unsets, _ := doc.Save()
 	if len(unsets) != 0 {
 		t.Fatalf("Unset 后又 Set 不该再产出 unset,实际 %v", unsets)
 	}

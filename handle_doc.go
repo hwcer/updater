@@ -117,12 +117,18 @@ func (this *Document) save() (err error) {
 	if bw == nil {
 		return ErrBulkWriteNotInitialize
 	}
-	dirty, unsets := this.dataset.Save()
+	dirty, unsets, derr := this.dataset.Save()
 	if len(dirty) > 0 || len(unsets) > 0 {
 		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
 			logger.Alert("database save error,uid:%s,Document:%s\nOperation:%s\nerror:%s", this.Updater.Id(), this.name, ds, err.Error())
+			//落库失败:载荷已含业务转换结果,整批回填脏标记,"失败等待下次同步"才有数据可重发
+			this.dataset.Restore(dirty, unsets)
 		}
+	}
+	//部分键载荷生成失败(失败键已回填脏标记),交由submit按RAM策略决定重试或上抛
+	if derr != nil {
+		return derr
 	}
 	return
 }

@@ -49,7 +49,7 @@ func TestDocumentSetterRejectsNilFromModel(t *testing.T) {
 	doc := NewDoc(d)
 
 	doc.Set("relics.1.lv", int64(5)) // 多级路径，handle 会 return nil,true
-	dirty, _ := doc.Save()
+	dirty, _, _ := doc.Save()
 	if _, ok := dirty["relics.1.lv"]; ok {
 		t.Fatalf("业务产出 nil 的键不该进 dirty，否则会把库里字段 $set 成 null：%v", dirty)
 	}
@@ -57,7 +57,7 @@ func TestDocumentSetterRejectsNilFromModel(t *testing.T) {
 	// 显式写 nil（清字段）仍要放行：v 本身就是 nil，不属于被拦的组合
 	doc2 := NewDoc(&nilSetDoc{})
 	doc2.Set("relics", nil)
-	dirty2, _ := doc2.Save()
+	dirty2, _, _ := doc2.Save()
 	if _, ok := dirty2["relics"]; !ok {
 		t.Fatalf("显式写 nil 应正常进 dirty：%v", dirty2)
 	}

@@ -113,6 +113,27 @@ func (val *Values) Release() {
 	val.unset = nil
 }
 
+// restore 持久化失败时恢复脏标记,使下次Save能重新生成更新载荷
+// dirty/unsets为Save刚返回的载荷,直接回填幂等;仅回填脏标记,val.data在Save时已更新
+func (val *Values) Restore(dirty Data, unsets []int32) {
+	if len(dirty) > 0 {
+		if val.dirty == nil {
+			val.dirty = make(Data, len(dirty))
+		}
+		for k, v := range dirty {
+			val.dirty[k] = v
+		}
+	}
+	if len(unsets) > 0 {
+		if val.unset == nil {
+			val.unset = make(map[int32]struct{}, len(unsets))
+		}
+		for _, k := range unsets {
+			val.unset[k] = struct{}{}
+		}
+	}
+}
+
 func (val *Values) Range(handle func(int32, int64) bool) {
 	for k, v := range val.data {
 		if !handle(k, v) {

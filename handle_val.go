@@ -103,6 +103,8 @@ func (this *Values) save() (err error) {
 		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
 			ds, _ := json.Marshal(dirty)
 			logger.Alert("database save error,uid:%s,Values:%s\nOperation:%s\nerror:%s", this.Updater.Id(), this.name, ds, err.Error())
+			//落库失败:回填脏标记,"失败等待下次同步"才有数据可重发
+			this.dataset.Restore(dirty, unsets)
 		}
 	}
 	return
