@@ -5,6 +5,11 @@ import (
 )
 
 // overflow 仅对 Add/New 操作生效(Types.IsAdd)。当 val+num 超过 IMax 上限时：
+//
+// 🔴 性能注记:非叠加道具的 Count 是 dataset 全量扫描,批量发放时为 O(N×M)。
+// 业务约定**非叠加道具基本不设 IMax**(此检查仅为严谨性兜底),故不做计数缓存——
+// 缓存的失效钩子牵扯 parse 期 dataset/dirty 交错语义,复杂度不划算。已由业务方确认。
+
 // 1. 截断 op.Value 到上限可容纳的量
 // 2. 溢出部分交给 ITypeResolve.Resolve 处理（如分解成其他道具）
 // 3. 若无 Resolve 实现则生成 TypesOverflow 操作通知前端（可用于邮件等替代发放）
