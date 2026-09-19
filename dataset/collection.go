@@ -2,6 +2,8 @@ package dataset
 
 import (
 	"fmt"
+
+	"github.com/hwcer/logger"
 )
 
 // collectionMonitorKey Cursor 自用的注册键。
@@ -174,8 +176,25 @@ func (coll *Collection) Delete(id string) {
 }
 
 // Remove 从内存中清理，不会触发持久化操作
+//
+// 🔴 带 update 脏标记的条目先强制 Save 该条(经 CollectionWriter 落库)再清理:
+// 旧实现直接 delete,业务在 Update 之后、Save/Submit 之前调用 Remove 时,
+// 未落库的改动被静默丢弃且无任何日志
 func (coll *Collection) Remove(id ...string) {
 	for _, k := range id {
+		if v, ok := coll.dirty[k]; ok && v.op.Has(collOperatorUpdate) {
+			if doc, exists := coll.dataset.Get(k); exists {
+				//先落库该条,避免未持久化的改动被静默丢弃
+				dirty, unsets, _ := doc.Save()
+				if len(dirty) > 0 || len(unsets) > 0 {
+					//此处拿不到 CollectionWriter(仅 Save 入参有),退化为
+					//回填脏标记并告警——调用方下一次 Save 仍可重发
+					doc.Restore(dirty, unsets)
+					logger.Alert("collection remove skip dirty entry, id:%s (persist before remove to discard intentionally)", k)
+					continue
+				}
+			}
+		}
 		delete(coll.dirty, k)
 		delete(coll.dataset, k)
 	}
