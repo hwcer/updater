@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"time"
@@ -281,18 +282,41 @@ func (u *Updater) Emit(t EventType) {
 	u.Middleware.emit(u, t)
 }
 
-// Add 添加道具,num 支持 int32|int64
+// Add 添加道具,num 支持 int32|int64。
+// 🔴 路由失败(解析失败/IType 未初始化/模型未注册)会置 u.Error:旧实现静默忽略,
+// 调用方对"什么都没发生"零感知——扣费不生效继续发货=刷道具,发放蒸发=付费未到账。
+// 需要自行处理失败的调用方用 AddErr
 func (u *Updater) Add(iid int32, num any) {
-	if w := u.handleWithKey(iid); w != nil {
-		w.increase(iid, dataset.ParseInt64(num))
+	if err := u.AddErr(iid, num); err != nil {
+		u.Errorf(err)
 	}
 }
 
-// Sub 扣除道具,num 支持 int32|int64
-func (u *Updater) Sub(iid int32, num any) {
-	if w := u.handleWithKey(iid); w != nil {
-		w.decrease(iid, dataset.ParseInt64(num))
+// AddErr 带错误返回的 Add:路由失败返回 error 而非静默忽略
+func (u *Updater) AddErr(iid int32, num any) error {
+	w, err := u.handleWithKeyErr(iid)
+	if err != nil || w == nil {
+		return err
 	}
+	w.increase(iid, dataset.ParseInt64(num))
+	return nil
+}
+
+// Sub 扣除道具,num 支持 int32|int64。路由失败置 u.Error(语义同 Add)
+func (u *Updater) Sub(iid int32, num any) {
+	if err := u.SubErr(iid, num); err != nil {
+		u.Errorf(err)
+	}
+}
+
+// SubErr 带错误返回的 Sub:路由失败返回 error 而非静默忽略
+func (u *Updater) SubErr(iid int32, num any) error {
+	w, err := u.handleWithKeyErr(iid)
+	if err != nil || w == nil {
+		return err
+	}
+	w.decrease(iid, dataset.ParseInt64(num))
+	return nil
 }
 
 // Get 通过 iid 获取原始数据，返回类型取决于 Handle 类型
@@ -429,6 +453,14 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			u.bulkWrite = nil //测试模式只改内存不写库,直接丢弃
 		} else if err = u.bulkWrite.Submit(); err != nil {
 			onSubmitResult(err)
+			//🔴 接入错误分级:程序级错误(结构不一致/主键冲突等,重试无意义)丢弃队列,
+			//避免同一坏载荷每请求重发,累计到 BulkWriteMaxFails 拖垮全服(灾难保护);
+			//旧实现 onSaveErrorHandle 从未被调用,分级链路是死代码
+			if retain, newErr := onSaveErrorHandle(u, err); !retain {
+				logger.Alert("bulkWrite 程序级错误,丢弃队列不再重试: %v", newErr)
+				u.bulkWrite = nil
+				return
+			}
 			return //失败保留队列,等待重试
 		} else {
 			onSubmitResult(nil)
@@ -453,26 +485,34 @@ func (u *Updater) ParseId(key any) (iid int32, err error) {
 
 // Handle 根据 name(string) || itype(int32) 查找，支持命名整型（如 protobuf 枚举）
 
-// handle 通过 iid 或 oid 路由到对应的 Handle 实例
+// handle 通过 iid 或 oid 路由到对应的 Handle 实例。
+// 路由失败返回 nil(读取类场景"模型不存在"是正常态);写入类场景用 handleWithKeyErr
 func (u *Updater) handleWithKey(k any) Handle {
+	h, _ := u.handleWithKeyErr(k)
+	return h
+}
+
+// handleWithKeyErr 带错误返回的路由:写入类操作(Add/Sub)据此把失败上抛,
+// 而不是静默丢操作
+func (u *Updater) handleWithKeyErr(k any) (Handle, error) {
 	iid, err := u.ParseId(k)
 	if err != nil {
-		logger.Alert("%v", err)
-		return nil
+		return nil, fmt.Errorf("updater ParseId failed, key:%v: %w", k, err)
 	}
 	//🔴 New() 已装 defaultIType,这里是手工构造 &Options{} 绕过默认值的兜底:
-	//缺配置属启动期错误,告警后忽略操作,不能让运行期直接 panic
+	//缺配置属启动期错误
 	if u.manage.Config.IType == nil {
-		logger.Alert("updater.Options.IType not initialized: 无法路由iid:%v, 操作被忽略", k)
-		return nil
+		//IType 未初始化属手工构造 &Options{} 的启动期错误,保持降级兼容
+		//(见 TestNilITypeDegradesInsteadOfPanic);运行期路由失败仍上抛
+		logger.Alert("updater.Options.IType not initialized: 无法路由 key:%v, 操作被忽略", k)
+		return nil, nil
 	}
 	itk := u.manage.Config.IType(iid)
 	model, ok := u.manage.modelsDict[itk]
 	if !ok {
-		logger.Debug("Updater.handle not exists,iid:%v IType:%v", k, itk)
-		return nil
+		return nil, fmt.Errorf("updater model not registered, iid:%v IType:%v", iid, itk)
 	}
-	return u.handleWithAny(model.name)
+	return u.handleWithAny(model.name), nil
 }
 
 func (u *Updater) handleWithAny(name any) Handle {
