@@ -6,6 +6,7 @@ import (
 	"maps"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/hwcer/cosgo/schema"
 	"github.com/hwcer/logger"
@@ -62,7 +63,7 @@ func (doc *Document) Get(k string) (r any, ok bool) {
 	if err != nil {
 		return
 	}
-	logger.Debug("建议给%v.%v添加Get接口提升性能", sch.Name, k)
+	logModelGetHintOnce(sch.Name, k)
 	r = sch.GetValue(doc.data, k)
 	ok = r != nil
 	return
@@ -237,7 +238,7 @@ func (doc *Document) setter(k string, v any) (r any, err error) {
 	if err != nil {
 		return nil, err
 	}
-	logger.Debug("建议给%v.%v添加Set接口提升性能", sch.Name, k)
+	logModelSetHintOnce(sch.Name, k)
 	return v, sch.SetValue(doc.data, v, k)
 }
 
@@ -322,4 +323,26 @@ func (doc *Document) Any() any {
 }
 func (doc *Document) IsNil() bool {
 	return doc.data == nil
+}
+
+// 🔴 未实现 ModelGet/ModelSet 的反射回退提示改为每 (类型,字段) 只打一次:
+// 热路径上即使日志级别关闭,参数装箱与调用也每次发生;旧实现 Val/Get 每次访问都打
+var (
+	modelHintOnce sync.Map // map[string]struct{} key: name.field
+)
+
+func logModelGetHintOnce(name, k string) {
+	key := name + ".Get." + k
+	if _, ok := modelHintOnce.LoadOrStore(key, struct{}{}); ok {
+		return
+	}
+	logger.Debug("建议给%v.%v添加Get接口提升性能", name, k)
+}
+
+func logModelSetHintOnce(name, k string) {
+	key := name + ".Set." + k
+	if _, ok := modelHintOnce.LoadOrStore(key, struct{}{}); ok {
+		return
+	}
+	logger.Debug("建议给%v.%v添加Set接口提升性能", name, k)
 }

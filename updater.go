@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/hwcer/cosgo/values"
@@ -27,14 +28,15 @@ type Entity interface {
 // Updater 数据属主的数据更新器，管理所有 Handle 的生命周期和持久化
 // 每个 Entity 持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
 type Updater struct {
-	now       time.Time            //当前请求时间
-	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
-	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
-	entity    Entity               //数据属主（业务层实现，见 Entity）
-	status    Status               //状态位：Init/Submit/Changed/Operated
-	manage    *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
-	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
-	bulkWrite BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Destroy 重试),写库成功才清空
+	now         time.Time            //当前请求时间
+	last        time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
+	dirty       []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
+	entity      Entity               //数据属主（业务层实现，见 Entity）
+	status      Status               //状态位：Init/Submit/Changed/Operated
+	manage      *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
+	handles     map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
+	bulkWrite   BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Destroy 重试),写库成功才清空
+	bulkWriteMu sync.Mutex           //串行化 BulkWrite 惰性初始化与置换出口,防并发驱动丢写
 
 	Cache         Cache           //自定义缓存数据
 	Error         *values.Message //请求过程中的错误（业务码+参数，可直接作为回包错误下发），一律经 Errorf 写入
@@ -54,10 +56,23 @@ func (u *Updater) On(t EventType, handle Listener) {
 }
 
 func (u *Updater) BulkWrite() BulkWrite {
+	//🔴 check-then-act 防重入:两条协程同时驱动(Mount.Submit 与主请求并发)会创建
+	//两个 BulkWrite 实例,先入队实例的载荷无人提交=丢写。u.bulkWrite==nil 之外的
+	//写入路径(成功清理/程序级错误丢弃)只在单请求生命周期内发生,与此初始化不竞争
+	u.bulkWriteMu.Lock()
+	defer u.bulkWriteMu.Unlock()
 	if u.bulkWrite == nil && u.manage.Config.BulkWrite != nil {
 		u.bulkWrite = u.manage.Config.BulkWrite(u)
 	}
 	return u.bulkWrite
+}
+
+// setBulkWrite 统一的实例置换出口(成功清理/测试模式丢弃/程序级错误丢弃),
+// 与 BulkWrite() 的惰性初始化互斥,防并发驱动下 check-then-act 丢失
+func (u *Updater) setBulkWrite(b BulkWrite) {
+	u.bulkWriteMu.Lock()
+	u.bulkWrite = b
+	u.bulkWriteMu.Unlock()
 }
 
 // Id 数据属主标识：玩家 uid / 公会 gid / 副本 id
@@ -450,7 +465,7 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	}
 	if u.bulkWrite != nil {
 		if u.status.Has(StatusTesting) {
-			u.bulkWrite = nil //测试模式只改内存不写库,直接丢弃
+			u.setBulkWrite(nil) //测试模式只改内存不写库,直接丢弃
 		} else if err = u.bulkWrite.Submit(); err != nil {
 			onSubmitResult(err)
 			//🔴 接入错误分级:程序级错误(结构不一致/主键冲突等,重试无意义)丢弃队列,
@@ -458,13 +473,13 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 			//旧实现 onSaveErrorHandle 从未被调用,分级链路是死代码
 			if retain, newErr := onSaveErrorHandle(u, err); !retain {
 				logger.Alert("bulkWrite 程序级错误,丢弃队列不再重试: %v", newErr)
-				u.bulkWrite = nil
+				u.setBulkWrite(nil)
 				return
 			}
 			return //失败保留队列,等待重试
 		} else {
 			onSubmitResult(nil)
-			u.bulkWrite = nil //写库成功才清理
+			u.setBulkWrite(nil) //写库成功才清理
 		}
 	}
 	u.Emit(EventTypeSuccess)
