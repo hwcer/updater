@@ -26,6 +26,11 @@ type Entity interface {
 
 // Updater 数据属主的数据更新器，管理所有 Handle 的生命周期和持久化
 // 每个 Entity 持有一个 Updater 实例，通过 Reset → Add/Sub/Set → Submit → Release 驱动请求周期
+//
+// 🔴 并发契约(所有方法的准入前提):同一 Updater 实例(含 Mounts 挂载、BulkWrite
+// 队列)同一时刻只允许一个 goroutine 访问——常规路径由"每玩家单协程"的模块契约
+// 保证;定时器、关服钩子等带外 goroutine 调用 Destroy/Reload/Mount.Submit 时,
+// 调用方必须自行持玩家锁串行化,否则双 BulkWrite 实例丢写,框架无任何断言兜底
 type Updater struct {
 	now       time.Time            //当前请求时间
 	last      time.Time            //上次请求时间，用于判断数据是否需要重置(零值表示本实例尚未处理过请求)
@@ -149,11 +154,15 @@ func (u *Updater) Testing(on bool) error {
 func (u *Updater) Reload() error {
 	if u.bulkWrite != nil {
 		if err := u.bulkWrite.Submit(); err != nil {
-			onSubmitResult(err)
-			return err
+			if !onBulkWriteError(u, err) {
+				u.bulkWrite = nil //程序级错误重试无意义,丢弃队列后继续重载
+			} else {
+				return err
+			}
+		} else {
+			onSubmitResult(nil)
+			u.bulkWrite = nil
 		}
-		onSubmitResult(nil)
-		u.bulkWrite = nil
 	}
 	for _, w := range u.Handles() {
 		if err := w.reload(); err != nil {
@@ -230,10 +239,13 @@ func (u *Updater) Reset(t ...time.Time) {
 
 	//🔴 上次请求遗留的未落库队列先重试:数据库恢复后在**跨天重载(ModelReset)之前**清欠账,
 	//否则重载读到的旧值会被队列里陈旧的 $set 覆盖(载荷是绝对值语义,重载后内存已换基)。
-	//仍失败只累计计数,达到 BulkWriteMaxFails 触发灾难保护,不阻断本次请求
+	//仍失败走 onBulkWriteError 统一分级(程序级错误丢弃队列),达到 BulkWriteMaxFails
+	//触发灾难保护,不阻断本次请求
 	if u.bulkWrite != nil {
 		if err := u.bulkWrite.Submit(); err != nil {
-			onSubmitResult(err)
+			if !onBulkWriteError(u, err) {
+				u.bulkWrite = nil
+			}
 		} else {
 			onSubmitResult(nil)
 			u.bulkWrite = nil
@@ -454,12 +466,9 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 		if u.status.Has(StatusTesting) {
 			u.bulkWrite = nil //测试模式只改内存不写库,直接丢弃
 		} else if err = u.bulkWrite.Submit(); err != nil {
-			onSubmitResult(err)
-			//🔴 接入错误分级:程序级错误(结构不一致/主键冲突等,重试无意义)丢弃队列,
-			//避免同一坏载荷每请求重发,累计到 BulkWriteMaxFails 拖垮全服(灾难保护);
-			//旧实现 onSaveErrorHandle 从未被调用,分级链路是死代码
-			if retain, newErr := onSaveErrorHandle(u, err); !retain {
-				logger.Alert("bulkWrite 程序级错误,丢弃队列不再重试: %v", newErr)
+			//🔴 统一走 onBulkWriteError:失败计数/灾难保护 + 程序级错误丢弃队列
+			//(坏载荷每请求重发会累计到 BulkWriteMaxFails 拖垮全服)
+			if !onBulkWriteError(u, err) {
 				u.bulkWrite = nil
 				return
 			}
@@ -579,9 +588,11 @@ func (u *Updater) Destroy() (err error) {
 		if u.status.Has(StatusTesting) {
 			u.bulkWrite = nil
 		} else if err = u.bulkWrite.Submit(); err != nil {
-			onSubmitResult(err)
-			//失败保留队列并提前返回:实体不提前拆,重试 Destroy 才有完整上下文
-			return
+			//失败保留队列并提前返回:实体不提前拆,重试 Destroy 才有完整上下文;
+			//程序级错误分级丢弃(onBulkWriteError 返回 false)时队列已无意义,照常拆
+			if onBulkWriteError(u, err) {
+				return
+			}
 		} else {
 			onSubmitResult(nil)
 			u.bulkWrite = nil

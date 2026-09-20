@@ -780,3 +780,60 @@ func TestMountSubmitNoopWhenClean(t *testing.T) {
 		t.Fatalf("重复 Submit 不该再打库,BulkWrite 份数 %d", len(made))
 	}
 }
+
+// flakyBulk 前 N 次 Submit 失败的假 BulkWrite
+type flakyBulk struct {
+	mountBulk
+	failLeft int
+}
+
+func (b *flakyBulk) Submit() error {
+	b.submits++
+	if b.failLeft > 0 {
+		b.failLeft--
+		return errors.New("db down")
+	}
+	return nil
+}
+
+// 🔴 回归:Mount.Submit 的 bulk.Submit 失败不得"假成功"——dataset.Save 已消费脏
+// 标记、载荷已入队,旧实现把失败队列随作用域丢弃,业务按注释"要么重试"再调时
+// Dirty()==0 静默空转,改动永久丢失(内存新、库旧)。修复后队列挂在句柄上跨请求重试
+func TestMountSubmitFailureRetainsBulkForRetry(t *testing.T) {
+	u, _ := newMountUpdater(t)
+	m := newMountModel("row1")
+	coll, err := u.Mounts.Load(m)
+	if err != nil {
+		t.Fatalf("Mount:%v", err)
+	}
+	coll.Select("row1")
+	if err := u.Data(); err != nil {
+		t.Fatalf("Data:%v", err)
+	}
+	if op := coll.Update("row1", dataset.Update{"val": int64(7)}); op == nil {
+		t.Fatalf("Update 应产出 operator:%v", u.Error)
+	}
+	if err := u.Verify(); err != nil {
+		t.Fatalf("Verify:%v", err)
+	}
+
+	//第一次提交失败:Config 返回的 bulk 是 flakyBulk,失败一次
+	bw := &flakyBulk{failLeft: 1}
+	old := Config.BulkWrite
+	Config.BulkWrite = func(*Updater) BulkWrite { return bw }
+	t.Cleanup(func() { Config.BulkWrite = old })
+
+	if err := coll.Submit(); err == nil {
+		t.Fatal("bulk.Submit 失败应返回错误")
+	}
+	//第二次提交:遗留队列先重试成功(载荷已在队),本次无新脏数据
+	if err := coll.Submit(); err != nil {
+		t.Fatalf("重试 Submit 应成功:%v", err)
+	}
+	if bw.submits < 2 {
+		t.Fatalf("遗留队列应被重试,实际提交 %d 次", bw.submits)
+	}
+	if coll.bulk != nil {
+		t.Fatal("重试成功后遗留队列应清空")
+	}
+}

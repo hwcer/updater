@@ -163,6 +163,10 @@ type Mount struct {
 	model   MountModel
 	remove  []string //待从内存移除的 _id，submit 时统一处理（落库之后再摘，别丢掉未保存的改动）
 	dataset *dataset.Collection
+	// bulk 上次 Submit 失败遗留的独立队列。dataset.Save 已消费脏标记、载荷已入队,
+	// 失败后直接丢弃等于改动永久丢失(内存新、库旧、再调 Submit 命中 Dirty()==0
+	// 静默空转)——挂在句柄上跨请求重试,载荷是绝对值语义可安全重发
+	bulk BulkWrite
 	// itype 取自 ModelIType.IType(0)，取不到就是 0。
 	//
 	// 🔴 它同时决定**产出的 operator 要不要走通用更新下发客户端**：非 0 才下发。
@@ -373,6 +377,20 @@ func (this *Mount) Submit() error {
 	if err := this.Updater.WriteAble(); err != nil {
 		return err
 	}
+	//🔴 上次失败的遗留队列先重试:载荷已在队、脏标记已消费,丢弃即永久丢改动。
+	//仍失败则本次不动(业务按返回的错误决定重试或 Mounts.Remove)
+	if this.bulk != nil {
+		if err := this.bulk.Submit(); err != nil {
+			if !onBulkWriteError(this.Updater, err) {
+				this.bulk = nil //程序级错误重试无意义,丢弃后继续本次提交
+			} else {
+				return err
+			}
+		} else {
+			onSubmitResult(nil)
+			this.bulk = nil
+		}
+	}
 	if err := this.verify(); err != nil {
 		return err
 	}
@@ -397,7 +415,11 @@ func (this *Mount) Submit() error {
 		return nil
 	}
 	if err := bulk.Submit(); err != nil {
-		onSubmitResult(err) //与共享队列同口径:连续失败累计触发灾难保护
+		//🔴 落库失败:dataset.Save 已消费脏标记、载荷已入这份独立 bulk,
+		//必须留在句柄上等下次 Submit 重试——直接丢弃等于改动永久丢失,
+		//业务按注释"要么重试"再调时 Dirty()==0 会静默空转
+		this.bulk = bulk
+		onBulkWriteError(this.Updater, err) //与共享队列同口径:计数/灾难保护+程序级分级
 		return err
 	}
 	onSubmitResult(nil)
@@ -561,7 +583,22 @@ func (this *Mount) loading() error {
 }
 
 // reload 丢弃内存，下次 Select+Data 重新查库。
+//
+// 🔴 重载前先清欠账:遗留的失败队列载荷生成自旧内存状态,套着陈旧 $set 重载,
+// 下次 Submit 会把旧值盖回新读的数据(与 Updater.Reload 同一理)。提交失败保留
+// 队列并返回错误,数据库不可写时重载(Getter)必然同样失败
 func (this *Mount) reload() error {
+	if this.bulk != nil {
+		if err := this.bulk.Submit(); err != nil {
+			if onBulkWriteError(this.Updater, err) {
+				return err
+			}
+			this.bulk = nil //程序级错误重试无意义
+		} else {
+			onSubmitResult(nil)
+			this.bulk = nil
+		}
+	}
 	this.dataset = dataset.NewColl()
 	this.statement.reload()
 	return nil
@@ -571,14 +608,26 @@ func (this *Mount) reload() error {
 //
 // ⚠️ 只清 dirty 与待拉取标记，**保留内存数据** —— 长命挂载的跨请求驻留靠这条。
 // 想连内存一起丢是 Mounts.Remove 的事，两者别混。
+// 🔴 失败遗留的 bulk 队列必须保留:载荷已在队、脏标记已消费,清了即永久丢改动
 func (this *Mount) release() {
 	this.statement.release()
 	this.remove = nil
 	this.dataset.Release()
 }
 
-// destroy 玩家下线：刷盘。
+// destroy 玩家下线：刷盘。失败遗留队列一并冲账,成功才清
 func (this *Mount) destroy() error {
+	if this.bulk != nil {
+		if err := this.bulk.Submit(); err != nil {
+			if onBulkWriteError(this.Updater, err) {
+				return err //保留队列,重试 Destroy 才有完整上下文
+			}
+			this.bulk = nil
+		} else {
+			onSubmitResult(nil)
+			this.bulk = nil
+		}
+	}
 	return this.save()
 }
 

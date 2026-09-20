@@ -27,6 +27,10 @@ type Document struct {
 	schema *schema.Schema
 	dirty  Update
 	unset  map[string]struct{}
+	//saveFailed 上次落库失败且脏标记已回填(Restore置位)或键级载荷生成失败
+	//(Save内置位):脏标记是下次同步的重试数据源,Release不得清空。
+	//对齐 Collection 同名语义
+	saveFailed bool
 }
 
 // Has 是否存在字段
@@ -150,6 +154,7 @@ func (doc *Document) Update(data Update) {
 }
 
 func (doc *Document) Save() (dirty Update, unsets []string, err error) {
+	doc.saveFailed = false //本轮重新出发:键级失败或随后的Restore都会重新置位
 	if len(doc.dirty) > 0 {
 		dirty = Update{}
 		var failed Update
@@ -175,6 +180,9 @@ func (doc *Document) Save() (dirty Update, unsets []string, err error) {
 		}
 		//成功键已消费,失败键回填脏标记等待下次同步(旧实现直接清空,失败键的改动会永久丢失)
 		doc.dirty = failed
+		if failed != nil {
+			doc.saveFailed = true //🔴 键级失败同样要挡住Release:否则失败键滞留dirty却无人驱动重试
+		}
 	}
 	if len(doc.unset) > 0 {
 		unsets = make([]string, 0, len(doc.unset))
@@ -186,6 +194,10 @@ func (doc *Document) Save() (dirty Update, unsets []string, err error) {
 	return
 }
 func (doc *Document) Release() {
+	if doc.saveFailed {
+		return //🔴 落库失败的脏标记是重试数据源,不得清空——旧实现无条件清空,
+		//"失败等待下次同步"在同一请求的 release 里就没了数据,改动静默丢失
+	}
 	doc.dirty = nil
 	doc.unset = nil
 }
@@ -193,6 +205,7 @@ func (doc *Document) Release() {
 // restore 持久化失败时恢复脏标记,使下次Save能重新生成更新载荷
 // dirty/unset为Save刚返回的载荷(已含业务转换结果),直接回填幂等
 func (doc *Document) Restore(dirty Update, unsets []string) {
+	doc.saveFailed = true
 	if len(dirty) > 0 {
 		if doc.dirty == nil {
 			doc.dirty = Update{}

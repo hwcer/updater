@@ -185,10 +185,12 @@ func (coll *Collection) Remove(id ...string) {
 		if v, ok := coll.dirty[k]; ok && v.op.Has(collOperatorUpdate) {
 			if doc, exists := coll.dataset.Get(k); exists {
 				//先落库该条,避免未持久化的改动被静默丢弃
-				dirty, unsets, _ := doc.Save()
-				if len(dirty) > 0 || len(unsets) > 0 {
+				dirty, unsets, derr := doc.Save()
+				if derr != nil || len(dirty) > 0 || len(unsets) > 0 {
 					//此处拿不到 CollectionWriter(仅 Save 入参有),退化为
-					//回填脏标记并告警——调用方下一次 Save 仍可重发
+					//回填脏标记并告警——调用方下一次 Save 仍可重发。
+					//🔴 derr != nil 时即便 dirty 为空同样拒绝:载荷生成失败的键
+					//只在 doc 脏标记里,直接删除等于静默丢弃
 					doc.Restore(dirty, unsets)
 					logger.Alert("collection remove skip dirty entry, id:%s (persist before remove to discard intentionally)", k)
 					continue
@@ -237,7 +239,7 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 				processed = append(processed, k)
 				continue
 			}
-			dirty, unsets, _ := doc.Save() //载荷生成失败的键已在 Save 内部回填 doc 脏标记,下次重试
+			dirty, unsets, derr := doc.Save() //载荷生成失败的键已在 Save 内部回填 doc 脏标记
 			if len(dirty) > 0 || len(unsets) > 0 {
 				if err = w.Setter(k, dirty, unsets); err != nil {
 					//doc.Save已消费doc级脏标记,恢复之,下次Save重新生成载荷
@@ -246,13 +248,20 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 					break
 				}
 			}
+			if derr != nil {
+				//🔴 键级载荷生成失败:失败键已回填doc脏标记,但该条目不得从coll.dirty
+				//摘除——摘了之后Collection级重试只遍历coll.dirty,失败键永远无人重发。
+				//已成功的键照常下发,条目保留只等失败键
+				coll.saveFailed = true
+				continue
+			}
 		}
 		processed = append(processed, k)
 	}
 	for _, k := range processed {
 		delete(coll.dirty, k)
 	}
-	if err == nil {
+	if err == nil && !coll.saveFailed {
 		coll.saveFailed = false //本轮全部落库成功,解除Release保留
 	}
 	return

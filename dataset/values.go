@@ -25,6 +25,9 @@ type Values struct {
 	data  Data
 	dirty Data
 	unset map[int32]struct{}
+	//saveFailed 上次落库失败且脏标记已回填(Restore置位):脏标记是下次同步的
+	//重试数据源,Release不得清空;下次Save消费脏标记时解除。对齐 Collection 同名语义
+	saveFailed bool
 }
 
 func (val *Values) Len() int {
@@ -87,6 +90,7 @@ func (val *Values) Unset(k int32) {
 }
 
 func (val *Values) Save() (dirty Data, unsets []int32) {
+	val.saveFailed = false //本轮重新出发:若Setter随后失败,Restore会重新置位
 	if len(val.dirty) > 0 {
 		if val.data == nil {
 			val.data = Data{}
@@ -109,6 +113,10 @@ func (val *Values) Save() (dirty Data, unsets []int32) {
 }
 
 func (val *Values) Release() {
+	if val.saveFailed {
+		return //🔴 落库失败的脏标记是重试数据源,不得清空——旧实现无条件清空,
+		//"失败等待下次同步"在同一请求的 release 里就没了数据,改动静默丢失
+	}
 	val.dirty = nil
 	val.unset = nil
 }
@@ -116,6 +124,7 @@ func (val *Values) Release() {
 // restore 持久化失败时恢复脏标记,使下次Save能重新生成更新载荷
 // dirty/unsets为Save刚返回的载荷,直接回填幂等;仅回填脏标记,val.data在Save时已更新
 func (val *Values) Restore(dirty Data, unsets []int32) {
+	val.saveFailed = true
 	if len(dirty) > 0 {
 		if val.dirty == nil {
 			val.dirty = make(Data, len(dirty))

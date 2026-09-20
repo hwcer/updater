@@ -139,6 +139,20 @@ func onSaveErrorHandle(updater *Updater, err error) (bool, error) {
 	return retain, newErr
 }
 
+// onBulkWriteError bulkWrite 提交失败的统一处理:失败计数/灾难保护 + 错误分级。
+// 返回 false 表示业务把错误分为程序级(结构不一致/主键冲突等,重试无意义),
+// 调用方必须随之丢弃队列——否则坏载荷每请求重发,累计到 BulkWriteMaxFails
+// 触发灾难保护演变成全服拒绝服务。所有 bulkWrite.Submit 失败分支(Submit/Reset/
+// Reload/Destroy/Mount.Submit)都必须走这里,不得只调 onSubmitResult
+func onBulkWriteError(updater *Updater, err error) bool {
+	onSubmitResult(err)
+	retain, newErr := onSaveErrorHandle(updater, err)
+	if !retain {
+		logger.Alert("bulkWrite 程序级错误,丢弃队列不再重试: %v", newErr)
+	}
+	return retain
+}
+
 // initiateDatabaseMonitoring 数据库网络错误时启动数据库监控检查
 // 通过持续的调用DatabaseMonitoring 查询数据库是否可用
 // 长时间(30s)数据库不可用会进入灾难级错误开启数据库熔断保护，直到数据库恢复可用

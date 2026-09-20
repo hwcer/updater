@@ -1,6 +1,8 @@
 package updater
 
 import (
+	"github.com/hwcer/cosgo/phase"
+
 	"fmt"
 	"maps"
 	"sort"
@@ -84,7 +86,13 @@ func New() *Manage {
 // ===================== 注册面（原包级函数平移为方法） =====================
 
 // Register 注册模型到本域。同一 IType ID 在域内唯一，跨域可重复（各自指向自己的模型）。
+// Register 🔴 仅启动期调用(业务 init / cosgo.Start 前):modelsDict 等注册表
+// 在 Loading 与运行期只读,守卫读 cosgo/phase,封板后只 Alert 提示并忽略
 func (m *Manage) Register(parser Parser, ram RAMType, model any, its ...IType) error {
+	if phase.Sealed() {
+		phase.Alert("updater.Manage.Register(%v)", model)
+		return nil
+	}
 	if _, ok := m.parser[parser]; !ok {
 		return fmt.Errorf("parser unknown:%v", parser)
 	}
@@ -127,16 +135,28 @@ func (m *Manage) NewHandle(name Parser, f handleFunc) {
 
 // RegisterGlobalCache 注册域级缓存：Loading 时为该域每个实例创建（原"全局缓存"语义收窄到域）
 func (m *Manage) RegisterGlobalCache(name string, creator CacheCreator) {
+	if phase.Sealed() {
+		phase.Alert("updater.RegisterGlobalCache(%v)", name)
+		return
+	}
 	m.cacheCreators[name] = creator
 }
 
 // RegisterGlobalEvent 注册域级事件：对该域所有实例生效，永不取消（原"全局事件"语义收窄到域）
 func (m *Manage) RegisterGlobalEvent(t EventType, handle func(u *Updater)) {
+	if phase.Sealed() {
+		phase.Alert("updater.RegisterGlobalEvent(%v)", t)
+		return
+	}
 	m.events[t] = append(m.events[t], handle)
 }
 
 // RegisterGlobalMiddleware 注册域级中间件：对该域所有实例生效，永不移除（原"全局中间件"语义收窄到域）
 func (m *Manage) RegisterGlobalMiddleware(handle Middleware) {
+	if phase.Sealed() {
+		phase.Alert("updater.RegisterGlobalMiddleware")
+		return
+	}
 	m.middlewares = append(m.middlewares, handle)
 }
 

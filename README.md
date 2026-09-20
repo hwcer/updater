@@ -108,8 +108,12 @@ Add(金币, 1000) → 当前 9500, 上限 10000
 |------|------|
 | `SaveErrorTypeNone` | 忽略，等待下次同步 |
 | `SaveErrorTypeNetwork` | 启动数据库监控协程，30s 未恢复升级为灾难 |
-| `SaveErrorTypeProgram` | 程序级错误，立即标记灾难 |
+| `SaveErrorTypeProgram` | 丢弃 bulkWrite 队列不再重试（重试无意义），并记录日志 |
 | `SaveErrorTypeDisaster` | 拒绝所有写操作，直到 DB 恢复 |
+
+分级需业务配置 `updater.SaveErrorHandle` 才生效，默认实现恒返 `SaveErrorTypeNone`。
+未配置时：连续失败累计到 `BulkWriteMaxFails`（默认 100）触发灾难保护。
+Submit/Reset/Reload/Destroy/Mounts 全部提交入口统一走该分级。
 
 ## 事件系统
 
