@@ -138,11 +138,8 @@ func (this *Values) loading() error {
 			this.statement.loader = true
 		}
 	}
-	//🔴 Error 是具体指针类型：nil 装进 error 接口就是非 nil（typed-nil），判空后显式 return
-	if this.Updater.Error != nil {
-		return this.Updater.Error
-	}
-	return nil
+	//Error 字段已是 error 接口,零值即纯 nil,直接返回即可(无 typed-nil 装箱问题)
+	return this.Updater.Error
 }
 
 func (this *Values) release() {

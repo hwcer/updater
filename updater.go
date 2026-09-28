@@ -42,7 +42,7 @@ type Updater struct {
 	bulkWrite BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Destroy 重试),写库成功才清空
 
 	Cache         Cache           //自定义缓存数据
-	Error         *values.Message //请求过程中的错误（业务码+参数，可直接作为回包错误下发），一律经 Errorf 写入
+	Error         error           //请求过程中的错误（业务码+参数，可直接作为回包错误下发）。建议经 Errorf 写入以携带业务码与 Args；字段零值即纯 nil 接口，读取/返回不再有 typed-nil 装箱陷阱
 	Events        Events          //生命周期事件
 	Mounts        Mounts          //临时挂载的数据集合（挂载表，入口见 Mounts.Load）
 	Middleware    Middlewares     //中间件，所有事件类型都会触发
@@ -86,16 +86,21 @@ func (u *Updater) Entity() Entity {
 	return u.entity
 }
 
-// Errorf 设置错误状态并返回该错误，方便调用方直接抛给上层。**错误状态写入的唯一入口。**
+// Errorf 设置错误状态并返回该错误，方便调用方直接抛给上层。
 // 直接委托 values.Errorf：*values.Message 原样收存（写时复制，Code/Args 保留）；
 // 普通 error/字符串以文案形式收进 Data（错误码归 values 默认码）。
 // nil 入参（无格式串无参数）为赋值语义的"清空"：values.Errorf 会把 nil 格式化成
 // "<nil>" 文案产出非 nil Message，这里拦下来，保持旧 `u.Error = err`（err 为 nil）的行为。
+// Error 字段本身已是 error 接口,零值即纯 nil;返回值仍为 *values.Message 以兼容
+// 链式读取 Code/Args 的调用方,字段为普通 error 时返回 nil。
 func (u *Updater) Errorf(format any, args ...any) *values.Message {
 	if format != nil {
 		u.Error = values.Errorf(0, format, args...)
 	}
-	return u.Error
+	if m, ok := u.Error.(*values.Message); ok {
+		return m
+	}
+	return nil
 }
 
 // Save 将所有句柄当前的脏数据刷入共享 BulkWrite 队列(只入队,不提交;
