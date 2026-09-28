@@ -484,9 +484,14 @@ func (u *Updater) Submit() (r []*operator.Operator, err error) {
 	return
 }
 
-// ParseId 通过OID 或者IID 获取iid
+// ParseId 通过OID 或者IID 获取iid。
+// 字符串键(OID)依赖域配置的 Options.ParseId——未配置时明确报错而不是 nil 调用
+// panic:手工构造 Options 的域(测试/临时域)漏配时,这里是最先被踩到的入口
 func (u *Updater) ParseId(key any) (iid int32, err error) {
 	if v, ok := key.(string); ok {
+		if u.manage == nil || u.manage.Config == nil || u.manage.Config.ParseId == nil {
+			return 0, fmt.Errorf("Options.ParseId not configured, cannot parse oid:%v", v)
+		}
 		iid, err = u.manage.Config.ParseId(u, v)
 	} else {
 		iid = dataset.ParseInt32(key)
