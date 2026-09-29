@@ -3,6 +3,7 @@ package dataset
 import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"math"
+	"reflect"
 	"strings"
 )
 
@@ -42,7 +43,24 @@ func TryParseInt64(i any) (v int64, ok bool) {
 	case float64:
 		v = int64(d)
 	default:
-		ok = false
+		//命名整数类型（proto 枚举等，底层 int 系）：类型 switch 认不出命名类型，
+		//静默返回 0 会让「脏值透传落库对、内存分发器写零」的数据分叉——dev21
+		//joinMode 7008 死循环的根因（2026-09-29 冒烟实锤）。反射按 Kind 收编。
+		rv := reflect.ValueOf(i)
+		switch rv.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			v, ok = rv.Int(), true
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			if u := rv.Uint(); u <= math.MaxInt64 {
+				v, ok = int64(u), true
+			} else {
+				ok = false
+			}
+		case reflect.Float32, reflect.Float64:
+			v, ok = int64(rv.Float()), true
+		default:
+			ok = false
+		}
 	}
 	return
 }
