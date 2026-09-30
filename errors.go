@@ -10,11 +10,15 @@ import (
 	"github.com/hwcer/logger"
 )
 
-// 🔴 错误哨兵:包级 *values.Message。库内直接返回(参数经 Clone 附带),业务层
-// 自定义错误码时 **不改哨兵本体**,换码拷贝一份:
+// 🔴 错误哨兵:包级 *values.Message。库内直接返回(参数经 Clone 附带)。业务层
+// 定制业务码:**启动期(init)直接设置哨兵本体的 Code,仅此一次**;运行期一律
+// Clone 带参 —— 副本继承本体 Code,不改 Args 顺序协议,也不必在每个调用点换码:
 //
-//	myErr := values.Errorf(myCode, updater.ErrItemNotEnough) //显式码>原码,CoW 副本
-//	带参: updater.ErrItemNotEnough.Clone(iid, need, has)
+//	updater.ErrItemNotEnough.Code = 202            //init 期设业务码(项目级契约)
+//	updater.ErrItemNotEnough.Clone(iid, need, has) //运行期带参,Code 继承 202
+//
+// 🔴 不要在调用点用 values.Errorf(myCode, 哨兵) 组合换码:那是每次调用都
+// 产一份 CoW 副本的写法,码散落在各调用点,业务契约无法集中管理。
 //
 // 文案是固定的错误标识,参数**一律只进 Args 不进文案**,客户端按约定顺序取;
 // 代价是服务端日志里 err.Error() 只剩固定文案,排查时要看 Args。
