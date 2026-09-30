@@ -10,66 +10,30 @@ import (
 	"github.com/hwcer/logger"
 )
 
-var (
-	//由业务层设置
-	ErrCodeArgsIllegal   int32 = 9999
-	ErrCodeItemNotExist  int32 = 9999
-	ErrCodeItemNotEnough int32 = 9999
-	ErrCodeITypeNotExist int32 = 9999
-	ErrCodeObjectIdEmpty int32 = 9999
-	ErrCodeNewMaxExceed  int32 = 9999
-)
-
-var (
-	ErrServerDeniedService    = Errorf(500, "Server denied service")                                                //灾难级故障启动，需要人工排查
-	ErrBulkWriteNotInitialize = Errorf(500, "updater.Config.BulkWrite not initialized: 数据落库会静默失效,启动时(连完数据库之后)必须设置") //Updater.Loading 开服自检
-	ErrParseIdNotInitialize   = Errorf(500, "updater.Options.ParseId not initialized: 无法解析OID,启动时必须设置")              //defaultParseId 的返回错误
-	ErrUnableUseIIDOperation  = Errorf(0, "unable to use iid operation")
-	ErrSubmitEndlessLoop      = Errorf(0, "submit endless loop") //出现死循环,检查事件和插件是否正确移除(返回false)
-)
-
-// Errorf 构造一个 Message 错误（业务码+文案+参数），返回值可直接赋给 Error 字段
-func Errorf(code int32, msg any, args ...any) *values.Message {
-	return values.Errorf(code, msg, args...)
-}
-
-// 以下 helper 的参数**一律只进 Args,不进文案**。
-// 文案是固定的错误标识,参数由客户端从 Args 按约定顺序取,不必去解字符串。
-// 代价是服务端日志里 err.Error() 只剩这句固定文案,排查时要看 Args。
-
-// ErrArgsIllegal 参数非法。Args 即传入的那组参数,顺序由调用点决定。
-func ErrArgsIllegal(args ...any) *values.Message {
-	return values.Errorf(ErrCodeArgsIllegal, "args illegal").Clone(args...)
-}
-
-// ErrItemNotExist 道具不存在。Args 为 [道具ID或OID]。
-func ErrItemNotExist(id any) *values.Message {
-	return values.Errorf(ErrCodeItemNotExist, "Item Not Exist").Clone(id)
-}
-
-// ErrItemNotEnough 道具不足。
+// 🔴 错误哨兵:包级 *values.Message。库内直接返回(参数经 Clone 附带),业务层
+// 自定义错误码时 **不改哨兵本体**,换码拷贝一份:
 //
-// 🔴 Args 顺序固定为 [道具ID, 需要数量, 当前持有] —— 客户端靠它提示「缺哪个道具、还差多少」。
-// 改顺序等于改协议,五个调用点(parse_val/parse_doc/parse_coll×2/handle_virtual)必须同时改。
-func ErrItemNotEnough(args ...any) *values.Message {
-	return values.Errorf(ErrCodeItemNotEnough, "Item Not Enough").Clone(args...)
-}
+//	myErr := values.Errorf(myCode, updater.ErrItemNotEnough) //显式码>原码,CoW 副本
+//	带参: updater.ErrItemNotEnough.Clone(iid, need, has)
+//
+// 文案是固定的错误标识,参数**一律只进 Args 不进文案**,客户端按约定顺序取;
+// 代价是服务端日志里 err.Error() 只剩固定文案,排查时要看 Args。
+var (
+	// ---- 框架级 ----
+	ErrServerDeniedService    = values.Errorf(500, "Server denied service")                                                //灾难级故障启动，需要人工排查
+	ErrBulkWriteNotInitialize = values.Errorf(500, "updater.Config.BulkWrite not initialized: 数据落库会静默失效,启动时(连完数据库之后)必须设置") //Updater.Loading 开服自检
+	ErrParseIdNotInitialize   = values.Errorf(500, "updater.Options.ParseId not initialized: 无法解析OID,启动时必须设置")             //defaultParseId 的返回错误
+	ErrUnableUseIIDOperation  = values.Errorf(0, "unable to use iid operation")                                            //纯数据域(Collection/Document)无 iid 寻址
+	ErrSubmitEndlessLoop      = values.Errorf(0, "submit endless loop")                                                    //出现死循环,检查事件和插件是否正确移除(返回false)
 
-// ErrITypeNotExist IType 不存在。Args 为 [道具ID]。
-func ErrITypeNotExist(iid int32) *values.Message {
-	return values.Errorf(ErrCodeITypeNotExist, "IType Not Exist").Clone(iid)
-}
-
-// ErrObjectIdEmpty OID 为空。Args 即传入的那组参数,通常首位是道具ID。
-func ErrObjectIdEmpty(args ...any) *values.Message {
-	return values.Errorf(ErrCodeObjectIdEmpty, "oid empty").Clone(args...)
-}
-
-// ErrNewMaxExceed 批量创建不可叠加道具的数量超过 Options.NewMax 上限。
-// Args 顺序固定为 [道具ID, 申请数量, 上限]。
-func ErrNewMaxExceed(args ...any) *values.Message {
-	return values.Errorf(ErrCodeNewMaxExceed, "new max exceeded").Clone(args...)
-}
+	// ---- 业务级(9000~9005,Args 约定见各行) ----
+	ErrArgsIllegal   = values.Errorf(501, "args illegal")     //参数非法。Args 即传入的那组参数,顺序由调用点决定
+	ErrItemNotExist  = values.Errorf(502, "Item Not Exist")   //道具不存在。Args 为 [道具ID或OID]
+	ErrItemNotEnough = values.Errorf(503, "Item Not Enough")  //🔴 Args 固定 [道具ID, 需要数量, 当前持有],改顺序等于改协议(五个 parse 调用点联动)
+	ErrITypeNotExist = values.Errorf(504, "IType Not Exist")  //IType 不存在。Args 为 [道具ID]
+	ErrObjectIdEmpty = values.Errorf(505, "oid empty")        //OID 为空。Args 即传入的那组参数,通常首位是道具ID
+	ErrNewMaxExceed  = values.Errorf(506, "new max exceeded") //批量创建超 Options.NewMax 上限。Args 固定 [道具ID, 申请数量, 上限]
+)
 
 // disaster 数据库熔断保护
 var disaster = atomic.Int32{}

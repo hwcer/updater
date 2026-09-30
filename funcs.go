@@ -37,7 +37,7 @@ func overflow(update *Updater, handle overflowHandle, op *operator.Operator) (er
 	}
 	it := handle.IType(op.IID)
 	if it == nil {
-		return ErrITypeNotExist(op.IID)
+		return ErrITypeNotExist.Clone(op.IID)
 	}
 
 	val := op.Value

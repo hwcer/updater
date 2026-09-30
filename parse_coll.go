@@ -38,11 +38,11 @@ func collectionHandleResolve(coll *Collection, op *operator.Operator) error {
 
 func collectionHandleUnset(coll *Collection, op *operator.Operator) error {
 	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
+		return ErrObjectIdEmpty.Clone(op.IID)
 	}
 	doc := coll.dataset.Val(op.OID)
 	if doc == nil {
-		return ErrItemNotExist(op.OID)
+		return ErrItemNotExist.Clone(op.OID)
 	}
 	fields, _ := op.Result.(dataset.Update)
 	for k := range fields {
@@ -54,11 +54,11 @@ func collectionHandleUnset(coll *Collection, op *operator.Operator) error {
 
 func collectionHandleDel(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
+		return ErrObjectIdEmpty.Clone(op.IID)
 	}
 	doc := coll.dataset.Val(op.OID)
 	if doc == nil {
-		return ErrItemNotExist(op.OID)
+		return ErrItemNotExist.Clone(op.OID)
 	}
 	op.Value = doc.GetInt64(coll.Field())
 	if op.Value == 0 {
@@ -86,14 +86,14 @@ func collectionHandleNew(coll *Collection, op *operator.Operator) (err error) {
 
 func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 	if op.Value <= 0 {
-		return ErrArgsIllegal(op.IID, op.Value)
+		return ErrArgsIllegal.Clone(op.IID, op.Value)
 	}
 	if it := coll.ITypeCollection(op.IID); it != nil && !it.Stacked(op.IID) {
 		return collectionHandleNewEquip(coll, op) //不可以堆叠装备类道具
 	}
 	//可以叠加的道具
 	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
+		return ErrObjectIdEmpty.Clone(op.IID)
 	}
 	if !coll.dataset.Has(op.OID) {
 		return collectionHandleNewItem(coll, op)
@@ -101,7 +101,7 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 	doc := coll.dataset.Val(op.OID)
 	v := doc.GetInt64(coll.Field())
 	if v > math.MaxInt64-op.Value {
-		return ErrArgsIllegal(op.IID, op.Value) //溢出包装成负数会静默腐蚀持有量,直接拒绝
+		return ErrArgsIllegal.Clone(op.IID, op.Value) //溢出包装成负数会静默腐蚀持有量,直接拒绝
 	}
 	r := op.Value + v
 	if err = coll.dataset.Set(op.OID, op.Field, r); err == nil {
@@ -112,19 +112,19 @@ func collectionHandleAdd(coll *Collection, op *operator.Operator) (err error) {
 
 func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 	if op.Value <= 0 {
-		return ErrArgsIllegal(op.IID, op.Value)
+		return ErrArgsIllegal.Clone(op.IID, op.Value)
 	}
 	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
+		return ErrObjectIdEmpty.Clone(op.IID)
 	}
 	doc := coll.dataset.Val(op.OID)
 	if doc == nil {
-		return ErrItemNotEnough(op.IID, op.Value, 0)
+		return ErrItemNotEnough.Clone(op.IID, op.Value, 0)
 	}
 	d := doc.GetInt64(coll.Field())
 	r := d - op.Value
 	if d < op.Value && !coll.Updater.CreditAllowed {
-		return ErrItemNotEnough(op.IID, op.Value, d)
+		return ErrItemNotEnough.Clone(op.IID, op.Value, d)
 	}
 	if err = coll.dataset.Set(op.OID, op.Field, r); err == nil {
 		op.Result = map[string]any{op.Field: r}
@@ -135,12 +135,12 @@ func collectionHandleSub(coll *Collection, op *operator.Operator) (err error) {
 
 func collectionHandleSet(coll *Collection, op *operator.Operator) (err error) {
 	if op.OID == "" {
-		return ErrObjectIdEmpty(op.IID)
+		return ErrObjectIdEmpty.Clone(op.IID)
 	}
 	if ok := coll.Has(op.OID); !ok && coll.model.Upsert(coll.Updater, op) {
 		return collectionHandleNewItem(coll, op)
 	} else if !ok {
-		return ErrItemNotExist(op.OID)
+		return ErrItemNotExist.Clone(op.OID)
 	}
 	update, _ := op.Result.(dataset.Update)
 	err = coll.dataset.Update(op.OID, update)
@@ -152,7 +152,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 	op.OType = operator.TypesNew
 	it := coll.ITypeCollection(op.IID)
 	if it == nil {
-		return ErrITypeNotExist(op.IID)
+		return ErrITypeNotExist.Clone(op.IID)
 	}
 	//🔴 批量创建数量上限:不可叠加道具一件一个文档,此处按 op.Value 逐个 it.New,
 	//无上限时 Add(装备iid, 1e9) 会原地挂起直至 OOM。可叠加道具走 collectionHandleAdd
@@ -162,7 +162,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 		max = defaultNewMax
 	}
 	if op.Value < 0 || op.Value > max {
-		return ErrNewMaxExceed(op.IID, op.Value, max)
+		return ErrNewMaxExceed.Clone(op.IID, op.Value, max)
 	}
 	if op.Value == 0 {
 		op.Value = 1
@@ -187,7 +187,7 @@ func collectionHandleNewEquip(coll *Collection, op *operator.Operator) (err erro
 func collectionHandleNewItem(coll *Collection, op *operator.Operator) (err error) {
 	it := coll.ITypeCollection(op.IID)
 	if it == nil {
-		return ErrITypeNotExist(op.IID)
+		return ErrITypeNotExist.Clone(op.IID)
 	}
 	var i any
 	i, err = it.New(coll.Updater, op)

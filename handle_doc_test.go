@@ -112,7 +112,7 @@ func TestDocumentFieldSchemaUnavailable(t *testing.T) {
 // 本该被整体拦下的写入照样落库。
 func TestDocumentWriteKeepsPendingError(t *testing.T) {
 	doc := newFieldTestDocument()
-	pending := ErrArgsIllegal(1, 1)
+	pending := ErrArgsIllegal.Clone(1, 1)
 	doc.Updater.Error = pending
 
 	if op := doc.Set("breaklv", 1); op != nil {

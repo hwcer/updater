@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/cosgo/values"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
@@ -74,7 +75,7 @@ func (ms *Mounts) Load(model MountModel, keys ...string) (*Mount, error) {
 	if !exist {
 		for _, m := range u.manage.modelsRank {
 			if m.name == name {
-				return nil, Errorf(0, "mount name conflicts with registered model:%v", name)
+				return nil, values.Errorf(0, "mount name conflicts with registered model:%v", name)
 			}
 		}
 		if ms.tables == nil {
@@ -221,7 +222,7 @@ func (this *Mount) operator(t operator.Types, id string, v int64, r any) *operat
 		return nil
 	}
 	if id == "" {
-		this.Updater.Error = ErrObjectIdEmpty(t.ToString())
+		this.Updater.Error = ErrObjectIdEmpty.Clone(t.ToString())
 		return nil
 	}
 	op := operator.New(t, "", v, r)
@@ -697,10 +698,10 @@ func (this *Mount) parse(op *operator.Operator) error {
 func (this *Mount) parseSet(op *operator.Operator) error {
 	update, ok := op.Result.(dataset.Update)
 	if !ok {
-		return ErrArgsIllegal(op.OID, op.Result)
+		return ErrArgsIllegal.Clone(op.OID, op.Result)
 	}
 	if !this.dataset.Has(op.OID) {
-		return ErrItemNotExist(op.OID)
+		return ErrItemNotExist.Clone(op.OID)
 	}
 	return this.dataset.Update(op.OID, update)
 }
@@ -708,7 +709,7 @@ func (this *Mount) parseSet(op *operator.Operator) error {
 func (this *Mount) parseUnset(op *operator.Operator) error {
 	doc := this.dataset.Val(op.OID)
 	if doc == nil {
-		return ErrItemNotExist(op.OID)
+		return ErrItemNotExist.Clone(op.OID)
 	}
 	fields, _ := op.Result.(dataset.Update)
 	for k := range fields {
@@ -720,7 +721,7 @@ func (this *Mount) parseUnset(op *operator.Operator) error {
 
 func (this *Mount) parseDel(op *operator.Operator) error {
 	if !this.dataset.Has(op.OID) {
-		return ErrItemNotExist(op.OID)
+		return ErrItemNotExist.Clone(op.OID)
 	}
 	this.dataset.Delete(op.OID)
 	return nil
@@ -729,7 +730,7 @@ func (this *Mount) parseDel(op *operator.Operator) error {
 func (this *Mount) parseNew(op *operator.Operator) error {
 	items, ok := op.Result.([]any)
 	if !ok {
-		return ErrArgsIllegal(op.OID, op.Result)
+		return ErrArgsIllegal.Clone(op.OID, op.Result)
 	}
 	for _, v := range items {
 		if err := this.dataset.Insert(v); err != nil {

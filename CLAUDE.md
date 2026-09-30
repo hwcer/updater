@@ -41,7 +41,7 @@ Loading → Reset → Business ops (Add/Sub/Set/Del) → Data (lazy DB fetch) �
 - 写入统一走 `Errorf(...)`（**唯一入口**，返回该错误便于直接抛给上层）：直接委托 `values.Errorf`——传 `*values.Message` 时写时复制收存（Code/Args 保留），传普通 error/字符串则以文案形式收进 Data（错误码归 values 默认码）；
 - 五个语义化 helper（`ErrArgsIllegal/ErrItemNotExist/ErrItemNotEnough/ErrITypeNotExist/ErrObjectIdEmpty`）直接返回 `*values.Message`，文案固定、参数只进 Args；
 - 🔴 `Error` 是具体指针类型，**不得把 `u.Error` 赋给 `error` 变量再判 nil**——nil 指针装进接口就是非 nil（typed-nil），判空一律直接写 `if u.Error != nil`；
-- `ErrCode*` 码表由业务层启动时设置（9999 为占位），必须在任何错误发生前赋值。
+- 业务错误为哨兵形态（9000~9005，`ErrItemNotEnough.Clone(iid, need, has)` 带参）；业务自定义错误码用 `values.Errorf(myCode, updater.ErrXxx)` 换码副本，不改哨兵本体。
 
 ### Manage 数据域（实例级注册表）
 

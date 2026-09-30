@@ -33,11 +33,11 @@ func hashParseResolve(this *Values, op *operator.Operator) (err error) {
 
 func hashParseAdd(this *Values, op *operator.Operator) (err error) {
 	if op.Value <= 0 {
-		return ErrArgsIllegal(op.IID, op.Value)
+		return ErrArgsIllegal.Clone(op.IID, op.Value)
 	}
 	d := this.dataset.Val(op.IID)
 	if d > math.MaxInt64-op.Value {
-		return ErrArgsIllegal(op.IID, op.Value) //溢出包装成负数会静默腐蚀余额,直接拒绝
+		return ErrArgsIllegal.Clone(op.IID, op.Value) //溢出包装成负数会静默腐蚀余额,直接拒绝
 	}
 	r := d + op.Value
 	op.Result = map[int32]int64{op.IID: r}
@@ -47,12 +47,12 @@ func hashParseAdd(this *Values, op *operator.Operator) (err error) {
 
 func hashParseSub(this *Values, op *operator.Operator) error {
 	if op.Value <= 0 {
-		return ErrArgsIllegal(op.IID, op.Value)
+		return ErrArgsIllegal.Clone(op.IID, op.Value)
 	}
 	d := this.dataset.Val(op.IID)
 	r := d - op.Value
 	if d < op.Value && !this.Updater.CreditAllowed {
-		return ErrItemNotEnough(op.IID, op.Value, d)
+		return ErrItemNotEnough.Clone(op.IID, op.Value, d)
 	}
 	op.Result = map[int32]int64{op.IID: r}
 	this.dataset.Set(op.IID, r)

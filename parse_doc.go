@@ -32,11 +32,11 @@ func documentParseResolve(this *Document, op *operator.Operator) (err error) {
 }
 func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 	if op.Value <= 0 {
-		return ErrArgsIllegal(op.IID, op.Value)
+		return ErrArgsIllegal.Clone(op.IID, op.Value)
 	}
 	d, _ := this.val(op.Field)
 	if d > math.MaxInt64-op.Value {
-		return ErrArgsIllegal(op.IID, op.Value) //溢出包装成负数会静默腐蚀数值,直接拒绝
+		return ErrArgsIllegal.Clone(op.IID, op.Value) //溢出包装成负数会静默腐蚀数值,直接拒绝
 	}
 	r := d + op.Value
 	this.dataset.Set(op.Field, r)
@@ -46,12 +46,12 @@ func documentParseAdd(this *Document, op *operator.Operator) (err error) {
 
 func documentParseSub(this *Document, op *operator.Operator) error {
 	if op.Value <= 0 {
-		return ErrArgsIllegal(op.IID, op.Value)
+		return ErrArgsIllegal.Clone(op.IID, op.Value)
 	}
 	d, _ := this.val(op.Field)
 	r := d - op.Value
 	if d < op.Value && !this.Updater.CreditAllowed {
-		return ErrItemNotEnough(op.IID, op.Value, d)
+		return ErrItemNotEnough.Clone(op.IID, op.Value, d)
 	}
 	this.dataset.Set(op.Field, r)
 	op.Result = map[string]any{op.Field: r}

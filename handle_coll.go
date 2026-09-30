@@ -253,16 +253,16 @@ func (this *Collection) Set(id any, v ...any) *operator.Operator {
 	switch len(v) {
 	case 1:
 		if data = dataset.ParseUpdate(v[0]); data == nil {
-			this.Updater.Error = ErrArgsIllegal(id, v)
+			this.Updater.Error = ErrArgsIllegal.Clone(id, v)
 		}
 	case 2:
 		if field, ok := v[0].(string); ok {
 			data = dataset.NewUpdate(field, v[1])
 		} else {
-			this.Updater.Error = ErrArgsIllegal(id, v)
+			this.Updater.Error = ErrArgsIllegal.Clone(id, v)
 		}
 	default:
-		this.Updater.Error = ErrArgsIllegal(id, v)
+		this.Updater.Error = ErrArgsIllegal.Clone(id, v)
 	}
 	if this.Updater.Error != nil {
 		return nil
@@ -373,7 +373,7 @@ func (this *Collection) GetOID(key any) (oid string, err error) {
 		return "", fmt.Errorf("IType unknown:%v", iid)
 	}
 	if !it.Stacked(iid) {
-		return "", ErrObjectIdEmpty(iid)
+		return "", ErrObjectIdEmpty.Clone(iid)
 	}
 	if oid = it.GetOID(this.Updater, iid); oid == "" {
 		err = ErrUnableUseIIDOperation
@@ -447,7 +447,7 @@ func (this *Collection) operator(t operator.Types, id any, k string, v int64, r 
 func (this *Collection) mayChange(op *operator.Operator) (err error) {
 	it := this.ITypeCollection(op.IID)
 	if it == nil {
-		return ErrITypeNotExist(op.IID)
+		return ErrITypeNotExist.Clone(op.IID)
 	}
 	op.IType = it.ID()
 	if listen, ok := it.(ITypeListener); ok {

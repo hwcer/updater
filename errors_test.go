@@ -17,7 +17,7 @@ import (
 // 而错误本身照样有 Args、照样非空,不看值就发现不了。
 func TestErrItemNotEnough_Args(t *testing.T) {
 	//返回类型即 *values.Message（编译期保证），客户端拿到的就是 Code/Data/Args 结构
-	msg := ErrItemNotEnough(1001, 5, 2)
+	msg := ErrItemNotEnough.Clone(1001, 5, 2)
 
 	//文案是固定标识,不再带参数 —— 参数一律走 Args
 	if msg.Error() != "Item Not Enough" {
@@ -43,7 +43,7 @@ func TestErrItemNotEnough_Args(t *testing.T) {
 
 // TestErrItemNotExist_Args 单实参 helper 也走 Args,文案里不留占位符。
 func TestErrItemNotExist_Args(t *testing.T) {
-	msg := ErrItemNotExist("oid-123")
+	msg := ErrItemNotExist.Clone("oid-123")
 	if len(msg.Args) != 1 || msg.Args[0] != "oid-123" {
 		t.Fatalf("Args = %v, want [oid-123]", msg.Args)
 	}

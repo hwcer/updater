@@ -211,7 +211,7 @@ func (this *Virtual) Sub(k any, v any) {
 	// 余额校验同样读含未提交写的值：同请求先加后扣不误报，连扣两次能扣成负数的口子不开
 	d := this.Peek(key)
 	if d < value && !this.Updater.CreditAllowed {
-		this.Updater.Error = ErrItemNotEnough(iid, value, d)
+		this.Updater.Error = ErrItemNotEnough.Clone(iid, value, d)
 		return
 	}
 	op := this.newOperator(operator.TypesSub, iid, key, value, map[string]any{key: d - value})
