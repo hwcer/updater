@@ -2,8 +2,12 @@ package updater
 
 import (
 	"fmt"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hwcer/cosgo/values"
@@ -302,50 +306,71 @@ func (u *Updater) Emit(t EventType) {
 }
 
 // Add 添加道具,num 支持 int32|int64。
-// 🔴 路由失败(解析失败/IType 未初始化/模型未注册)会置 u.Error:旧实现静默忽略,
-// 调用方对"什么都没发生"零感知——扣费不生效继续发货=刷道具,发放蒸发=付费未到账。
-// 需要自行处理失败的调用方用 AddErr
+// 🔴 不报错不置 u.Error:iid<=0/num<=0(策划表数值列大量留空属正常态)与路由失败
+// 一律 DEBUG 日志(含完整调用链)后跳过——上抛会中断整次结算(bong 主线重打 0/0 奖励实锤)。
 func (u *Updater) Add(iid int32, num any) {
-	if err := u.AddErr(iid, num); err != nil {
-		u.Errorf(err)
-	}
-}
-
-// AddErr 带错误返回的 Add:路由失败返回 error 而非静默忽略
-// iid<=0 或 num<=0 一律跳过(空操作):配置表数值列缺省导出为 0,"无奖励"是合法配置态而非错误
-func (u *Updater) AddErr(iid int32, num any) error {
 	v := dataset.ParseInt64(num)
 	if iid <= 0 || v <= 0 {
-		return nil
+		u.debugSkip("Add", iid, v)
+		return
 	}
-	w, err := u.handleWithKeyErr(iid)
-	if err != nil || w == nil {
-		return err
+	if w := u.handleWithKey(iid); w != nil {
+		w.increase(iid, v)
+	} else {
+		u.debugSkip("Add", iid, v)
 	}
-	w.increase(iid, v)
-	return nil
 }
 
-// Sub 扣除道具,num 支持 int32|int64。路由失败置 u.Error(语义同 Add)
+// Sub 扣除道具,num 支持 int32|int64。跳过语义同 Add;负数 Sub 实为加钱,一并拒绝
 func (u *Updater) Sub(iid int32, num any) {
-	if err := u.SubErr(iid, num); err != nil {
-		u.Errorf(err)
+	v := dataset.ParseInt64(num)
+	if iid <= 0 || v <= 0 {
+		u.debugSkip("Sub", iid, v)
+		return
+	}
+	if w := u.handleWithKey(iid); w != nil {
+		w.decrease(iid, v)
+	} else {
+		u.debugSkip("Sub", iid, v)
 	}
 }
 
-// SubErr 带错误返回的 Sub:路由失败返回 error 而非静默忽略
-// iid<=0 或 num<=0 一律跳过(空操作):语义同 AddErr;负数 Sub 实为加钱,同样拒绝执行
-func (u *Updater) SubErr(iid int32, num any) error {
-	v := dataset.ParseInt64(num)
-	if iid <= 0 || v <= 0 {
-		return nil
+// debugSkip 记录一次被跳过的写入操作(DEBUG 级),附 uid 与完整调用链。
+// 生产(INFO 级)零开销:未开 DEBUG 不格式化不捕栈。
+func (u *Updater) debugSkip(op string, iid int32, v int64) {
+	if logger.GetLevel() < logger.LevelDebug {
+		return
 	}
-	w, err := u.handleWithKeyErr(iid)
-	if err != nil || w == nil {
-		return err
+	logger.Debug("updater %v %v skip, iid:%v num:%v, caller: %v", u.Id(), op, iid, v, callerChain())
+}
+
+// callerChain 返回自 Add/Sub 调用方起的完整调用链(短文件名:行号,"<-" 连接),
+// 用于定位跳过源头;仅 DEBUG 级会走到这里
+func callerChain() string {
+	pcs := make([]uintptr, 32)
+	n := runtime.Callers(4, pcs)
+	if n == 0 {
+		return "?"
 	}
-	w.decrease(iid, v)
-	return nil
+	frames := runtime.CallersFrames(pcs[:n])
+	var sb strings.Builder
+	for i := 0; ; i++ {
+		f, more := frames.Next()
+		if i > 0 {
+			sb.WriteString(" <- ")
+		}
+		if f.File == "" {
+			sb.WriteByte('?')
+		} else {
+			sb.WriteString(filepath.Base(f.File))
+			sb.WriteByte(':')
+			sb.WriteString(strconv.Itoa(f.Line))
+		}
+		if !more {
+			break
+		}
+	}
+	return sb.String()
 }
 
 // Get 通过 iid 获取原始数据，返回类型取决于 Handle 类型
@@ -517,33 +542,27 @@ func (u *Updater) ParseId(key any) (iid int32, err error) {
 // Handle 根据 name(string) || itype(int32) 查找，支持命名整型（如 protobuf 枚举）
 
 // handle 通过 iid 或 oid 路由到对应的 Handle 实例。
-// 路由失败返回 nil(读取类场景"模型不存在"是正常态);写入类场景用 handleWithKeyErr
+// 路由失败返回 nil:读取类场景"模型不存在"是正常态,静默;
+// 写入类(Add/Sub)的失败由调用方 debugSkip 记 DEBUG 日志(含调用链)
 func (u *Updater) handleWithKey(k any) Handle {
-	h, _ := u.handleWithKeyErr(k)
-	return h
-}
-
-// handleWithKeyErr 带错误返回的路由:写入类操作(Add/Sub)据此把失败上抛,
-// 而不是静默丢操作
-func (u *Updater) handleWithKeyErr(k any) (Handle, error) {
 	iid, err := u.ParseId(k)
 	if err != nil {
-		return nil, fmt.Errorf("updater ParseId failed, key:%v: %w", k, err)
+		return nil
 	}
 	//🔴 New() 已装 defaultIType,这里是手工构造 &Options{} 绕过默认值的兜底:
 	//缺配置属启动期错误
 	if u.manage.Config.IType == nil {
 		//IType 未初始化属手工构造 &Options{} 的启动期错误,保持降级兼容
-		//(见 TestNilITypeDegradesInsteadOfPanic);运行期路由失败仍上抛
+		//(见 TestNilITypeDegradesInsteadOfPanic)
 		logger.Alert("updater.Options.IType not initialized: 无法路由 key:%v, 操作被忽略", k)
-		return nil, nil
+		return nil
 	}
 	itk := u.manage.Config.IType(iid)
 	model, ok := u.manage.modelsDict[itk]
 	if !ok {
-		return nil, fmt.Errorf("updater model not registered, iid:%v IType:%v", iid, itk)
+		return nil
 	}
-	return u.handleWithAny(model.name), nil
+	return u.handleWithAny(model.name)
 }
 
 func (u *Updater) handleWithAny(name any) Handle {

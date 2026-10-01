@@ -113,7 +113,7 @@ coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存
 
 ### Updater 公开方法
 
-`Add`, `Sub`, `Get`, `Val`, `Select` — 通过 IID 路由到对应 Handle。`Add/Sub` 的 num 参数为 `any`，在 Updater 层统一通过 `dataset.ParseInt64` 转换为 `int64`。**`Add/AddErr/Sub/SubErr` 对 `iid<=0` 或 `num<=0` 一律跳过（空操作，不报错）**——配置表数值列缺省导出为 0，"无奖励"是合法配置态；负数 `Sub` 实为加钱，同样拒绝。真正的路由失败（未注册模型等）仍上抛/置 `u.Error`。
+`Add`, `Sub`, `Get`, `Val`, `Select` — 通过 IID 路由到对应 Handle。`Add/Sub` 的 num 参数为 `any`，在 Updater 层统一通过 `dataset.ParseInt64` 转换为 `int64`。**`Add`/`Sub` 不报错不置 `u.Error`：`iid<=0`、`num<=0` 及路由失败（未注册模型等）一律打 DEBUG 日志（附 uid 与 `callerChain` 完整调用链）后跳过**——策划表数值列大量留空属正常态（如 bong 主线重打 0/0 奖励），上抛会中断整次结算。生产 INFO 级零开销（未开 DEBUG 不捕栈）。没有 `AddErr`/`SubErr` 变体（曾存在，2026-10-01 撤回）。
 
 类型访问器: `Values()`, `Document()`, `Collection()`, `Virtual()` — 通过 name 或 IType ID 获取具体 Handle 实例。
 

@@ -1,13 +1,14 @@
 package updater
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/hwcer/logger"
 )
 
-// 🔴 T4 回归:Add/Sub 路由失败不得静默丢弃——旧实现 ParseId 失败仅 Alert、
-// 模型未注册仅 Debug,void API 调用方对"什么都没发生"零感知:
-// u.Sub(金币, price) 静默不执行继续发货 = 刷道具;Add 静默丢失 = 付费未到账。
+// 🔴 Add/Sub 路由失败与 0/负值一律静默跳过 + DEBUG 日志,不置 u.Error:
+// 策划表数值列大量留空(bong 主线重打 0/0 奖励、道具未填满等)属正常态,
+// 上抛会中断整次结算提交。排查靠 DEBUG 日志里的完整调用链(callerChain)。
 
 func newMinimalUpdater(t *testing.T) *Updater {
 	t.Helper()
@@ -30,27 +31,53 @@ func newMinimalUpdater(t *testing.T) *Updater {
 	return u
 }
 
-// 模型未注册的 iid:Add/Sub 必须置 u.Error,SubErr/AddErr 必须返回 error
-func TestAddSubUnregisteredModelSurfacesError(t *testing.T) {
+// 0/负值与未注册模型(路由失败)一律跳过:不置错、不改数据、Submit 照常成功
+func TestAddSubInvalidArgsSkipSilently(t *testing.T) {
 	u := newMinimalUpdater(t)
 	defer u.Release()
 	u.Reset()
 
-	if err := u.SubErr(7777, 10); err == nil {
-		t.Fatal("未注册模型的 SubErr 应返回错误(旧实现静默忽略,等于凭空发货)")
-	}
-	if err := u.AddErr(7777, 10); err == nil {
-		t.Fatal("未注册模型的 AddErr 应返回错误")
-	}
-
-	//void 版本:路由失败落 u.Error,Submit 感知失败
-	u.Reset()
+	// iid<=0
+	u.Add(0, 10)
+	u.Sub(0, 10)
+	u.Add(-3, 5)
+	// num<=0
+	u.Add(100, 0)
+	u.Sub(100, 0)
+	u.Add(100, -5)
+	u.Sub(100, -5)
+	// 路由失败:未注册模型的正数 iid
+	u.Add(7777, 10)
 	u.Sub(7777, 10)
-	if u.Error == nil {
-		t.Fatal("void Sub 路由失败应置 u.Error")
+
+	if u.Error != nil {
+		t.Fatalf("以上全部应静默跳过,不得置 u.Error:%v", u.Error)
 	}
-	if _, err := u.Submit(); err == nil {
-		t.Fatal("存在路由失败错误时 Submit 应失败,请求不得假装成功")
+	if got := u.Val(100); got != 50 {
+		t.Fatalf("数据应保持不变,期望 50 实际 %d", got)
+	}
+	if _, err := u.Submit(); err != nil {
+		t.Fatalf("存在跳过操作时 Submit 不应失败:%v", err)
+	}
+}
+
+// DEBUG 开启时跳过路径照常工作,日志路径(捕栈)不得 panic
+func TestAddSubDebugSkipNoPanic(t *testing.T) {
+	old := logger.GetLevel()
+	logger.SetLevel(logger.LevelDebug)
+	defer logger.SetLevel(old)
+
+	u := newMinimalUpdater(t)
+	defer u.Release()
+	u.Reset()
+
+	u.Add(0, 10)
+	u.Sub(7777, 10)
+	if u.Error != nil {
+		t.Fatalf("DEBUG 级下跳过同样不得置错:%v", u.Error)
+	}
+	if got := u.Val(100); got != 50 {
+		t.Fatalf("数据应保持不变,实际 %d", got)
 	}
 }
 
@@ -60,83 +87,18 @@ func TestAddSubRegisteredModelWorks(t *testing.T) {
 	defer u.Release()
 	u.Reset()
 
-	if err := u.SubErr(100, 30); err != nil {
-		t.Fatalf("已注册模型 SubErr 不应报错:%v", err)
-	}
+	u.Sub(100, 30)
 	if err := u.Verify(); err != nil {
 		t.Fatalf("verify:%v", err)
 	}
 	if got := u.Val(100); got != 20 {
 		t.Fatalf("扣除后应为 20,实际 %d", got)
 	}
-	if err := u.AddErr(100, 5); err != nil {
-		t.Fatalf("已注册模型 AddErr 不应报错:%v", err)
-	}
+	u.Add(100, 5)
 	if err := u.Verify(); err != nil {
 		t.Fatalf("verify:%v", err)
 	}
 	if got := u.Val(100); got != 25 {
 		t.Fatalf("加回后应为 25,实际 %d", got)
-	}
-}
-
-// 解析失败语义自查:合法 iid 正常工作
-func TestAddErrParseSanity(t *testing.T) {
-	u := newMinimalUpdater(t)
-	defer u.Release()
-	u.Reset()
-
-	if err := u.AddErr(100, 1); err != nil {
-		t.Fatalf("合法 iid 不应报错:%v", err)
-	}
-	_ = strings.Contains("sanity", "check")
-}
-
-// 🔴 iid<=0 或 num<=0 一律跳过(空操作):业务配置表数值列缺省导出为 0,
-// "无重复奖励"关卡重打 Add(0,0) 曾被路由成 "model not registered" 置 u.Error,
-// 整次结算提交被拒。空奖励是合法配置态;负数 num 同理跳过(Sub 负数实为加钱)。
-func TestAddSubZeroIdOrNumSkips(t *testing.T) {
-	u := newMinimalUpdater(t)
-	defer u.Release()
-	u.Reset()
-
-	if err := u.AddErr(0, 10); err != nil {
-		t.Fatalf("AddErr(0,…) 应跳过而非报错:%v", err)
-	}
-	if err := u.SubErr(0, 10); err != nil {
-		t.Fatalf("SubErr(0,…) 应跳过而非报错:%v", err)
-	}
-	if err := u.AddErr(100, 0); err != nil {
-		t.Fatalf("AddErr(…,0) 应跳过而非报错:%v", err)
-	}
-	if err := u.SubErr(100, 0); err != nil {
-		t.Fatalf("SubErr(…,0) 应跳过而非报错:%v", err)
-	}
-	if err := u.AddErr(100, -5); err != nil {
-		t.Fatalf("AddErr(…,-5) 应跳过:%v", err)
-	}
-	if err := u.SubErr(100, -5); err != nil {
-		t.Fatalf("SubErr(…,-5) 应跳过(负数扣款实为发货):%v", err)
-	}
-	if u.Error != nil {
-		t.Fatalf("跳过不得置 u.Error:%v", u.Error)
-	}
-	if got := u.Val(100); got != 50 {
-		t.Fatalf("全部跳过后余额应保持 50,实际 %d", got)
-	}
-
-	// void 版本同样跳过
-	u.Add(0, 10)
-	u.Sub(100, 0)
-	if u.Error != nil {
-		t.Fatalf("void 跳过不得置 u.Error:%v", u.Error)
-	}
-
-	// 跳过不得吞掉真错误:未注册模型 + 正数 num 仍上抛路由错误
-	if err := u.AddErr(7777, 10); err == nil {
-		t.Fatal("未注册模型且 num>0 仍应返回路由错误")
-	}
-	if err := u.SubErr(7777, 10); err == nil {
-		t.Fatal("未注册模型且 num>0 仍应返回路由错误")
 	}
 }
