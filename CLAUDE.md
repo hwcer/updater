@@ -113,7 +113,7 @@ coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存
 
 ### Updater 公开方法
 
-`Add`, `Sub`, `Get`, `Val`, `Select` — 通过 IID 路由到对应 Handle。`Add/Sub` 的 num 参数为 `any`，在 Updater 层统一通过 `dataset.ParseInt64` 转换为 `int64`。
+`Add`, `Sub`, `Get`, `Val`, `Select` — 通过 IID 路由到对应 Handle。`Add/Sub` 的 num 参数为 `any`，在 Updater 层统一通过 `dataset.ParseInt64` 转换为 `int64`。**`Add/AddErr/Sub/SubErr` 对 `iid<=0` 或 `num<=0` 一律跳过（空操作，不报错）**——配置表数值列缺省导出为 0，"无奖励"是合法配置态；负数 `Sub` 实为加钱，同样拒绝。真正的路由失败（未注册模型等）仍上抛/置 `u.Error`。
 
 类型访问器: `Values()`, `Document()`, `Collection()`, `Virtual()` — 通过 name 或 IType ID 获取具体 Handle 实例。
 

@@ -312,12 +312,17 @@ func (u *Updater) Add(iid int32, num any) {
 }
 
 // AddErr 带错误返回的 Add:路由失败返回 error 而非静默忽略
+// iid<=0 或 num<=0 一律跳过(空操作):配置表数值列缺省导出为 0,"无奖励"是合法配置态而非错误
 func (u *Updater) AddErr(iid int32, num any) error {
+	v := dataset.ParseInt64(num)
+	if iid <= 0 || v <= 0 {
+		return nil
+	}
 	w, err := u.handleWithKeyErr(iid)
 	if err != nil || w == nil {
 		return err
 	}
-	w.increase(iid, dataset.ParseInt64(num))
+	w.increase(iid, v)
 	return nil
 }
 
@@ -329,12 +334,17 @@ func (u *Updater) Sub(iid int32, num any) {
 }
 
 // SubErr 带错误返回的 Sub:路由失败返回 error 而非静默忽略
+// iid<=0 或 num<=0 一律跳过(空操作):语义同 AddErr;负数 Sub 实为加钱,同样拒绝执行
 func (u *Updater) SubErr(iid int32, num any) error {
+	v := dataset.ParseInt64(num)
+	if iid <= 0 || v <= 0 {
+		return nil
+	}
 	w, err := u.handleWithKeyErr(iid)
 	if err != nil || w == nil {
 		return err
 	}
-	w.decrease(iid, dataset.ParseInt64(num))
+	w.decrease(iid, v)
 	return nil
 }
 

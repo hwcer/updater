@@ -91,3 +91,52 @@ func TestAddErrParseSanity(t *testing.T) {
 	}
 	_ = strings.Contains("sanity", "check")
 }
+
+// 🔴 iid<=0 或 num<=0 一律跳过(空操作):业务配置表数值列缺省导出为 0,
+// "无重复奖励"关卡重打 Add(0,0) 曾被路由成 "model not registered" 置 u.Error,
+// 整次结算提交被拒。空奖励是合法配置态;负数 num 同理跳过(Sub 负数实为加钱)。
+func TestAddSubZeroIdOrNumSkips(t *testing.T) {
+	u := newMinimalUpdater(t)
+	defer u.Release()
+	u.Reset()
+
+	if err := u.AddErr(0, 10); err != nil {
+		t.Fatalf("AddErr(0,…) 应跳过而非报错:%v", err)
+	}
+	if err := u.SubErr(0, 10); err != nil {
+		t.Fatalf("SubErr(0,…) 应跳过而非报错:%v", err)
+	}
+	if err := u.AddErr(100, 0); err != nil {
+		t.Fatalf("AddErr(…,0) 应跳过而非报错:%v", err)
+	}
+	if err := u.SubErr(100, 0); err != nil {
+		t.Fatalf("SubErr(…,0) 应跳过而非报错:%v", err)
+	}
+	if err := u.AddErr(100, -5); err != nil {
+		t.Fatalf("AddErr(…,-5) 应跳过:%v", err)
+	}
+	if err := u.SubErr(100, -5); err != nil {
+		t.Fatalf("SubErr(…,-5) 应跳过(负数扣款实为发货):%v", err)
+	}
+	if u.Error != nil {
+		t.Fatalf("跳过不得置 u.Error:%v", u.Error)
+	}
+	if got := u.Val(100); got != 50 {
+		t.Fatalf("全部跳过后余额应保持 50,实际 %d", got)
+	}
+
+	// void 版本同样跳过
+	u.Add(0, 10)
+	u.Sub(100, 0)
+	if u.Error != nil {
+		t.Fatalf("void 跳过不得置 u.Error:%v", u.Error)
+	}
+
+	// 跳过不得吞掉真错误:未注册模型 + 正数 num 仍上抛路由错误
+	if err := u.AddErr(7777, 10); err == nil {
+		t.Fatal("未注册模型且 num>0 仍应返回路由错误")
+	}
+	if err := u.SubErr(7777, 10); err == nil {
+		t.Fatal("未注册模型且 num>0 仍应返回路由错误")
+	}
+}
