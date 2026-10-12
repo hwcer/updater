@@ -29,6 +29,11 @@ func (at Types) IsSub() bool {
 	return at == TypesSub || at == TypesNew
 }
 
+// IsModify 是否会修改数据
+func (at Types) IsModify() bool {
+	return at == TypesAdd || at == TypesSub || at == TypesSet || at == TypesNew || at == TypesUnset
+}
+
 // IsValid 判断操作类型是否有效
 // 有效的操作类型包括：Add、Sub、Set、Del、New
 func (at Types) IsValid() bool {
