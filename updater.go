@@ -45,12 +45,12 @@ type Updater struct {
 	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
 	bulkWrite BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Destroy 重试),写库成功才清空
 
-	Cache         Cache           //自定义缓存数据
-	Error         error           //请求过程中的错误（业务码+参数，可直接作为回包错误下发）。建议经 Errorf 写入以携带业务码与 Args；字段零值即纯 nil 接口，读取/返回不再有 typed-nil 装箱陷阱
-	Events        Events          //生命周期事件
-	Mounts        Mounts          //临时挂载的数据集合（挂载表，入口见 Mounts.Load）
-	Middleware    Middlewares     //中间件，所有事件类型都会触发
-	CreditAllowed bool            //本次请求是否允许扣量为负（一次性标记）
+	Cache         Cache       //自定义缓存数据
+	Error         error       //请求过程中的错误（业务码+参数，可直接作为回包错误下发）。建议经 Errorf 写入以携带业务码与 Args；字段零值即纯 nil 接口，读取/返回不再有 typed-nil 装箱陷阱
+	Events        Events      //生命周期事件
+	Mounts        Mounts      //临时挂载的数据集合（挂载表，入口见 Mounts.Load）
+	Middleware    Middlewares //中间件，所有事件类型都会触发
+	CreditAllowed bool        //本次请求是否允许扣量为负（一次性标记）
 }
 
 // Manage 返回所属数据域
@@ -301,7 +301,7 @@ func (u *Updater) Release() {
 }
 
 func (u *Updater) Emit(t EventType) {
-	u.Events.emit(u, t)
+	u.Events.Emit(u, t)
 	u.Middleware.emit(u, t)
 }
 

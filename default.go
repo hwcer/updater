@@ -29,7 +29,7 @@ func RegisterGlobalCache(name string, creator CacheCreator) {
 }
 
 // RegisterGlobalEvent 注册默认域的事件
-func RegisterGlobalEvent(t EventType, handle func(u *Updater)) {
+func RegisterGlobalEvent(t EventType, handle EventFunc) {
 	Default.RegisterGlobalEvent(t, handle)
 }
 

@@ -45,15 +45,14 @@ type Options struct {
 // 兼容：包级 Register/Config/RegisterGlobalXxx/ITypes/Models 一行委托 Default 域；
 // Default 本身是包级 New() 造出的域。
 type Manage struct {
-	Config *Options //域配置：路由/上限/落库
-
-	parser        map[Parser]handleFunc          //句柄工厂表：构造时拷贝内置四项，NewHandle 可覆盖
-	modelsRank    []*Model                       //已注册模型，TableOrder 降序，驱动 Loading/Handles 遍历顺序
-	modelsDict    map[int32]*Model               //IType ID → Model，iid 路由反查表
-	itypesDict    map[int32]IType                //IType ID → IType（钩子载体）
-	cacheCreators map[string]CacheCreator        //域级缓存构造器：Loading 时为该域每个实例创建
-	events        map[EventType][]func(*Updater) //域级事件：对该域所有实例生效，永不取消（原 globalEvents）
-	middlewares   []Middleware                   //域级中间件：同上（原 globalMiddlewares）
+	Config        *Options                  //域配置：路由/上限/落库
+	events        map[EventType][]EventFunc //域级事件：对该域所有实例生效，永不取消（原 globalEvents）
+	parser        map[Parser]handleFunc     //句柄工厂表：构造时拷贝内置四项，NewHandle 可覆盖
+	modelsRank    []*Model                  //已注册模型，TableOrder 降序，驱动 Loading/Handles 遍历顺序
+	modelsDict    map[int32]*Model          //IType ID → Model，iid 路由反查表
+	itypesDict    map[int32]IType           //IType ID → IType（钩子载体）
+	cacheCreators map[string]CacheCreator   //域级缓存构造器：Loading 时为该域每个实例创建
+	middlewares   []Middleware              //域级中间件：同上（原 globalMiddlewares）
 }
 
 // defaultParseId ParseId 未配置时的默认实现:显式报错而不是运行期 nil 调用 panic。
@@ -73,10 +72,10 @@ func defaultIType(int32) int32 { return 0 }
 func New() *Manage {
 	m := &Manage{
 		Config:        &Options{ParseId: defaultParseId, IType: defaultIType, NewMax: defaultNewMax},
+		events:        map[EventType][]EventFunc{},
 		modelsDict:    make(map[int32]*Model),
 		itypesDict:    make(map[int32]IType),
 		cacheCreators: make(map[string]CacheCreator),
-		events:        map[EventType][]func(*Updater){},
 	}
 	m.parser = make(map[Parser]handleFunc, len(builtinHandles))
 	maps.Copy(m.parser, builtinHandles)
@@ -143,7 +142,7 @@ func (m *Manage) RegisterGlobalCache(name string, creator CacheCreator) {
 }
 
 // RegisterGlobalEvent 注册域级事件：对该域所有实例生效，永不取消（原"全局事件"语义收窄到域）
-func (m *Manage) RegisterGlobalEvent(t EventType, handle func(u *Updater)) {
+func (m *Manage) RegisterGlobalEvent(t EventType, handle EventFunc) {
 	if phase.Sealed() {
 		phase.Alert("updater.RegisterGlobalEvent(%v)", t)
 		return
