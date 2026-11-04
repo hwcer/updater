@@ -8,12 +8,13 @@ import (
 type Status uint8
 
 const (
-	StatusInit     Status = 1 << iota // 已初始化，按模块预设加载数据
+	StatusInit     Status = 1 << iota // 初始化，仅仅代表已经做过初始化，不绑定任何业务，也不一定有数据
 	StatusSubmit                      // 需要触发提交
 	StatusChanged                     // 数据变动，需要 Data 更新
 	StatusOperated                    // 新操作，需要 Verify 检查
 	StatusTesting                     // 测试模式，不写库
 	StatusDevelop                     // 开发者模式，业务层自取
+	StatusLoaded                      // 数据已真正加载（tryLoad 预拉完成）；已加载的实例不存在离线模式
 )
 
 func (s *Status) Has(flags ...Status) bool {

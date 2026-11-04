@@ -73,7 +73,7 @@ func TestManageTwoDomainsIsolation(t *testing.T) {
 
 	run := func(mg *Manage, m *manageValuesModel, uid string, iid int32) *Updater {
 		u := mg.New(&managePlayer{uid: uid})
-		if err := u.Loading(); err != nil {
+		if _, err := u.Loading(); err != nil {
 			t.Fatalf("Loading:%v", err)
 		}
 		u.Reset()
@@ -158,7 +158,7 @@ func TestDefaultDomainCompat(t *testing.T) {
 	if u.Manage() != Default {
 		t.Fatal("包级 New 产出的实例应属于 Default 域")
 	}
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatalf("Loading:%v", err)
 	}
 	u.Reset()

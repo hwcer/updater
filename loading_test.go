@@ -14,14 +14,14 @@ func TestLoadingRequiresBulkWrite(t *testing.T) {
 	t.Cleanup(func() { Config.BulkWrite = old })
 
 	u := Default.New(&mountPlayer{uid: "uid1"})
-	err := u.Loading()
+	_, err := u.Loading()
 	if err == nil {
 		t.Fatal("Config.BulkWrite 没配时 Loading 应当报错,否则落库会静默失效")
 	}
 	if !errors.Is(err, ErrBulkWriteNotInitialize) && err.Error() != ErrBulkWriteNotInitialize.Error() {
 		t.Fatalf("应当是 ErrBulkWriteNotInitialize,实际 %v", err)
 	}
-	if u.Loader() {
+	if st := u.Status(); st.Has(StatusInit) {
 		t.Fatal("检查没过就不该置 StatusInit —— 否则下次 Loading 会直接返回、当成已加载")
 	}
 }

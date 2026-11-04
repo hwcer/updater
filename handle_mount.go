@@ -35,6 +35,36 @@ type MountModel interface {
 	schema.Tabler
 }
 
+// mountBulkWrite Mount 侧的 dataset.CollectionWriter 适配：转发共享/独立 BulkWrite 与
+// MountModel.Setter。Collection 侧的 CollectionBulkWrite 已收敛为挂 *Collection handle
+// （Setter 走 CollectionWriter），Mount 没有该 handle，沿用这层直转发的旧形态。
+type mountBulkWrite struct {
+	model   MountModel
+	updater *Updater
+	// bulk 指定往哪个 BulkWrite 写。nil 时用 Updater 的共享实例；Mount.Submit 传独立实例，
+	// 好让单表落库不捎带提交玩家数据。
+	bulk BulkWrite
+}
+
+func (w *mountBulkWrite) write() BulkWrite {
+	if w.bulk != nil {
+		return w.bulk
+	}
+	return w.updater.BulkWrite()
+}
+
+func (w *mountBulkWrite) Delete(where ...any) {
+	w.write().Delete(w.model, where...)
+}
+
+func (w *mountBulkWrite) Insert(documents ...any) {
+	w.write().Insert(w.model, documents...)
+}
+
+func (w *mountBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
+	return w.model.Setter(w.updater, w.write(), _id, dirty, unset)
+}
+
 // Mounts 挂载表：临时挂载集合的注册处，每个 Updater 持有一个（Updater.Mounts 字段）。
 //
 // 与 Cache/Events 同款做法：集合形态的类型挂字段、方法挂在类型上，不直接挂在 Updater。
@@ -407,7 +437,7 @@ func (this *Mount) Submit() error {
 	if bulk == nil {
 		return ErrBulkWriteNotInitialize
 	}
-	if err := this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model, bulk)); err != nil {
+	if err := this.dataset.Save(&mountBulkWrite{model: this.model, updater: this.Updater, bulk: bulk}); err != nil {
 		return err
 	}
 	//测试模式只改内存不写库，与 Updater.Submit 的口径一致:数据已经进了这份 bulk，
@@ -566,7 +596,7 @@ func (this *Mount) save() error {
 	if this.Updater.BulkWrite() == nil {
 		return ErrBulkWriteNotInitialize
 	}
-	return this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model))
+	return this.dataset.Save(&mountBulkWrite{model: this.model, updater: this.Updater})
 }
 
 // reset 每次请求开始。

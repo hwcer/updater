@@ -90,7 +90,7 @@ func newMountUpdater(t *testing.T) (*Updater, *mountBulk) {
 	t.Cleanup(func() { Config.BulkWrite = old })
 
 	u := Default.New(&mountPlayer{uid: "mount_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatalf("Loading:%v", err)
 	}
 	u.Reset()
@@ -667,7 +667,7 @@ func TestMountSubmitUsesIsolatedBulkWrite(t *testing.T) {
 	t.Cleanup(func() { Config.BulkWrite = old })
 
 	u := Default.New(&mountPlayer{uid: "mount_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatalf("Loading:%v", err)
 	}
 	u.Reset()
@@ -745,7 +745,7 @@ func TestMountSubmitNoopWhenClean(t *testing.T) {
 	t.Cleanup(func() { Config.BulkWrite = old })
 
 	u := Default.New(&mountPlayer{uid: "mount_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatalf("Loading:%v", err)
 	}
 	u.Reset()

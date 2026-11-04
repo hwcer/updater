@@ -19,6 +19,38 @@ go vet ./...
 
 Module path: `github.com/hwcer/updater`
 
+### 离线档（Loading(true)，跨玩家补数据的轻量形态）
+
+`Loading(offline ...bool) (status Status, err error)`（无参 = 在线档），供 yyds `player.Initialize`
+使用（跨玩家写离线玩家）。离线档（`offline` 私有字段，仅当 `Loading(true)` 且**尚未
+StatusLoaded** 时进入——已加载数据的实例不存在离线模式）。
+查询接口 `Status()` / `Loaded()` 取代旧 `Loader()`。Loading 不再带回调——组件创建等收尾由
+调用方在 Loading 前自行处理（yyds 在 Loading 前建组件，createComponents 自身幂等）。
+
+**机制：handle 零改动，全部 handle 按 RAMTypeNone 运行**——`statement.GetRAMType()` 在
+离线时一律返回 None（**不改写 ram 注册值**）。由此自动获得：不预拉、release 丢 dataset
+不驻留；请求内照常走完整内存流水线——写 Select 记账 → Submit 收敛的 Data **按需拉触碰的键**
+→ Parse 读改写（校验/溢出/惰性重置/Listener/Result 全保留）→ save **绝对值 $set**（幂等
+可重试，无 $inc 双记问题）。Document/Collection/Values/Virtual/Mount 全部自动生效。
+
+**上线恢复原始形态（转正）**：无参 Loading 清掉 offline → `GetRAMType()` 自动回注册值、
+各 handle 的 loader 未置（None 期间按需拉不置）→ 幂等分支 `tryLoad` 重新全量预拉 →
+`Set(StatusLoaded)`。进出都是 Loading 一个入口，ram 字段全程未被改写。
+
+- **什么时候需要自己实现 writer（Setter）**：判据是「miss 时能不能用**整文档 Insert** 兜底」。
+  - **不需要**（默认即可）：Collection 形态——写入口 `Select(OID)` 记账 → Submit 收敛 Data
+    按键拉取（写之前一定拉数据）→ Parse 时 miss 且 `model.Upsert=true` →
+    `collectionHandleNewItem` 用 itype creator 造整文档 **Insert**（身份字段 iid/uid/OID 由
+    creator 填）；Setter 只在 Update 分支被调（行必已存在）。默认 Setter 就是键级 `$set`，
+    **无需自拼 `$setOnInsert`**。
+  - **需要**：落库形态不走「键级 $set on 已存在文档」的模型——典型是 **Values/Record 形态**
+    （一键一行、行身份由业务规则定位如复合 Unique id、用 UpdateOne upsert 落库）。这类模型
+    miss 时整文档 Insert 不适用，必须自己实现 Setter 并自带 `$setOnInsert` 身份字段
+    （项目 record.go 是范例；cosmo 见载荷含 `$setOnInsert` 自动置 upsert）。
+- 离线档的已知边界（`StatusLoaded` 恒 false）：`Collection.Count`（扫不全量数据）等项目侧
+  自行拦截；跨玩家补数据以「读触碰键 + 写绝对值」为限，需要复杂判定（溢出分解等）的业务
+  先读够再写。
+
 ## Architecture
 
 ### Core Lifecycle

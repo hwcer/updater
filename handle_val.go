@@ -70,7 +70,7 @@ func (this *Values) IType(iid int32) IType {
 
 // Select 指定需要从数据库更新的字段
 func (this *Values) Select(keys ...any) {
-	if this.ram == RAMTypeAlways {
+	if this.GetRAMType() == RAMTypeAlways {
 		return
 	}
 	for _, k := range keys {
@@ -144,7 +144,7 @@ func (this *Values) loading() error {
 
 func (this *Values) release() {
 	this.statement.release()
-	if this.statement.ram == RAMTypeNone {
+	if this.statement.GetRAMType() == RAMTypeNone {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
@@ -160,7 +160,7 @@ func (this *Values) submit() (err error) {
 		return
 	}
 	this.statement.submit()
-	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+	if err = this.save(); err != nil && this.GetRAMType() != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.name, err)
 		err = nil
 	}

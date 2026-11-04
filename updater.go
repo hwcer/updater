@@ -41,6 +41,7 @@ type Updater struct {
 	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
 	entity    Entity               //数据属主（业务层实现，见 Entity）
 	status    Status               //状态位：Init/Submit/Changed/Operated
+	offline   bool                 //离线模式，不会强制加载数据，
 	manage    *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
 	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
 	bulkWrite BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Destroy 重试),写库成功才清空
@@ -118,8 +119,12 @@ func (u *Updater) Save() (err error) {
 	return
 }
 
-func (u *Updater) Loader() bool {
-	return u.status.Has(StatusInit)
+func (u *Updater) Status() Status {
+	return u.status
+}
+
+func (u *Updater) Loaded() bool {
+	return u.status.Has(StatusLoaded)
 }
 
 // Develop 设置或获取开发者模式标记，仅供业务层自取
@@ -181,11 +186,49 @@ func (u *Updater) Reload() error {
 	return nil
 }
 
-// Loading 重新加载数据,自动关闭异步数据
-// init 立即加载玩家所有数据
-func (u *Updater) Loading(cb ...func()) (err error) {
+// tryLoad 离线模式初始化之后真上线重新拉取数据
+func (u *Updater) tryLoad() (err error) {
+	if u.offline || u.status.Has(StatusLoaded) {
+		return nil
+	}
+
+	for _, model := range u.manage.modelsRank {
+		name := model.name
+		handle := u.handles[name]
+		if handle == nil {
+			continue
+		}
+		if err = handle.loading(); err != nil {
+			return err
+		}
+	}
+	u.status.Set(StatusLoaded)
+	return nil
+}
+
+// Loading 加载数据。
+//
+// offline 离线档（跨玩家补数据的轻量形态，契约见仓 CLAUDE.md「离线档」）：跳过 Maybe/Always
+// 预拉——读在首次触碰时整表拉一次（Document.offlinePull），Document 的写直译 Mongo 原子算子
+// （$set/$inc/$unset，见 handle_doc 的 offlineOperator/offlineSave）、不因写触发读。
+// 供 yyds player.Initialize 使用：改一个字段不再付整档全量加载 + 长期驻留的代价；登录路径
+// 传 false，整档语义不变。
+//
+// 返回 init：本次是否真的执行了加载（false = 已加载过，幂等跳过；含预拉与否由 offline 决定）。
+// err 非 nil 时 init 恒为 false。组件创建等收尾不再走回调——调用方在 Loading 前后自行处理。
+
+// init 是否初始化(第一次加载)
+
+func (u *Updater) Loading(Offline ...bool) (status Status, err error) {
+	if len(Offline) > 0 && Offline[0] && !u.status.Has(StatusLoaded) {
+		u.offline = true //仅仅当明确设置成离线模式，并且没有加载数据才会进入离线模式，如果已经加载了数据就不存在离线模式
+	} else if u.offline {
+		//离线档实例真上线（无参/在线加载）：清掉 offline 恢复原始形态——GetRAMType()
+		//回到注册值、各 handle 的 loader 未置，下面的幂等分支走 tryLoad 重新全量预拉
+		u.offline = false
+	}
 	if u.status.Has(StatusInit) {
-		return
+		return u.status, u.tryLoad() //初始化但是未必加载
 	}
 	//🔴 开服自检：Config.BulkWrite 没配的话，**所有句柄的落库都会静默失效** ——
 	//save 报出的 ErrBulkWriteNotInitialize 会被 submit 吞成一行 Alert，玩家一路正常玩、
@@ -195,25 +238,22 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 	//与其让每个句柄在运行期各自发明一套更严的行为，不如在玩家数据第一次加载时就拦下来：
 	//这时还没产生任何数据改动，报错干净。
 	if u.manage.Config.BulkWrite == nil {
-		return ErrBulkWriteNotInitialize
+		return u.status, ErrBulkWriteNotInitialize
 	}
-	u.status.Set(StatusInit)
 
 	if u.handles == nil {
 		u.handles = make(map[string]Handle)
 	}
+
 	for _, model := range u.manage.modelsRank {
 		name := model.name
 		handle := u.handles[name]
 		if handle == nil {
 			handle = u.manage.parser[model.parser](u, model)
 			u.handles[name] = handle
-		}
-		if err = handle.loading(); err != nil {
-			//回退标志:否则幂等闸门(status.Has(StatusInit))会让重试静默返回nil,
-			//玩家带着缺数据的句柄进游戏
-			u.status.Unset(StatusInit)
-			return
+			if err = handle.loading(); err != nil {
+				return u.status, err
+			}
 		}
 	}
 
@@ -221,17 +261,18 @@ func (u *Updater) Loading(cb ...func()) (err error) {
 		u.now = time.Now()
 	}
 	u.last = u.now
-
-	for _, f := range cb {
-		f()
+	u.status.Set(StatusInit)
+	if !u.offline {
+		u.status.Set(StatusLoaded)
 	}
 
 	for k, v := range u.manage.cacheCreators {
 		_ = u.Cache.LoadOrCreate(u, k, v)
 	}
+
 	u.Emit(EventTypeInit)
 
-	return
+	return u.status, nil
 }
 
 // Reset 重置,每次请求开始时调用
@@ -282,7 +323,9 @@ func (u *Updater) Release() {
 		op.Release()
 	}
 	u.dirty = nil
-	u.status &= StatusInit | StatusTesting | StatusDevelop
+	//🔴 StatusLoaded 必须跨请求保留（在线档 dataset 常驻，加载态不随请求清）：
+	//漏在保留集里会让第二个请求起 verify 判「未加载」跳过 Parse，内存流水线整体失效
+	u.status &= StatusInit | StatusLoaded | StatusTesting | StatusDevelop
 	//🔴 u.bulkWrite 不在这里清理:提交失败的队列要跨请求保留,
 	//由下次请求的 Reset / Submit / Destroy 重试,写库成功才清空
 	u.Error = nil

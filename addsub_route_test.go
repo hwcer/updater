@@ -25,7 +25,7 @@ func newMinimalUpdater(t *testing.T) *Updater {
 		t.Fatal(err)
 	}
 	u := mg.New(&managePlayer{uid: "addsub_route_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatal(err)
 	}
 	return u

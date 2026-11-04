@@ -83,7 +83,7 @@ func newCapUpdater(t *testing.T, model *capCollModel, its ...capIType) *Updater 
 		t.Fatal(err)
 	}
 	u := mg.New(&managePlayer{uid: "cap_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatal(err)
 	}
 	return u
@@ -157,7 +157,7 @@ func TestNilITypeDegradesInsteadOfPanic(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := mg.New(&managePlayer{uid: "nil_itype_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatal(err)
 	}
 	u.Reset()
@@ -225,7 +225,7 @@ func TestDocumentAddOverflowRejects(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := mg.New(&managePlayer{uid: "doc_overflow_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatal(err)
 	}
 	u.Reset()

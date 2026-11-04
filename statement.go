@@ -32,10 +32,21 @@ func newStatement(u *Updater, m *Model, exist stmHandleExist) *statement {
 	return &statement{ram: m.ram, handleExist: exist, Updater: u}
 }
 
+// GetRAMType 运行态 RAM 类型：离线模式一律按 RAMTypeNone 运行（不预拉、release 丢
+// dataset 不驻留；请求内照常 Select→Data 按需拉→Parse 读改写→save 绝对值），**不改写
+// ram 原始注册值**——玩家上线清掉 offline 后本方法自动恢复原始语义，配合 tryLoad 重新
+// 预拉即回到在线形态。消费点一律读这里，不要直读 ram 字段。
+func (stmt *statement) GetRAMType() RAMType {
+	if stmt.Updater.offline {
+		return RAMTypeNone
+	}
+	return stmt.ram
+}
+
 // Has 查询key是否已经初始化。key 的形态随 handle 而定:Document 是字段名(json 名,
 // 见 Document.Name),Collection 是 OID,Values 是 iid
 func (stmt *statement) has(key any) bool {
-	if stmt.ram == RAMTypeAlways && stmt.loader {
+	if stmt.GetRAMType() == RAMTypeAlways && stmt.loader {
 		return true
 	}
 	if stmt.keys != nil && stmt.keys.Has(key) {
@@ -53,7 +64,7 @@ func (stmt *statement) reload() {
 
 // 是否需要执行加载
 func (stmt *statement) loading() bool {
-	return stmt.Updater.status.Has(StatusInit) && !stmt.loader && (stmt.ram == RAMTypeMaybe || stmt.ram == RAMTypeAlways)
+	return !stmt.loader && (stmt.GetRAMType() == RAMTypeMaybe || stmt.GetRAMType() == RAMTypeAlways)
 }
 
 // 每一个执行时都会执行 release

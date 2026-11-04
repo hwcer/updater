@@ -78,7 +78,7 @@ func newBWRetryUpdater(t *testing.T, bw BulkWrite, model *bwValuesModel) *Update
 		t.Fatal(err)
 	}
 	u := mg.New(&managePlayer{uid: "bw_retry_uid"})
-	if err := u.Loading(); err != nil {
+	if _, err := u.Loading(); err != nil {
 		t.Fatal(err)
 	}
 	return u

@@ -173,7 +173,7 @@ func (this *Document) loading() (err error) {
 
 func (this *Document) release() {
 	this.statement.release()
-	if this.statement.ram == RAMTypeNone {
+	if this.statement.GetRAMType() == RAMTypeNone {
 		this.dataset = nil
 		this.schema = nil
 	} else {
@@ -190,7 +190,7 @@ func (this *Document) submit() (err error) {
 		return
 	}
 	this.statement.submit()
-	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+	if err = this.save(); err != nil && this.GetRAMType() != RAMTypeNone {
 		logger.Alert("数据库[%v]同步数据错误,等待下次同步:%v", this.Table(), err)
 		err = nil
 	}

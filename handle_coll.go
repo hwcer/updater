@@ -79,6 +79,10 @@ func (this *Collection) Data() (err error) {
 // 统计含本次请求内尚未落库的新增(见 dataset.Collection.Count),代价 O(n)
 // 取 iid 优先用 dataset.Model.GetIID(),模型未实现时才按 Fields.IID 字段名兜底
 func (this *Collection) Count(iid int32) int64 {
+	if this.Updater.offline {
+		_ = this.Updater.Errorf("离线模式禁止使用 Collection.Count")
+		return 0
+	}
 	it := this.ITypeCollection(iid)
 	if it == nil {
 		return 0
@@ -138,7 +142,7 @@ func (this *Collection) save() (err error) {
 	if this.Updater.BulkWrite() == nil {
 		return ErrBulkWriteNotInitialize
 	}
-	return this.dataset.Save(newCollectionBulkWrite(this.Updater, this.model))
+	return this.dataset.Save(newCollectionBulkWrite(this))
 }
 
 func (this *Collection) reset() {
@@ -169,17 +173,13 @@ func (this *Collection) loading() error {
 			this.statement.loader = true
 		}
 	}
-	//🔴 Error 是具体指针类型：nil 装进 error 接口就是非 nil（typed-nil），判空后显式 return
-	if this.Updater.Error != nil {
-		return this.Updater.Error
-	}
-	return nil
+	return this.Updater.Error
 }
 
 func (this *Collection) release() {
 	this.statement.release()
 	this.remove = nil
-	if this.statement.ram == RAMTypeNone {
+	if this.statement.GetRAMType() == RAMTypeNone {
 		this.dataset = nil
 	} else {
 		this.dataset.Release()
@@ -195,7 +195,7 @@ func (this *Collection) submit() (err error) {
 		return
 	}
 	this.statement.submit()
-	if err = this.save(); err != nil && this.ram != RAMTypeNone {
+	if err = this.save(); err != nil && this.GetRAMType() != RAMTypeNone {
 		logger.Alert("同步数据失败,等待下次同步:%v", err)
 		err = nil
 	}
@@ -491,7 +491,7 @@ func (this *Collection) format(op *operator.Operator) {
 	for k, v := range result {
 		name, err := sch.JSName(k)
 		if err != nil {
-			this.Updater.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
+			_ = this.Updater.Errorf("operator.set field error,name:%s,field:%s,error:%v", this.name, k, err)
 			return
 		}
 		data[name] = v
@@ -511,16 +511,15 @@ func (this *Collection) format(op *operator.Operator) {
 //     Mount.Delete(id string) 与接口要求的 Delete(where ...any) 重名不同签，
 //     一个类型上放不下。
 type CollectionBulkWrite struct {
-	model   CollectionModel
-	updater *Updater
+	coll *Collection
 	// bulk 指定往哪个 BulkWrite 写。nil 时用 Updater 那份**共享**实例（常规路径）；
 	// Mount.Submit 会传一份独立的进来，好让单表落库不捎带提交玩家数据。
 	bulk BulkWrite
 }
 
 // newCollectionBulkWrite 不传 bulk 就用 Updater 的共享实例。
-func newCollectionBulkWrite(u *Updater, model CollectionModel, bulk ...BulkWrite) *CollectionBulkWrite {
-	r := &CollectionBulkWrite{updater: u, model: model}
+func newCollectionBulkWrite(coll *Collection, bulk ...BulkWrite) *CollectionBulkWrite {
+	r := &CollectionBulkWrite{coll: coll}
 	if len(bulk) > 0 {
 		r.bulk = bulk[0]
 	}
@@ -531,17 +530,17 @@ func (w *CollectionBulkWrite) write() BulkWrite {
 	if w.bulk != nil {
 		return w.bulk
 	}
-	return w.updater.BulkWrite()
+	return w.coll.Updater.BulkWrite()
 }
 
 func (w *CollectionBulkWrite) Delete(where ...any) {
-	w.write().Delete(w.model, where...)
+	w.write().Delete(w.coll.model, where...)
 }
 
 func (w *CollectionBulkWrite) Insert(documents ...any) {
-	w.write().Insert(w.model, documents...)
+	w.write().Insert(w.coll.model, documents...)
 }
 
 func (w *CollectionBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
-	return w.model.Setter(w.updater, w.write(), _id, dirty, unset)
+	return w.coll.model.Setter(w.coll.Updater, w.write(), _id, dirty, unset)
 }
