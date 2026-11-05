@@ -208,16 +208,15 @@ func (u *Updater) tryLoad() (err error) {
 
 // Loading 加载数据。
 //
-// offline 离线档（跨玩家补数据的轻量形态，契约见仓 CLAUDE.md「离线档」）：跳过 Maybe/Always
-// 预拉——读在首次触碰时整表拉一次（Document.offlinePull），Document 的写直译 Mongo 原子算子
-// （$set/$inc/$unset，见 handle_doc 的 offlineOperator/offlineSave）、不因写触发读。
-// 供 yyds player.Initialize 使用：改一个字段不再付整档全量加载 + 长期驻留的代价；登录路径
-// 传 false，整档语义不变。
+// offline 离线档（跨玩家补数据的轻量形态，契约见仓 CLAUDE.md「离线档」）：无参 = 在线档。
+// 离线档下所有 handle 按 RAMTypeNone 运行（GetRAMType() 动态返回 None，不改 ram 注册值）——
+// 不预拉、release 不驻留，请求内照常走完整内存流水线（Data 按需拉触碰的键、Parse 读改写
+// 校验/溢出全保留、save 绝对值 $set），Document/Collection/Values/Virtual/Mount 全部自动生效。
+// 供 yyds player.Initialize 使用：改一个字段不再付整档全量加载 + 长期驻留的代价；
+// 已加载过的实例不存在离线档。
 //
-// 返回 init：本次是否真的执行了加载（false = 已加载过，幂等跳过；含预拉与否由 offline 决定）。
-// err 非 nil 时 init 恒为 false。组件创建等收尾不再走回调——调用方在 Loading 前后自行处理。
-
-// init 是否初始化(第一次加载)
+// 返回 status（位定义见 Status；离线档恒不含 StatusLoaded）。err 非 nil 时以 err 为准。
+// 组件创建等收尾不再走回调——调用方在 Loading 前后自行处理。
 
 func (u *Updater) Loading(Offline ...bool) (status Status, err error) {
 	if len(Offline) > 0 && Offline[0] && !u.status.Has(StatusLoaded) {
