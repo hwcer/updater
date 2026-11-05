@@ -2,8 +2,10 @@ package updater
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/hwcer/cosgo/schema"
+	"github.com/hwcer/cosmo/update"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
 	"github.com/hwcer/updater/operator"
@@ -13,7 +15,42 @@ type CollectionModel interface {
 	Upsert(update *Updater, op *operator.Operator) bool
 	Schema() *schema.Schema
 	Getter(update *Updater, data *dataset.Collection, keys []string) error
+}
+
+// CollectionWriter 自定义写库处理（可选）。**仅当落库形态不走「键级 $set/$unset on 已存在
+// 文档」时才实现**——判据：miss 时能否用整文档 Insert 兜底（Collection 形态能：
+// NewItem → itype creator 整文档 Insert，Setter 只在 Update 分支被调）。默认实现即键级
+// $set + $unset（含「unset 与 dirty 父键冲突时跳过」防御），绝大多数模型无需实现本接口；
+// 实现者必须加编译期断言（防签名漂移静默失效）。
+type CollectionWriter interface {
 	Setter(update *Updater, bulkWrite BulkWrite, _id string, dirty dataset.Update, unset []string) error
+}
+
+// defaultUpdatePayload 默认写库载荷：dirty 全进 $set、unset 进 $unset；unset 键与任一
+// dirty 键路径重叠（相同或互为父子段前缀，任意深度、双向）时跳过——$set 与 $unset 修饰
+// 重叠路径 Mongo 整单拒绝（code 40，Active 的 attach 整字段/子键混写同款冲突；同路径的
+// 互斥 dataset 层已保证，这里兜跨层级）。保 set、丢 unset。Collection/Mount（where=_id）
+// 与 Document（where=uid）共用。
+// 🔴 无 unset 时返回裸 map[string]any（与既有自定义 Setter 的 data 形态一致，自定义
+// BulkWrite 实现按 map 断言的兼容不破）；仅带 unset 时才组 update.Update。
+func defaultUpdatePayload(dirty dataset.Update, unset []string) any {
+	if len(unset) == 0 {
+		return map[string]any(dirty)
+	}
+	up := update.NewFromMap(map[string]any(dirty))
+	for _, k := range unset {
+		overlap := false
+		for d := range dirty {
+			if d == k || strings.HasPrefix(d, k+".") || strings.HasPrefix(k, d+".") {
+				overlap = true
+				break
+			}
+		}
+		if !overlap {
+			up.Unset(k)
+		}
+	}
+	return up
 }
 
 type CollectionModelValueJSName interface {
@@ -472,12 +509,12 @@ func (this *Collection) format(op *operator.Operator) {
 	data := dataset.Update{}
 	result, ok := op.Result.(dataset.Update)
 	if !ok {
-		this.Updater.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
+		_ = this.Updater.Errorf("operator.set return error name:%s  result:%v", this.name, op.Result)
 		return
 	}
 	sch := this.Schema()
 	if sch == nil {
-		this.Updater.Errorf("operator.set schema empty:%s", this.name)
+		_ = this.Updater.Errorf("operator.set schema empty:%s", this.name)
 		return
 	}
 	//统一成 json 名,与 Document.Field 同口径(理由见 Document.Name):op.Result 既是发
@@ -542,5 +579,9 @@ func (w *CollectionBulkWrite) Insert(documents ...any) {
 }
 
 func (w *CollectionBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
-	return w.coll.model.Setter(w.coll.Updater, w.write(), _id, dirty, unset)
+	if m, ok := w.coll.model.(CollectionWriter); ok {
+		return m.Setter(w.coll.Updater, w.write(), _id, dirty, unset)
+	}
+	w.write().Update(w.coll.model, defaultUpdatePayload(dirty, unset), _id)
+	return nil
 }

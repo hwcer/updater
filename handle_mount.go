@@ -62,7 +62,11 @@ func (w *mountBulkWrite) Insert(documents ...any) {
 }
 
 func (w *mountBulkWrite) Setter(_id string, dirty dataset.Update, unset []string) error {
-	return w.model.Setter(w.updater, w.write(), _id, dirty, unset)
+	if m, ok := w.model.(CollectionWriter); ok {
+		return m.Setter(w.updater, w.write(), _id, dirty, unset)
+	}
+	w.write().Update(w.model, defaultUpdatePayload(dirty, unset), _id)
+	return nil
 }
 
 // Mounts 挂载表：临时挂载集合的注册处，每个 Updater 持有一个（Updater.Mounts 字段）。

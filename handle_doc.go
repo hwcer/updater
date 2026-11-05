@@ -20,6 +20,11 @@ type DocumentModel interface {
 	IType(int32) int32
 	Field(update *Updater, iid int32) (string, error)
 	Getter(update *Updater, data *dataset.Document, keys []string) error
+}
+
+// DocumentWriter 自定义写库处理（可选）——仅当落库形态不走「键级 $set/$unset（where=uid）」
+// 时实现（文档行必存在，默认实现即够）；实现者必须加编译期断言。
+type DocumentWriter interface {
 	Setter(update *Updater, bulkWrite BulkWrite, dirty dataset.Update, unset []string) error
 }
 
@@ -119,7 +124,12 @@ func (this *Document) save() (err error) {
 	}
 	dirty, unsets, derr := this.dataset.Save()
 	if len(dirty) > 0 || len(unsets) > 0 {
-		if err = this.model.Setter(this.Updater, bw, dirty, unsets); err != nil {
+		if w, ok := this.model.(DocumentWriter); ok {
+			err = w.Setter(this.Updater, bw, dirty, unsets)
+		} else {
+			bw.Update(this.model, defaultUpdatePayload(dirty, unsets), this.Updater.Id())
+		}
+		if err != nil {
 			ds, _ := json.Marshal(dirty)
 			logger.Alert("database save error,uid:%s,Document:%s\nOperation:%s\nerror:%s", this.Updater.Id(), this.name, ds, err.Error())
 			//落库失败:载荷已含业务转换结果,整批回填脏标记,"失败等待下次同步"才有数据可重发
