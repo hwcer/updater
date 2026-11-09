@@ -213,6 +213,11 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 	//只摘除已成功处理的条目:Setter失败时,失败条目(恢复doc级脏标记)与
 	//尚未轮到的条目都必须留在dirty里,调用方"失败等待下次同步"的重试才有数据可重发;
 	//旧实现无条件coll.dirty = nil,一次失败等于永久丢改动
+	//🔴 本轮重新出发(同 Document/Values.Save):上次失败遗留的条目仍在 coll.dirty 里,
+	//本轮会被重新处理;仍失败则下面重新置位。旧实现只在结尾判「err==nil && !saveFailed」
+	//时复位——条件成立时它本来就是 false,saveFailed 一旦置位就永远清不掉,此后 Release
+	//恒提前返回:失败请求本该丢弃的脏键被保留,下次 Save 当成正常改动写进库
+	coll.saveFailed = false
 	processed := make([]string, 0, len(coll.dirty))
 	for k, v := range coll.dirty {
 		if v.op.Has(collOperatorDelete) {
@@ -260,9 +265,6 @@ func (coll *Collection) Save(w CollectionWriter) (err error) {
 	}
 	for _, k := range processed {
 		delete(coll.dirty, k)
-	}
-	if err == nil && !coll.saveFailed {
-		coll.saveFailed = false //本轮全部落库成功,解除Release保留
 	}
 	return
 }

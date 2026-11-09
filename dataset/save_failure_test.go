@@ -58,6 +58,35 @@ func TestSaveFailureRetainsDirtyAcrossRelease(t *testing.T) {
 	}
 }
 
+// 🔴 回归:一次落库失败、重试成功之后,saveFailed 必须解除,Release 恢复「丢弃未落库脏键」——
+// 旧实现结尾复位条件写反(只在已是 false 时置 false),一次失败后 Release 永久提前返回:
+// 失败请求本该丢弃的改动被保留,下次 Save 当成正常改动写进库
+func TestCollectionSaveFailureFlagClearsAfterRetry(t *testing.T) {
+	coll := NewColl()
+	if err := coll.Insert(&monTestItem{OID: "a", Val: 1}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := coll.Save(monTestWriter{}); err != nil {
+		t.Fatalf("初始落库: %v", err)
+	}
+	_ = coll.Update("a", Update{"val": int64(2)})
+	if err := coll.Save(failWriter{err: errors.New("db down")}); err == nil {
+		t.Fatal("Setter 失败应返回错误")
+	}
+	if err := coll.Save(monTestWriter{}); err != nil {
+		t.Fatalf("重试 save: %v", err)
+	}
+	if coll.saveFailed {
+		t.Fatal("重试成功后 saveFailed 应解除")
+	}
+	//一次被放弃的请求:记了脏、没 Save 就 Release,改动必须丢弃
+	_ = coll.Update("a", Update{"val": int64(3)})
+	coll.Release()
+	if len(coll.dirty) != 0 {
+		t.Fatalf("重试成功后 Release 应清空未落库的脏键,残留 %v", coll.dirty)
+	}
+}
+
 // failSetModel 模拟业务 ModelSet:对 badKey 走"声称处理却产出 nil"的错误路径
 // (document.setter 拦截转错误),其余键放行。平铺结构,避免嵌入干扰 schema 解析
 type failSetModel struct {
