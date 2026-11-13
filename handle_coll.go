@@ -116,16 +116,15 @@ func (this *Collection) Data() (err error) {
 // 统计含本次请求内尚未落库的新增(见 dataset.Collection.Count),代价 O(n)
 // 取 iid 优先用 dataset.Model.GetIID(),模型未实现时才按 Fields.IID 字段名兜底
 func (this *Collection) Count(iid int32) int64 {
-	if this.Updater.offline {
-		_ = this.Updater.Errorf("离线模式禁止使用 Collection.Count")
-		return 0
-	}
 	it := this.ITypeCollection(iid)
 	if it == nil {
 		return 0
 	}
 	if it.Stacked(iid) {
-		return this.Val(iid)
+		return this.Val(iid) //可叠加 = 单文档点查(懒加载需业务先 Select+Data)
+	}
+	if this.statement.lazyScan("Collection", "Count") {
+		return 0
 	}
 	return this.dataset.Count(func(doc *dataset.Document) bool {
 		return docIID(doc) == iid
@@ -218,12 +217,13 @@ func (this *Collection) release() {
 	this.remove = nil
 	if this.statement.GetRAMType() == RAMTypeNone {
 		this.dataset = nil
+		this.statement.loader = false //数据丢了加载态必须跟着丢，见 statement.loader
 	} else {
 		this.dataset.Release()
 	}
 }
 
-func (this *Collection) destroy() (err error) {
+func (this *Collection) unload() (err error) {
 	return this.save()
 }
 
@@ -327,7 +327,13 @@ func (this *Collection) New(v dataset.Model) (err error) {
 	return
 }
 
+// Len / Range / Cursor 是扫描:懒加载数据未整表加载,一律报错(Range 不迭代、Len 返回 0),
+// 不静默给半份。Cursor 返回空数据集上的游标(非 nil 防调用方 nil panic,也不遍历到半份——
+// 遍历里若有发信/推送/直连写库这类管线外副作用,请求后续失败也拦不住)
 func (this *Collection) Len() int {
+	if this.statement.lazyScan("Collection", "Len") {
+		return 0
+	}
 	return this.dataset.Len()
 }
 
@@ -341,10 +347,16 @@ func (this *Collection) Has(id any) (r bool) {
 }
 
 func (this *Collection) Range(h func(id string, doc *dataset.Document) bool) {
+	if this.statement.lazyScan("Collection", "Range") {
+		return
+	}
 	this.dataset.Range(h)
 }
 
 func (this *Collection) Cursor(key string) *dataset.Cursor {
+	if this.statement.lazyScan("Collection", "Cursor") {
+		return dataset.NewColl().Cursor(key)
+	}
 	return this.dataset.Cursor(key)
 }
 

@@ -146,12 +146,13 @@ func (this *Values) release() {
 	this.statement.release()
 	if this.statement.GetRAMType() == RAMTypeNone {
 		this.dataset = nil
+		this.statement.loader = false //数据丢了加载态必须跟着丢，见 statement.loader
 	} else {
 		this.dataset.Release()
 	}
 }
 
-func (this *Values) destroy() (err error) {
+func (this *Values) unload() (err error) {
 	return this.save()
 }
 
@@ -200,7 +201,11 @@ func (this *Values) Unset(k int32) *operator.Operator {
 	return this.operator(operator.TypesUnset, k, 0)
 }
 
+// Len / All / Range 是扫描:懒加载数据未整表加载,一律报错并返回空,不静默给半份
 func (this *Values) Len() int {
+	if this.statement.lazyScan("Values", "Len") {
+		return 0
+	}
 	return this.dataset.Len()
 }
 func (this *Values) Has(k any) bool {
@@ -208,10 +213,16 @@ func (this *Values) Has(k any) bool {
 }
 
 func (this *Values) All() dataset.Data {
+	if this.statement.lazyScan("Values", "All") {
+		return nil
+	}
 	return this.dataset.All()
 }
 
 func (this *Values) Range(f func(int32, int64) bool) {
+	if this.statement.lazyScan("Values", "Range") {
+		return
+	}
 	this.dataset.Range(f)
 }
 

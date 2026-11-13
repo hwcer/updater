@@ -159,7 +159,7 @@ func (ms *Mounts) Get(model MountModel) *Mount {
 // ⚠️ 卸载粒度是**整张表**，不是"这一条"。同一模型上并发多个实例（一个玩家两场战斗）时，
 // 先结束的那场 Remove 会把另一场的内存一起端掉 —— 数据不会丢（每次 Submit 都写穿了库），
 // 但对方后续 Get 会拿到 nil 直到重新 Select。口径：**只有最后一个实例结束时才 Remove**；
-// 业务判断不了是不是最后一个，就别卸，留给玩家下线兜底（Destroy 会刷盘）。
+// 业务判断不了是不是最后一个，就别卸，留给玩家下线兜底（Unload 会刷盘）。
 func (ms *Mounts) Remove(model MountModel) {
 	if r, ok := ms.tables[model.TableName()]; ok {
 		r.unmount = true
@@ -650,12 +650,12 @@ func (this *Mount) release() {
 	this.dataset.Release()
 }
 
-// destroy 玩家下线：刷盘。失败遗留队列一并冲账,成功才清
-func (this *Mount) destroy() error {
+// unload 玩家下线：刷盘。失败遗留队列一并冲账,成功才清
+func (this *Mount) unload() error {
 	if this.bulk != nil {
 		if err := this.bulk.Submit(); err != nil {
 			if onBulkWriteError(this.Updater, err) {
-				return err //保留队列,重试 Destroy 才有完整上下文
+				return err //保留队列,重试 Unload 才有完整上下文
 			}
 			this.bulk = nil
 		} else {

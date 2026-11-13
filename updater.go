@@ -33,7 +33,7 @@ type Entity interface {
 //
 // 🔴 并发契约(所有方法的准入前提):同一 Updater 实例(含 Mounts 挂载、BulkWrite
 // 队列)同一时刻只允许一个 goroutine 访问——常规路径由"每玩家单协程"的模块契约
-// 保证;定时器、关服钩子等带外 goroutine 调用 Destroy/Reload/Mount.Submit 时,
+// 保证;定时器、关服钩子等带外 goroutine 调用 Unload/Reload/Mount.Submit 时,
 // 调用方必须自行持玩家锁串行化,否则双 BulkWrite 实例丢写,框架无任何断言兜底
 type Updater struct {
 	now       time.Time            //当前请求时间
@@ -41,10 +41,10 @@ type Updater struct {
 	dirty     []*operator.Operator //本次请求产生的操作列表，用于同步给客户端
 	entity    Entity               //数据属主（业务层实现，见 Entity）
 	status    Status               //状态位：Init/Submit/Changed/Operated
-	offline   bool                 //离线模式，不会强制加载数据，
+	lazy      bool                 //懒加载，不会强制加载数据，
 	manage    *Manage              //所属数据域：注册表/Config/域级事件缓存的宿主，见 Manage
 	handles   map[string]Handle    //已注册的数据 Handle（Document/Collection/Values）
-	bulkWrite BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Destroy 重试),写库成功才清空
+	bulkWrite BulkWrite            //共享 BulkWrite 实例:提交失败跨请求保留(由 Reset/Submit/Unload 重试),写库成功才清空
 
 	Cache         Cache       //自定义缓存数据
 	Error         error       //请求过程中的错误（业务码+参数，可直接作为回包错误下发）。建议经 Errorf 写入以携带业务码与 Args；字段零值即纯 nil 接口，读取/返回不再有 typed-nil 装箱陷阱
@@ -109,7 +109,7 @@ func (u *Updater) Errorf(format any, args ...any) *values.Message {
 }
 
 // Save 将所有句柄当前的脏数据刷入共享 BulkWrite 队列(只入队,不提交;
-// 提交时机见 Submit / Destroy / 下次请求 Reset 对遗留队列的重试语义)
+// 提交时机见 Submit / Unload / 下次请求 Reset 对遗留队列的重试语义)
 func (u *Updater) Save() (err error) {
 	for _, w := range u.Handles() {
 		if err = w.save(); err != nil {
@@ -149,7 +149,12 @@ func (u *Updater) Testing(on bool) error {
 		return nil
 	}
 	u.status.Unset(StatusTesting)
-	return u.Reload()
+	if err := u.Reload(); err != nil {
+		//关闭失败保持测试模式:否则测试期间只改内存的数据留在内存里,之后被当成正式数据提交
+		u.status.Set(StatusTesting)
+		return err
+	}
+	return nil
 }
 
 // Reload 丢弃所有已加载的内存数据，下次访问时重新从数据库读取。
@@ -165,7 +170,13 @@ func (u *Updater) Testing(on bool) error {
 // 数据库不可写时重载(Getter)必然同样失败,保留内存与队列原状。
 //
 // ⚠ 对**在线**玩家只重载服务端内存，客户端手上那份仍是旧的，通常还需要让客户端重新拉取。
+//
+// 🔴 已有 u.Error 时原样返回、什么都不动：句柄 loading 以 u.Error 为返回值，带着错误往下走会在
+// 第一个句柄**换完 dataset 之后**才报错退出——内存被换掉一半、loader 已复位，EventTypeLoaded 也不抛。
 func (u *Updater) Reload() error {
+	if u.Error != nil {
+		return u.Error
+	}
 	if u.bulkWrite != nil {
 		if err := u.bulkWrite.Submit(); err != nil {
 			if !onBulkWriteError(u, err) {
@@ -183,51 +194,88 @@ func (u *Updater) Reload() error {
 			return err
 		}
 	}
+	//🔴 Reload 是一次从库的完整初始化(全部句柄整档重拉、dataset 整个换掉),抛 EventTypeLoaded:
+	//挂在旧 dataset 上的派生状态(如项目的物品索引监视器)随之失效,不抛就一直停在旧数据上。
+	//懒加载实例没有整档数据(Loaded 恒 false),不抛
+	if u.status.Has(StatusLoaded) {
+		u.Emit(EventTypeLoaded)
+	}
 	return nil
 }
 
-// tryLoad 离线模式初始化之后真上线重新拉取数据
+// tryLoad 懒加载初始化之后真上线重新拉取数据
+//
+// 🔴 转正必须补发 EventTypeLoaded：懒加载首载只发了 EventTypeInit（句柄已建、数据未加载），
+// 依赖数据的派生状态（如项目的物品索引监视器）挂在 Loaded 上，转正不补就整个在线期为空。
+// EventTypeInit 不重发——句柄与域级缓存在首载时已建好，缓存创建器不得依赖数据。
 func (u *Updater) tryLoad() (err error) {
-	if u.offline || u.status.Has(StatusLoaded) {
+	if u.lazy || u.status.Has(StatusLoaded) {
 		return nil
 	}
+	if err = u.loadHandles(); err != nil {
+		return err
+	}
+	u.status.Set(StatusLoaded)
+	u.Emit(EventTypeLoaded)
+	return nil
+}
 
+// loadHandles 对全部已建句柄执行 loading（幂等：已加载的句柄 statement.loader 为 true、不重拉）。
+//
+// 🔴 失败时清掉 u.Error 再返回：各句柄 loading 经 Errorf 把错误写进 u.Error，而 loading 本身
+// 又以 u.Error 为返回值——不清的话错误常驻，之后每次重试都直接带着旧错误返回、永远拉不起来。
+// 错误已经由返回值交给调用方。
+// 🔴 进来时已有 u.Error（请求中途转正，此前的业务错误）原样返回、不加载也不清：句柄 loading
+// 见到已有错误直接返回它而不跑 Getter，清掉就把请求本来的错误吞了
+func (u *Updater) loadHandles() error {
+	if u.Error != nil {
+		return u.Error
+	}
 	for _, model := range u.manage.modelsRank {
-		name := model.name
-		handle := u.handles[name]
+		handle := u.handles[model.name]
 		if handle == nil {
 			continue
 		}
-		if err = handle.loading(); err != nil {
+		if err := handle.loading(); err != nil {
+			u.Error = nil
 			return err
 		}
 	}
-	u.status.Set(StatusLoaded)
 	return nil
 }
 
 // Loading 加载数据。
 //
-// offline 离线档（跨玩家补数据的轻量形态，契约见仓 CLAUDE.md「离线档」）：无参 = 在线档。
-// 离线档下所有 handle 按 RAMTypeNone 运行（GetRAMType() 动态返回 None，不改 ram 注册值）——
+// lazy 懒加载（跨玩家补数据的轻量形态，契约见仓 CLAUDE.md「懒加载」）：无参 = 在线档。
+// 懒加载下所有 handle 按 RAMTypeNone 运行（GetRAMType() 动态返回 None，不改 ram 注册值）——
 // 不预拉、release 不驻留，请求内照常走完整内存流水线（Data 按需拉触碰的键、Parse 读改写
 // 校验/溢出全保留、save 绝对值 $set），Document/Collection/Values/Virtual/Mount 全部自动生效。
-// 供 yyds player.Initialize 使用：改一个字段不再付整档全量加载 + 长期驻留的代价；
-// 已加载过的实例不存在离线档。
+// 供 yyds 批量锁给不在内存的玩家建 Updater：改一个字段不再付整档全量加载 + 长期驻留的代价；
+// 已加载过的实例不存在懒加载。🔴 懒加载读之前业务必须 Select + Data（没拉的键读到零值），
+// 扫描类接口报错，契约见仓 CLAUDE.md「懒加载」。
 //
-// 返回 status（位定义见 Status；离线档恒不含 StatusLoaded）。err 非 nil 时以 err 为准。
+// 返回 status（位定义见 Status；懒加载恒不含 StatusLoaded）。err 非 nil 时以 err 为准。
 // 组件创建等收尾不再走回调——调用方在 Loading 前后自行处理。
 
-func (u *Updater) Loading(Offline ...bool) (status Status, err error) {
-	if len(Offline) > 0 && Offline[0] && !u.status.Has(StatusLoaded) {
-		u.offline = true //仅仅当明确设置成离线模式，并且没有加载数据才会进入离线模式，如果已经加载了数据就不存在离线模式
-	} else if u.offline {
-		//离线档实例真上线（无参/在线加载）：清掉 offline 恢复原始形态——GetRAMType()
+func (u *Updater) Loading(lazy ...bool) (status Status, err error) {
+	promoting := false
+	if len(lazy) > 0 && lazy[0] && !u.status.Has(StatusLoaded) {
+		u.lazy = true //仅仅当明确设置成懒加载，并且没有加载数据才会进入懒加载，如果已经加载了数据就不存在懒加载
+	} else if u.lazy {
+		//懒加载实例真上线（无参/在线加载）：清掉 lazy 恢复原始形态——GetRAMType()
 		//回到注册值、各 handle 的 loader 未置，下面的幂等分支走 tryLoad 重新全量预拉
-		u.offline = false
+		u.lazy = false
+		promoting = true
 	}
 	if u.status.Has(StatusInit) {
-		return u.status, u.tryLoad() //初始化但是未必加载
+		//初始化但是未必加载。先求值再取 status：`return u.status, u.tryLoad()` 两个操作数的
+		//求值次序 Go 规范未定义，返回的 status 可能不含 tryLoad 刚置上的 StatusLoaded
+		if err = u.tryLoad(); err != nil && promoting {
+			//🔴 转正失败退回懒加载：否则成了「非懒加载、未 Loaded」的半成品——扫描不再被拦、
+			//release 把半份数据常驻。退回后已加载的句柄在下次 release 按 None 丢数据并复位 loader
+			u.lazy = true
+		}
+		return u.status, err
 	}
 	//🔴 开服自检：Config.BulkWrite 没配的话，**所有句柄的落库都会静默失效** ——
 	//save 报出的 ErrBulkWriteNotInitialize 会被 submit 吞成一行 Alert，玩家一路正常玩、
@@ -244,16 +292,16 @@ func (u *Updater) Loading(Offline ...bool) (status Status, err error) {
 		u.handles = make(map[string]Handle)
 	}
 
+	//建句柄与加载分两步：上次 Loading 中途失败时句柄已建、StatusInit 未置，重试会再走到这里——
+	//若只对新建句柄 loading，失败那个及其后的句柄全被跳过，下面照样置 Init|Loaded，玩家带着
+	//缺数据的句柄进游戏。loading 幂等（已加载的不重拉），所以全部句柄每次都过一遍。
 	for _, model := range u.manage.modelsRank {
-		name := model.name
-		handle := u.handles[name]
-		if handle == nil {
-			handle = u.manage.parser[model.parser](u, model)
-			u.handles[name] = handle
-			if err = handle.loading(); err != nil {
-				return u.status, err
-			}
+		if u.handles[model.name] == nil {
+			u.handles[model.name] = u.manage.parser[model.parser](u, model)
 		}
+	}
+	if err = u.loadHandles(); err != nil {
+		return u.status, err
 	}
 
 	if u.now.IsZero() {
@@ -261,7 +309,7 @@ func (u *Updater) Loading(Offline ...bool) (status Status, err error) {
 	}
 	u.last = u.now
 	u.status.Set(StatusInit)
-	if !u.offline {
+	if !u.lazy {
 		u.status.Set(StatusLoaded)
 	}
 
@@ -269,7 +317,11 @@ func (u *Updater) Loading(Offline ...bool) (status Status, err error) {
 		_ = u.Cache.LoadOrCreate(u, k, v)
 	}
 
+	//Init = 句柄与缓存就绪（在线/懒加载都发）；Loaded = 从库完整初始化（懒加载留到转正时由 tryLoad 发）
 	u.Emit(EventTypeInit)
+	if !u.lazy {
+		u.Emit(EventTypeLoaded)
+	}
 
 	return u.status, nil
 }
@@ -326,7 +378,7 @@ func (u *Updater) Release() {
 	//漏在保留集里会让第二个请求起 verify 判「未加载」跳过 Parse，内存流水线整体失效
 	u.status &= StatusInit | StatusLoaded | StatusTesting | StatusDevelop
 	//🔴 u.bulkWrite 不在这里清理:提交失败的队列要跨请求保留,
-	//由下次请求的 Reset / Submit / Destroy 重试,写库成功才清空
+	//由下次请求的 Reset / Submit / Unload 重试,写库成功才清空
 	u.Error = nil
 	u.CreditAllowed = false
 	hs := u.Handles()
@@ -526,7 +578,7 @@ func (u *Updater) verify(hs []Handle) (err error) {
 // 返回本次请求所有操作的 Operator 列表，用于同步给前端
 //
 // 🔴 bulkWrite 提交失败时实例**保留**(连同已入队操作,载荷是绝对值语义可安全重发),
-// 由下次请求的 Reset / Submit / Destroy 重试,写库成功才清理;Release 不再丢弃
+// 由下次请求的 Reset / Submit / Unload 重试,写库成功才清理;Release 不再丢弃
 //
 // ⚠ 中途失败的分叉口径:任一句柄 h.submit() 返回错误(仅 RAMTypeNone 的 save 失败会上抛,
 // 其余句柄自吞为告警继续)即中止本轮 Submit —— 后续句柄不再落库,内存不回滚,属最终一致语义。
@@ -655,13 +707,17 @@ func (u *Updater) Handles() (r []Handle) {
 	return
 }
 
-// Destroy 销毁用户实例,强制将缓存数据改变写入数据库
-// 提交失败时队列保留、实体不拆,排除问题后再次调用 Destroy 即可重试同一批(写库成功才清理)
-// 仅缓存模式下需要且必要执行
-func (u *Updater) Destroy() (err error) {
+// Unload 卸载实例:先把各句柄未落库的改动刷进数据库,成功后拆掉实体/句柄/挂载表,内存数据随之丢弃
+// (库里的数据不动;与 Loading 成对)。
+// 提交失败时队列保留、实体不拆,排除问题后再次调用 Unload 即可重试同一批(写库成功才清理)
+// 仅缓存模式下需要且必要执行。
+//
+// 🔴 仅供宿主框架回收实例时调用(yyds 由 daemon 经 Player.Unload 调):卸载后实例不可再用,
+// 业务层误调用会让持有它的一方当场 nil panic。要让内存跟上带外改库用 Reload
+func (u *Updater) Unload() (err error) {
 	hs := u.Handles()
 	for _, h := range slices.Backward(hs) {
-		if err = h.destroy(); err != nil {
+		if err = h.unload(); err != nil {
 			return
 		}
 	}
@@ -669,7 +725,7 @@ func (u *Updater) Destroy() (err error) {
 		if u.status.Has(StatusTesting) {
 			u.bulkWrite = nil
 		} else if err = u.bulkWrite.Submit(); err != nil {
-			//失败保留队列并提前返回:实体不提前拆,重试 Destroy 才有完整上下文;
+			//失败保留队列并提前返回:实体不提前拆,重试 Unload 才有完整上下文;
 			//程序级错误分级丢弃(onBulkWriteError 返回 false)时队列已无意义,照常拆
 			if onBulkWriteError(u, err) {
 				return

@@ -141,7 +141,7 @@ defer u.Unmount(&model.Mail{})
 |---|---|---|---|
 | `release()` | **每次请求结束**（`Updater.Release`） | `dataset.Release()`：只清 dirty，**保留内存数据**；清 keys | 安全，数据留着 |
 | `Unmount` | 业务显式调用 | **只打标记**，摘除留到 Release | 这才是"卸载"，但推迟生效 |
-| `destroy()` | 玩家下线（`Updater.Destroy`） | `save()` **刷盘**，不是 release | 未落库脏数据不丢 |
+| `unload()` | 玩家下线（`Updater.Unload`） | `save()` **刷盘**，不是 release | 未落库脏数据不丢 |
 
 #### 🔴 Unmount 只打标记，真正摘除在 Release
 
@@ -169,7 +169,7 @@ defer u.Unmount(&model.Mail{})
 - 请求失败时不会有"半落库"：`Submit` 没跑到，脏数据本就不该写，句柄照样在 Release 摘掉。
 
 - **不做任何自动清理**（不挂请求结束钩子）：对短命多余、对长命有害；
-- **兜底**：`Updater.Destroy` 里对 mounts 走 `destroy()`（刷盘）而非 `release()`，
+- **兜底**：`Updater.Unload` 里对 mounts 走 `unload()`（刷盘）而非 `release()`，
   然后 `u.mounts = nil`——泄漏上限钉死在"玩家在线期间"，且下线不丢数据。
   正常路径每次 Submit 都已刷过，这条是兜底；
 - 长命句柄残留期间每次 Submit 空转扫过它（无脏数据即 no-op），可接受；
@@ -224,8 +224,8 @@ defer u.Unmount(&model.Mail{})
    真正的摘除在 `Updater.Release()` 末尾（各句柄 `release()` 之后）统一扫一遍 mounts 删掉。
    理由见第六节。重挂即全新内存、重新 Getter 加载，无脏数据复用；
 
-8. **`Destroy`**：对 mounts 走 `destroy()`（= `save()` 刷盘），随后 `u.mounts = nil`
-   ——原先 `Destroy` 只置 `u.handles = nil`，补这一行；
+8. **`Unload`**：对 mounts 走 `unload()`（= `save()` 刷盘），随后 `u.mounts = nil`
+   ——原先 `Unload` 只置 `u.handles = nil`，补这一行；
 
 9. **事件链**：参与 `EventTypeVerify / EventTypeSubmit / EventTypeRelease`
    （幂等空转），不参与 `EventTypeInit`（玩家加载期挂载不在场）。
@@ -260,7 +260,7 @@ defer u.Unmount(&model.Mail{})
    跨玩家数据属于"战斗房间"维度，走独立数据结构，与 Mount 无关；
 
 3. **异常路径残留**：战斗中断没走到 Unmount → 驻留到玩家下线（有兜底、无永久
-   泄漏，且下线走 `destroy()` 会刷盘）。业务应在超时分支也保证 Unmount。
+   泄漏，且下线走 `unload()` 会刷盘）。业务应在超时分支也保证 Unmount。
 
 ## 九、验收用例（bong 侧迁移）
 
@@ -301,7 +301,7 @@ bong 在 updater 发版后升依赖再迁移；`exchange` 同 mail 形态（Inse
 5. `Update` 后直接 `Unmount`（不等框架 Submit），句柄仍在、Unmount 自己不落库，
    随后的 `Submit` 照常把脏数据写进 bulkWrite，`Release` 之后才摘除（钉第六节）；
 6. `u.Error` 非空时 Submit 返回错误且 bulkWrite **未提交**（钉失败不落库）；
-7. `Destroy` 走刷盘而非 release，且清空挂载表（钉第七节 8）；
+7. `Unload` 走刷盘而非 release，且清空挂载表（钉第七节 8）；
 8. `Mount(model, keys...)` 当场查库、重复调不重复查、不带 key 不预加载；
 9. `Mount` 取数失败时句柄仍挂着且可用，重试 Select + Data 能取到；
 10. `Unmount` 后同一请求内再 `Mount`，卸载标记被撤销。

@@ -377,24 +377,24 @@ func TestMountRejectsRegisteredName(t *testing.T) {
 	}
 }
 
-// Destroy 清空挂载表；**未经 Submit 的改动不会被它写出去**。
+// Unload 清空挂载表；**未经 Submit 的改动不会被它写出去**。
 //
 // 挂载现在走完整的 operator 流水线：改动先入队，verify 才进内存、submit 才进 bulkWrite。
 // 请求没跑完就下线，那些 operator 本来就不该落库 —— 与全局句柄同一口径。
-func TestMountDestroyClearsMounts(t *testing.T) {
+func TestMountUnloadClearsMounts(t *testing.T) {
 	u, bw := newMountUpdater(t)
 	m := newMountModel("row1")
 	coll, _ := u.Mounts.Load(m, "row1")
 	coll.Update("row1", dataset.Update{"status": int32(4)}) //只入队,没 Submit
 
-	if err := u.Destroy(); err != nil {
-		t.Fatalf("Destroy:%v", err)
+	if err := u.Unload(); err != nil {
+		t.Fatalf("Unload:%v", err)
 	}
 	if len(bw.updates) != 0 {
 		t.Fatal("没跑完的请求不该被下线流程顺手落库")
 	}
 	if u.Mounts.tables != nil {
-		t.Fatal("Destroy 应清空挂载表")
+		t.Fatal("Unload 应清空挂载表")
 	}
 }
 

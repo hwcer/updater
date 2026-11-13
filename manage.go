@@ -207,7 +207,7 @@ func (m *Manage) Models(f func(int32, any) bool) {
 	}
 }
 
-// New 创建绑定到本域的裸实例。实例的生命周期（Loading/Reset/Submit/Release/Destroy，
+// New 创建绑定到本域的裸实例。实例的生命周期（Loading/Reset/Submit/Release/Unload，
 // 含玩家锁与实例表）由业务层自管 —— 单域场景用 Default.New(e)。
 func (m *Manage) New(e Entity) *Updater {
 	u := &Updater{manage: m, entity: e, Cache: Cache{}, Events: Events{}, Middleware: Middlewares{}}

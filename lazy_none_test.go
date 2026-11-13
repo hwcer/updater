@@ -6,7 +6,7 @@ import (
 	"github.com/hwcer/updater/dataset"
 )
 
-// 离线模式 = 全部 handle 按 RAMTypeNone 运行（newStatement 一处改写）：
+// 懒加载 = 全部 handle 按 RAMTypeNone 运行（newStatement 一处改写）：
 // 不预拉；写照常 Select 记账 → Submit 收敛的 Data 按需拉触碰的键（写会触发读——
 // 已放弃「写绝不读库」）→ Parse 内存读改写（绝对值，校验/溢出/Result/幂等重试全保留）
 // → save $set；release 丢 dataset 不驻留。handle 零改动，$inc 非幂等问题不存在。
@@ -25,7 +25,7 @@ func (b *offNoneBulk) Delete(model any, where ...any)     {}
 func (b *offNoneBulk) Submit() error                      { return nil }
 func (b *offNoneBulk) String() string                     { return "off_none_bulk" }
 
-func TestOfflineRAMTypeNone(t *testing.T) {
+func TestLazyRAMTypeNone(t *testing.T) {
 	mg := New()
 	model := &capCollModel{rows: map[string]*capRow{"c1": {Id: "c1", IID: 1001, Val: 50}}}
 	bulk := &offNoneBulk{}
@@ -45,7 +45,7 @@ func TestOfflineRAMTypeNone(t *testing.T) {
 	coll := u.Collection(9003)
 	coll.Sub("c1", 5) //Select(c1) 记账——随 Submit 收敛按需拉取（写触发读，按需不整表）
 	if u.Error != nil {
-		t.Fatalf("离线写不得置错: %v", u.Error)
+		t.Fatalf("懒加载写不得置错: %v", u.Error)
 	}
 	if _, err := u.Submit(); err != nil {
 		t.Fatal(err)
@@ -65,10 +65,10 @@ func TestOfflineRAMTypeNone(t *testing.T) {
 	//RAMTypeNone：release 丢 dataset 不驻留
 	u.Release()
 	if coll.dataset != nil {
-		t.Fatal("离线档 release 后 dataset 应丢弃（RAMTypeNone 语义, 不驻留）")
+		t.Fatal("懒加载 release 后 dataset 应丢弃（RAMTypeNone 语义, 不驻留）")
 	}
 
-	//真上线（无参 Loading）：清 offline 恢复原始形态——GetRAMType 回注册值、幂等分支
+	//真上线（无参 Loading）：清 lazy 恢复原始形态——GetRAMType 回注册值、幂等分支
 	//tryLoad 重新全量预拉并置 StatusLoaded、release 回常驻语义
 	u.Reset()
 	if _, err := u.Loading(); err != nil {

@@ -111,7 +111,7 @@ func onSaveErrorHandle(updater *Updater, err error) (bool, error) {
 // 返回 false 表示业务把错误分为程序级(结构不一致/主键冲突等,重试无意义),
 // 调用方必须随之丢弃队列——否则坏载荷每请求重发,累计到 BulkWriteMaxFails
 // 触发灾难保护演变成全服拒绝服务。所有 bulkWrite.Submit 失败分支(Submit/Reset/
-// Reload/Destroy/Mount.Submit)都必须走这里,不得只调 onSubmitResult
+// Reload/Unload/Mount.Submit)都必须走这里,不得只调 onSubmitResult
 func onBulkWriteError(updater *Updater, err error) bool {
 	onSubmitResult(err)
 	retain, newErr := onSaveErrorHandle(updater, err)

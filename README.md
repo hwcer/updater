@@ -41,7 +41,7 @@ u.Get(1001)                // 获取原始数据
 ops, err := u.Submit()     // 校验+落库，返回变更列表
 u.Release()                // 请求结束，清理临时状态
 
-u.Destroy()                // 玩家下线，强制刷盘
+u.Unload()                // 玩家下线，强制刷盘
 ```
 
 ## 四种数据模型
@@ -113,7 +113,7 @@ Add(金币, 1000) → 当前 9500, 上限 10000
 
 分级需业务配置 `updater.SaveErrorHandle` 才生效，默认实现恒返 `SaveErrorTypeNone`。
 未配置时：连续失败累计到 `BulkWriteMaxFails`（默认 100）触发灾难保护。
-Submit/Reset/Reload/Destroy/Mounts 全部提交入口统一走该分级。
+Submit/Reset/Reload/Unload/Mounts 全部提交入口统一走该分级。
 
 ## 事件系统
 
@@ -126,7 +126,8 @@ u.On(updater.EventTypeVerify, func(u *updater.Updater) bool {
 
 | 事件 | 触发时机 |
 |------|----------|
-| `EventTypeInit` | Loading 完成后 |
+| `EventTypeInit` | 首次 Loading 建好句柄与缓存后（在线/懒加载各一次，不保证数据已加载） |
+| `EventTypeLoaded` | 从数据库完整初始化成功时（首载、懒加载转正、Reload；局部按需拉取不算），监听须能承受重复触发 |
 | `EventTypeReset` | 每次 Reset |
 | `EventTypeData` | Data 拉取前 |
 | `EventTypeVerify` | Verify 校验前（可能多次） |
@@ -156,7 +157,7 @@ v.Add(2001, 1)  // 委托给其他模块处理，同时生成 Operator 返回前
 
 ```
 updater/
-├── updater.go          Updater 核心生命周期（Reset/Submit/Release/Destroy）
+├── updater.go          Updater 核心生命周期（Reset/Submit/Release/Unload）
 ├── manage.go           Manage 数据域（注册表/Config/域级事件缓存）
 ├── default.go          默认域 Default + 包级兼容入口
 ├── define.go           IType 接口 + Status/Keys 工具类

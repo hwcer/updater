@@ -186,12 +186,13 @@ func (this *Document) release() {
 	if this.statement.GetRAMType() == RAMTypeNone {
 		this.dataset = nil
 		this.schema = nil
+		this.statement.loader = false //数据丢了加载态必须跟着丢，见 statement.loader
 	} else {
 		this.dataset.Release()
 	}
 }
 
-func (this *Document) destroy() (err error) {
+func (this *Document) unload() (err error) {
 	return this.save()
 }
 
@@ -252,7 +253,12 @@ func (this *Document) Has(k any) bool {
 	return false
 }
 
+// Range 遍历全部字段是扫描:懒加载下只拉过 Select 的字段,其余是零值,一律报错不迭代。
+// Any 不拦(GetRole().All() 这类主入口):懒加载下读哪个字段先 Select 哪个,见仓 CLAUDE.md「懒加载」
 func (this *Document) Range(f func(k string, v any) bool) {
+	if this.statement.lazyScan("Document", "Range") {
+		return
+	}
 	this.dataset.Range(f)
 }
 

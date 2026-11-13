@@ -75,7 +75,7 @@ Updater.Submit()
 ```
 
 bw == nil 时返回 `ErrBulkWriteNotInit`，不静默丢弃。
-Destroy() 末尾也调 `bw.Submit()` 确保下线刷盘。
+Unload() 末尾也调 `bw.Submit()` 确保下线刷盘。
 
 ## 五、三种 Handle save() 实现
 

@@ -196,8 +196,8 @@ func TestReloadFlushesPendingBeforeReloading(t *testing.T) {
 	}
 }
 
-// 🔴 Destroy 失败保留队列与实体,重试 Destroy 重发同一批;成功才完成销毁
-func TestDestroyRetriesAfterFailure(t *testing.T) {
+// 🔴 Unload 失败保留队列与实体,重试 Unload 重发同一批;成功才完成销毁
+func TestUnloadRetriesAfterFailure(t *testing.T) {
 	model := &bwValuesModel{data: map[int32]int64{}}
 	bw := &bwRetryBulk{failN: -1}
 	u := newBWRetryUpdater(t, bw, model)
@@ -209,19 +209,19 @@ func TestDestroyRetriesAfterFailure(t *testing.T) {
 	}
 	u.Release()
 
-	if err := u.Destroy(); err == nil {
-		t.Fatal("数据库不可写时 Destroy 应失败")
+	if err := u.Unload(); err == nil {
+		t.Fatal("数据库不可写时 Unload 应失败")
 	}
 	if u.bulkWrite == nil {
-		t.Fatal("Destroy 失败应保留队列供重试")
+		t.Fatal("Unload 失败应保留队列供重试")
 	}
 	if u.entity == nil || u.handles == nil {
-		t.Fatal("Destroy 失败不应提前拆实体")
+		t.Fatal("Unload 失败不应提前拆实体")
 	}
 
 	bw.failN = 0
-	if err := u.Destroy(); err != nil {
-		t.Fatalf("重试 Destroy 应成功:%v", err)
+	if err := u.Unload(); err != nil {
+		t.Fatalf("重试 Unload 应成功:%v", err)
 	}
 	if u.bulkWrite != nil {
 		t.Fatal("销毁成功后应清理队列")

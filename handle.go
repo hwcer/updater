@@ -29,7 +29,7 @@ type Handle interface {
 	reload() error             //丢弃内存数据并重新加载
 	loading() error            //初始化时加载数据
 	release()                  //请求结束时释放临时状态
-	destroy() error            //玩家下线时强制刷盘
+	unload() error            //玩家下线时强制刷盘
 	submit() error             //将 verify 后的操作提交并同步数据库
 	verify() error             //校验并执行待处理操作（溢出检查、扣量检查等）
 	increase(k int32, v int64) //由 Updater.Add 调用

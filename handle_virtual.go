@@ -154,7 +154,7 @@ func (this *Virtual) submit() (err error) {
 	return
 }
 
-func (this *Virtual) destroy() (err error) {
+func (this *Virtual) unload() (err error) {
 	return nil
 }
 

@@ -19,23 +19,47 @@ go vet ./...
 
 Module path: `github.com/hwcer/updater`
 
-### 离线档（Loading(true)，跨玩家补数据的轻量形态）
+### 懒加载（Loading(true)，跨玩家补数据的轻量形态）
 
-`Loading(offline ...bool) (status Status, err error)`（无参 = 在线档），供 yyds `player.Initialize`
-使用（跨玩家写离线玩家）。离线档（`offline` 私有字段，仅当 `Loading(true)` 且**尚未
-StatusLoaded** 时进入——已加载数据的实例不存在离线模式）。
+`Loading(lazy ...bool) (status Status, err error)`（无参 = 在线档），供 yyds 批量锁给不在内存的玩家
+建 Updater（跨玩家补数据）。懒加载（`lazy` 私有字段，仅当 `Loading(true)` 且**尚未
+StatusLoaded** 时进入——已加载数据的实例不存在懒加载）。
 查询接口 `Status()` / `Loaded()` 取代旧 `Loader()`。Loading 不再带回调——组件创建等收尾由
 调用方在 Loading 前自行处理（yyds 在 Loading 前建组件，createComponents 自身幂等）。
 
 **机制：handle 零改动，全部 handle 按 RAMTypeNone 运行**——`statement.GetRAMType()` 在
-离线时一律返回 None（**不改写 ram 注册值**）。由此自动获得：不预拉、release 丢 dataset
+懒加载时一律返回 None（**不改写 ram 注册值**）。由此自动获得：不预拉、release 丢 dataset
 不驻留；请求内照常走完整内存流水线——写 Select 记账 → Submit 收敛的 Data **按需拉触碰的键**
 → Parse 读改写（校验/溢出/惰性重置/Listener/Result 全保留）→ save **绝对值 $set**（幂等
 可重试，无 $inc 双记问题）。Document/Collection/Values/Virtual/Mount 全部自动生效。
 
-**上线恢复原始形态（转正）**：无参 Loading 清掉 offline → `GetRAMType()` 自动回注册值、
+**上线恢复原始形态（转正）**：无参 Loading 清掉 lazy → `GetRAMType()` 自动回注册值、
 各 handle 的 loader 未置（None 期间按需拉不置）→ 幂等分支 `tryLoad` 重新全量预拉 →
-`Set(StatusLoaded)`。进出都是 Loading 一个入口，ram 字段全程未被改写。
+`Set(StatusLoaded)` → **补发 `EventTypeLoaded`**。进出都是 Loading 一个入口，ram 字段全程未被改写。
+
+- 🔴 **两个加载事件分工**（`EventTypeInit` 曾是 `EventTypeLoaded` 的兼容别名，已拆成独立值）：
+
+  | 事件 | 何时发 | 挂什么 |
+  |---|---|---|
+  | `EventTypeInit` | 首次 Loading 建好句柄与域级缓存后，在线/懒加载**各发一次**，转正不重发 | 不依赖数据的准备工作 |
+  | `EventTypeLoaded` | **从数据库完整初始化成功时抛出**：首次 Loading、懒加载转正（`tryLoad`）、`Reload()`。按需拉取的局部数据（`RAMTypeNone` / 懒加载下 `Select`+`Data`）与跨天 `ModelReset` 重载不算；懒加载实例不抛 | 依赖整档数据的派生状态：建索引、存量对账。**须能承受重复触发**：`Reload` 会再抛且换掉了整个 dataset，重建前先清空旧派生状态 |
+
+  依赖数据的监听挂错在 Init 上，懒加载转正后派生状态（如项目的物品索引监视器）整个在线期为空。
+  域级缓存创建器在 Init 前执行、转正不重建，**不得依赖数据**。
+- 🔴 **`statement.loader` 与 dataset 同生死**：release 按运行态 None 丢 dataset 时同步置 false，
+  否则「部分句柄已加载 → 进懒加载 → 丢数据 → 转正」不会重拉。
+- **Loading 失败可重试**：建句柄与 loading 分两步、每次对全部句柄过一遍（loading 幂等）；失败时
+  `u.Error` 清空（错误由返回值交出），否则错误常驻、重试永远失败。进来时已有 `u.Error`（请求中途转正、
+  此前的业务错误）则原样返回、不加载也不清。回归用例见 `lazy_promote_test.go`。
+- 🔴 **转正失败退回懒加载**：不能留成「非懒加载、未 Loaded」的半成品（扫描不再被拦、半份数据常驻）；
+  已加载的句柄在下次 release 按 None 丢数据并复位 loader，之后可再次转正。
+- 🔴 **懒加载读之前必须 `Select` + `Data`**：不预拉，读接口只看内存，没拉过的键读到零值。「读出来判定
+  再写绝对值」的业务漏了这一步就会用零值覆盖库。框架不替业务记账补拉——要读什么、先拉什么由业务决定。
+- 🔴 **扫描类接口懒加载报错**：`Collection.Range/Len/Cursor`、不可叠加道具的 `Collection.Count`、
+  `Values.Len/All/Range`、`Document.Range` 靠 Select 拉不全，懒加载下写 `u.Error` 并返回空
+  （`Cursor` 返回空数据集上的游标），不静默给半份——遍历里的发信 / 推送 / 直连写库这类管线外副作用，
+  请求后续失败也拦不住。可叠加道具的 `Count` 是单文档点查、`Document.Any` 是读主入口，照常可用
+  （读哪个先 Select 哪个）。回归用例见 `lazy_read_test.go`。
 
 - **什么时候需要自己实现 writer（Setter）**：判据是「miss 时能不能用**整文档 Insert** 兜底」。
   - **不需要**（默认即可）：Collection 形态——写入口 `Select(OID)` 记账 → Submit 收敛 Data
@@ -47,9 +71,9 @@ StatusLoaded** 时进入——已加载数据的实例不存在离线模式）�
     （一键一行、行身份由业务规则定位如复合 Unique id、用 UpdateOne upsert 落库）。这类模型
     miss 时整文档 Insert 不适用，必须自己实现 Setter 并自带 `$setOnInsert` 身份字段
     （项目 record.go 是范例；cosmo 见载荷含 `$setOnInsert` 自动置 upsert）。
-- 离线档的已知边界（`StatusLoaded` 恒 false）：`Collection.Count`（扫不全量数据）等项目侧
-  自行拦截；跨玩家补数据以「读触碰键 + 写绝对值」为限，需要复杂判定（溢出分解等）的业务
-  先读够再写。
+- 懒加载的已知边界（`StatusLoaded` 恒 false）：跨玩家补数据以「Select+Data 读触碰键 + 写绝对值」为限，
+  需要复杂判定（溢出分解等）的业务先读够再写；依赖 `EventTypeLoaded` 建的派生状态（如项目的物品索引）
+  懒加载下不存在，项目侧自行拦截。
 
 ## Architecture
 
@@ -64,7 +88,7 @@ Loading → Reset → Business ops (Add/Sub/Set/Del) → Data (lazy DB fetch) �
 - `Loading` initializes handles based on registered models
 - `Reset` starts each request cycle, sets the clock, checks disaster state
 - `Submit` runs a convergence loop: `data → verify → submit` repeating until no more changes (capped at 100 iterations to prevent infinite loops)
-- `Release` clears per-request state; `Destroy` flushes everything to DB on player logout
+- `Release` clears per-request state; `Unload` flushes everything to DB on player logout
 
 ### 错误状态（Updater.Error）
 
@@ -130,7 +154,7 @@ coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存
 其它要点：
 
 - `Receive(id, data)` 把已经在手上的文档直接塞进内存，跳过查库 —— **挂载同时是这次会话里的一份缓存**（充值的下单 → 核销横跨多次请求就是典型）。`Collection` 也有一对：`Remove` 清掉 / `Receive` 塞进去，都不碰数据库；
-- **两档生命周期**（框架零自动清理）：短命 `defer Mounts.Remove`；长命（充值、战斗副本）不 Remove，留给玩家下线兜底。🔴 **三个"释放"不是一回事**：逐请求 `release()` 只清 dirty **保留内存**／`Mounts.Remove` 只打标记、Release 阶段才摘除／`destroy()` 是下线刷盘；
+- **两档生命周期**（框架零自动清理）：短命 `defer Mounts.Remove`；长命（充值、战斗副本）不 Remove，留给玩家下线兜底。🔴 **三个"释放"不是一回事**：逐请求 `release()` 只清 dirty **保留内存**／`Mounts.Remove` 只打标记、Release 阶段才摘除／`unload()` 是下线刷盘；
 - 🔴 `Select` 必须置 `StatusChanged`（`Updater.data()` 开头有闸门），漏了的症状是"Select 了、Data 了、Get 拿到 nil、还不报错"；
 - 🔴 `ram` 取 `RAMTypeMaybe`：`release` 保留内存数据，且 `statement.has` 里 `Always && loader` 那条短路**不能命中**（命中后 Select 会跳过每一个 key）。
 
@@ -139,7 +163,7 @@ coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存
 ### Handle interface
 
 公开方法: `Get`, `Val`, `Data`, `IType`, `Select`, `Parser`。
-私有生命周期方法: `increase`, `decrease`, `save`, `reset`, `reload`, `loading`, `release`, `destroy`, `submit`, `verify`。
+私有生命周期方法: `increase`, `decrease`, `save`, `reset`, `reload`, `loading`, `release`, `unload`, `submit`, `verify`。
 
 `Insert(op, before...)` 不在 Handle 接口中，由 Values/Document/Collection 各自暴露，用于直接注入已封装的 Operator（Virtual 不支持）。
 
@@ -156,7 +180,7 @@ coll.Update(id, dataset.Update{...})          // 产 operator：verify 写内存
 每个 Handle 实现文件（`handle_*.go`）按以下分组排列：
 1. 构造函数 (`New*`)
 2. Handle 接口公开方法 (`Get → Val → Data → IType → Select → Parser`)
-3. Handle 接口私有方法 (`increase → decrease → save → reset → reload → loading → release → destroy → submit → verify`)
+3. Handle 接口私有方法 (`increase → decrease → save → reset → reload → loading → release → unload → submit → verify`)
 4. 类型特有公开方法 (`Add/Sub/Set/Insert/...`)
 5. 类型特有私有方法 (`operator/val/format/...`)
 

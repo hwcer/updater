@@ -21,7 +21,7 @@ type statement struct {
 	ram            RAMType
 	keys           Keys                 //待拉取的数据库 key，Data 阶段消费后清空
 	cache          []*operator.Operator //已通过 verify 校验的操作，等待 submit
-	loader         bool                 //是否已完成初始数据加载
+	loader         bool                 //是否已完成初始数据加载。🔴 与 dataset 同生死：release 按运行态 None 丢 dataset 时必须同步置 false——否则懒加载丢掉数据后 loader 仍为 true，转正时 tryLoad 判「已加载」不重拉，Always 句柄 has() 恒真、读空写绝对值覆盖库
 	Updater        *Updater
 	operator       []*operator.Operator //待处理的操作，verify 阶段消费
 	handleExist    stmHandleExist       //查询数据集中是否已存在指定 key
@@ -32,12 +32,12 @@ func newStatement(u *Updater, m *Model, exist stmHandleExist) *statement {
 	return &statement{ram: m.ram, handleExist: exist, Updater: u}
 }
 
-// GetRAMType 运行态 RAM 类型：离线模式一律按 RAMTypeNone 运行（不预拉、release 丢
+// GetRAMType 运行态 RAM 类型：懒加载一律按 RAMTypeNone 运行（不预拉、release 丢
 // dataset 不驻留；请求内照常 Select→Data 按需拉→Parse 读改写→save 绝对值），**不改写
-// ram 原始注册值**——玩家上线清掉 offline 后本方法自动恢复原始语义，配合 tryLoad 重新
+// ram 原始注册值**——玩家上线清掉 lazy 后本方法自动恢复原始语义，配合 tryLoad 重新
 // 预拉即回到在线形态。消费点一律读这里，不要直读 ram 字段。
 func (stmt *statement) GetRAMType() RAMType {
-	if stmt.Updater.offline {
+	if stmt.Updater.lazy {
 		return RAMTypeNone
 	}
 	return stmt.ram
@@ -65,6 +65,18 @@ func (stmt *statement) reload() {
 // 是否需要执行加载
 func (stmt *statement) loading() bool {
 	return !stmt.loader && (stmt.GetRAMType() == RAMTypeMaybe || stmt.GetRAMType() == RAMTypeAlways)
+}
+
+// lazyScan 懒加载禁止扫描：写 u.Error 并返回 true，调用方据此返回空结果。
+//
+// 懒加载（Loading(true)）不预拉，读数据前由业务自己 Select + Data 拉要用的键；扫描类接口
+// （Range/Len/Count/All…）靠 Select 拉不全，一律报错而不是静默返回半份。
+func (stmt *statement) lazyScan(name, method string) bool {
+	if stmt.Updater == nil || !stmt.Updater.lazy { //Updater 为 nil:脱离 Updater 手工构造的句柄(单测)
+		return false
+	}
+	_ = stmt.Updater.Errorf("懒加载禁止 %s.%s：数据未整表加载，扫描结果不完整", name, method)
+	return true
 }
 
 // 每一个执行时都会执行 release

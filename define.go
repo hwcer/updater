@@ -14,7 +14,7 @@ const (
 	StatusOperated                    // 新操作，需要 Verify 检查
 	StatusTesting                     // 测试模式，不写库
 	StatusDevelop                     // 开发者模式，业务层自取
-	StatusLoaded                      // 数据已真正加载（tryLoad 预拉完成）；已加载的实例不存在离线模式
+	StatusLoaded                      // 数据已真正加载（tryLoad 预拉完成）；已加载的实例不存在懒加载
 )
 
 func (s *Status) Has(flags ...Status) bool {
