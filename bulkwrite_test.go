@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hwcer/cosgo/times"
 	"github.com/hwcer/updater/dataset"
 )
 
@@ -273,8 +274,8 @@ func TestConsecutiveSubmitFailsTripDisaster(t *testing.T) {
 	u.Release()
 
 	//监控协程探测数据库健康后自动解除
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && disaster.Load() != 0 {
+	deadline := times.Now().Add(3 * time.Second)
+	for times.Now().Before(deadline) && disaster.Load() != 0 {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if disaster.Load() != 0 {

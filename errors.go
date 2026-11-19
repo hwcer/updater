@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hwcer/cosgo/scc"
+	"github.com/hwcer/cosgo/times"
 	"github.com/hwcer/cosgo/values"
 	"github.com/hwcer/logger"
 )
@@ -135,7 +136,7 @@ func initiateDatabaseMonitoring() {
 	scc.CGO(func(ctx context.Context) {
 		defer monitoring.Store(false) // 协程结束时重置监控状态
 		// 记录开始检查的时间
-		startTime := time.Now()
+		startTime := times.Now()
 		const timeout = 30 * time.Second
 		var sleepTime = time.Second
 		timer := time.NewTimer(sleepTime)
@@ -155,7 +156,7 @@ func initiateDatabaseMonitoring() {
 				}
 
 				// 检查是否超过30秒未恢复
-				if time.Since(startTime) >= timeout {
+				if times.Now().Sub(startTime) >= timeout {
 					logger.Trace("数据库无法恢复，开启灾难级错误保护")
 					disaster.CompareAndSwap(0, 1)
 				} else {

@@ -3,7 +3,7 @@ module github.com/hwcer/updater
 go 1.26.0
 
 require (
-	github.com/hwcer/cosgo v1.8.4-0.20260929074315-7f81d5a19ba8
+	github.com/hwcer/cosgo v1.8.4-0.20261119055727-e4575e8dbad4
 	github.com/hwcer/cosmo v1.4.2-0.20260929012606-ae42feef5451
 	github.com/hwcer/logger v0.2.9-0.20260920081328-3986f6f383d3
 	go.mongodb.org/mongo-driver/v2 v2.7.0

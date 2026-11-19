@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hwcer/cosgo/times"
 	"github.com/hwcer/cosgo/values"
 	"github.com/hwcer/logger"
 	"github.com/hwcer/updater/dataset"
@@ -305,7 +306,7 @@ func (u *Updater) Loading(lazy ...bool) (status Status, err error) {
 	}
 
 	if u.now.IsZero() {
-		u.now = time.Now()
+		u.now = times.Now()
 	}
 	u.last = u.now
 	u.status.Set(StatusInit)
@@ -331,7 +332,7 @@ func (u *Updater) Reset(t ...time.Time) {
 	if len(t) > 0 {
 		u.now = t[0]
 	} else {
-		u.now = time.Now()
+		u.now = times.Now()
 	}
 	if u.now.IsZero() {
 		_ = u.Errorf("获取系统时间失败")
